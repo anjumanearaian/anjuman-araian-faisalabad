@@ -160,7 +160,14 @@ router.post("/register", registerLimiter, validate(RegisterSchema), async (req: 
             ? { familyInfo: { create: familyInfo } }
             : {}),
         },
-        include: { familyInfo: true },
+     select: {
+  id:true,
+  memberNo:true,
+  fullName:true,
+  email:true,
+  phone:true,
+  familyInfo:true
+}
       });
     }, {
       maxWait: 15000,
@@ -221,11 +228,38 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        include: isAdmin ? { familyInfo: true } : undefined,
+        
         orderBy: { createdAt: "desc" },
-        omit: isAdmin 
-          ? { password: true } 
-          : { password: true, cnic: true, dob: true, adminNote: true, rejectionReason: true }, 
+        select: {
+  id: true,
+  memberNo: true,
+  fullName: true,
+  fatherName: true,
+  email: true,
+  phone: true,
+  whatsapp: true,
+  whatsappPublic: true,
+  city: true,
+  district: true,
+  province: true,
+  occupation: true,
+  education: true,
+  membershipType: true,
+  photoUrl: true,
+  status: true,
+  createdAt: true,
+  approvedAt: true,
+  isFeatured: true,
+  isFeaturedPortal: true,
+  ...(isAdmin ? {
+    cnic: true,
+    dob: true,
+    adminNote: true,
+    rejectionReason: true,
+    familyInfo: true
+  } : {})
+}
+        
       }),
       prisma.member.count({ where }),
     ]);
@@ -292,7 +326,15 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, ne
         rejectionReason,
         approvedAt: status === "approved" ? new Date() : null,
       },
-      omit: { password: true },
+      select: {
+  id: true,
+  memberNo: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  status: true,
+  createdAt: true
+}
     });
 
     res.json(updated);
@@ -348,7 +390,15 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
     const updated = await prisma.member.update({
       where: { id },
       data: updates,
-      omit: { password: true },
+      select: {
+  id: true,
+  memberNo: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  status: true,
+  createdAt: true
+}
     });
 
     res.json(updated);
@@ -430,8 +480,26 @@ router.get("/me", async (req: Request, res: Response, next: NextFunction) => {
 
     const member = await prisma.member.findUnique({
       where: { id: decoded.id },
-      include: { familyInfo: true },
-      omit: { password: true },
+      select: {
+        id: true,
+        memberNo: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        status: true,
+        createdAt: true,
+        familyInfo: true,
+        additionalPhotos: true,
+        photoUrl: true,
+        city: true,
+        district: true,
+        province: true,
+        occupation: true,
+        education: true,
+        membershipType: true,
+        whatsapp: true,
+        whatsappPublic: true
+      }
     });
 
     if (!member) {

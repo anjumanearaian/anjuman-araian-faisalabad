@@ -1,6 +1,6 @@
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/Layout";
-import { HomePage } from "./components/HomePage";
+import { HomePage } from "./pages/HomePage";
 import { AboutPage } from "./pages/AboutPage";
 import { VisionMissionPage } from "./pages/VisionMissionPage";
 import { HistoryPage } from "./pages/HistoryPage";

@@ -1,7 +1,7 @@
 import { Outlet, useLocation } from "react-router";
 import { useEffect } from "react";
 import { Navbar } from "./Navbar";
-import { Footer } from "./Footer";
+import Footer from "./Footer";
 import { WhatsAppButton } from "./WhatsAppButton";
 import { fetchSiteSettings } from "../lib/settingsStore";
 
