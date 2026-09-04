@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Admin {
@@ -16,12 +17,12 @@ model Admin {
 
 model Message {
   id        String   @id @default(uuid())
-  type      String   // "contact" or "forgot_password"
+  type      String
   name      String
   email     String
   phone     String?
   message   String
-  status    String   @default("unread") // "unread" or "resolved"
+  status    String   @default("unread")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -60,7 +61,7 @@ model Member {
   cnicFrontUrl     String?
   cnicBackUrl      String?
   paymentProofUrl  String?
-  additionalPhotos String?      // Stored as JSON string
+  additionalPhotos String?
   adminNote        String?
   rejectionReason  String?
   isFeatured       Boolean      @default(false)
@@ -69,7 +70,7 @@ model Member {
   updatedAt        DateTime     @updatedAt
   approvedAt       DateTime?
 
-  familyInfo       FamilyInfo?
+  familyInfo FamilyInfo?
 
   @@index([status])
   @@index([membershipType])
@@ -77,9 +78,9 @@ model Member {
 }
 
 model FamilyInfo {
-  id                     String  @id @default(uuid())
-  memberId               String  @unique
-  member                 Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  id                     String @id @default(uuid())
+  memberId               String @unique
+  member                 Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
   fatherName             String?
   familyBranch           String?
   spouseName             String?
@@ -111,7 +112,7 @@ model Business {
   sponsorshipPackage String
   logoUrl            String?
   paymentProofUrl    String?
-  additionalPhotos   String?  // Stored as JSON string
+  additionalPhotos   String?
   status             String   @default("pending")
   paymentStatus      String   @default("pending")
   adminNote          String?
@@ -135,7 +136,7 @@ model Matrimonial {
   requirements     String
   contact          String
   photoUrl         String?
-  additionalPhotos String?  // JSON string
+  additionalPhotos String?
   paymentProofUrl  String?
   status           String   @default("pending")
   paymentStatus    String   @default("pending")
@@ -153,7 +154,7 @@ model Matrimonial {
 
 model Content {
   id        String   @id @default(uuid())
-  type      String   // "news" or "event"
+  type      String
   title     String
   body      String
   date      String
@@ -161,13 +162,13 @@ model Content {
   location  String?
   category  String
   status    String   @default("draft")
-  images    String?  // JSON string
+  images    String?
   createdAt DateTime @default(now())
 }
 
 model Media {
   id        String   @id @default(uuid())
-  type      String   // "photo" or "video"
+  type      String
   title     String
   caption   String?
   date      String
@@ -176,7 +177,7 @@ model Media {
 }
 
 model OverseasChapter {
-  id          String   @id @default(uuid())
+  id          String @id @default(uuid())
   country     String
   flag        String
   city        String
@@ -184,32 +185,32 @@ model OverseasChapter {
   coordinator String
   phone       String
   email       String
-  members     Int      @default(0)
+  members     Int @default(0)
 }
 
 model LeadershipProfile {
-  id          String  @id @default(uuid())
+  id          String @id @default(uuid())
   name        String
   role        String
-  tier        Int     @default(2)
+  tier        Int @default(2)
   city        String
-  category    String  @default("cabinet")
+  category    String @default("cabinet")
   image       String?
   period      String?
   description String?
 }
 
 model LeadershipMessage {
-  id         String  @id @default(uuid())
-  type       String  @unique // "president" or "secretary"
+  id         String @id @default(uuid())
+  type       String @unique
   name       String
   body       String
   photo      String?
-  attributes String? // JSON string
+  attributes String?
 }
 
 model SiteSettings {
-  id                  String   @id @default("settings")
+  id                  String @id @default("settings")
   whatsappNumber      String
   contactEmail        String
   contactPhone        String
@@ -218,26 +219,26 @@ model SiteSettings {
   twitterUrl          String
   instagramUrl        String
   linkedinUrl         String
-  heroSlides          Json?    // String[]
-  paymentMethods      Json?    // Array of objects
-  membershipTiers     Json?    // Array of objects
-  matrimonialPackages Json?    // Array of objects
+  heroSlides          Json?
+  paymentMethods      Json?
+  membershipTiers     Json?
+  matrimonialPackages Json?
   constitutionPdfUrl  String?
   constitutionPdfName String?
   memorandumPdfUrl    String?
   memorandumPdfName   String?
   rulesPdfUrl         String?
   rulesPdfName        String?
-  developerPercentage Int?     @default(20)
+  developerPercentage Int? @default(20)
 }
 
 model RevenueRecord {
-  id               String   @id @default(uuid())
+  id               String @id @default(uuid())
   customerName     String
   itemType         String
   itemName         String
   amount           Float
-  paymentFrequency String   @default("one_time")
+  paymentFrequency String @default("one_time")
   date             DateTime @default(now())
 
   @@index([itemType])

@@ -4,12 +4,12 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "prisma generate --config backend/prisma.config.ts && vite build",
+    "build": "vite build",
     "dev": "vite",
     "dev:frontend": "vite",
     "dev:backend": "cd backend && npm run dev",
-    "prisma:generate": "prisma generate --config backend/prisma.config.ts",
-    "prisma:push": "prisma db push --config backend/prisma.config.ts"
+    "prisma:generate": "cd backend && prisma generate",
+    "prisma:push": "cd backend && prisma db push"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -67,8 +67,6 @@
     "tailwind-merge": "3.2.0",
     "tw-animate-css": "1.3.8",
     "vaul": "1.1.2",
-    "@prisma/adapter-pg": "^7.8.0",
-    "@prisma/client": "^7.8.0",
     "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -92,7 +90,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.1.0",
     "@types/pg": "^8.20.0",
-    "prisma": "^7.8.0",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
