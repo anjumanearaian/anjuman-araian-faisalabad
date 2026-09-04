@@ -453,22 +453,26 @@ router.get("/me", async (req: Request, res: Response, next: NextFunction) => {
 
     const member = await prisma.member.findUnique({
       where: { id: decoded.id },
-select: {
-  id:true,
-  memberNo:true,
-  fullName:true,
-  email:true,
-  phone:true,
-  familyInfo:true
-}    select: {
-  id: true,
-  memberNo: true,
-  fullName: true,
-  email: true,
-  phone: true,
-  status: true,
-  createdAt: true
-}
+      select: {
+        id: true,
+        memberNo: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        status: true,
+        createdAt: true,
+        familyInfo: true,
+        additionalPhotos: true,
+        photoUrl: true,
+        city: true,
+        district: true,
+        province: true,
+        occupation: true,
+        education: true,
+        membershipType: true,
+        whatsapp: true,
+        whatsappPublic: true
+      }
     });
 
     if (!member) {
