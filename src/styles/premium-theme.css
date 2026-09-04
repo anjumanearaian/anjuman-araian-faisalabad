@@ -1,0 +1,34 @@
+:root{
+ --green:#075B38;
+ --gold:#C58B28;
+ --cream:#FAF7EF;
+}
+body{
+ margin:0;
+ background:var(--cream);
+ font-family:Arial,sans-serif;
+}
+.hero-section{
+ min-height:520px;
+ display:flex;
+ flex-direction:column;
+ justify-content:center;
+ align-items:center;
+ color:white;
+ background:
+ linear-gradient(rgba(7,91,56,.7),rgba(197,139,40,.6));
+}
+.card,.service-card{
+ background:white;
+ padding:25px;
+ margin:12px;
+ border-radius:16px;
+ box-shadow:0 8px 25px rgba(0,0,0,.1);
+}
+.statistics{
+ background:var(--green);
+ color:white;
+ display:flex;
+ justify-content:space-around;
+ padding:40px;
+}
