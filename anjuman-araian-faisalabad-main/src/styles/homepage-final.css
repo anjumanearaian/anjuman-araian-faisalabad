@@ -1,0 +1,4 @@
+
+.hero-final{min-height:520px;background:linear-gradient(#0007,#0007),url('/images/faisalabad.jpg') center/cover;display:flex;align-items:center;justify-content:center;text-align:center;color:white}
+.stats-final{display:grid;grid-template-columns:repeat(5,1fr);gap:20px;padding:40px;text-align:center}
+@media(max-width:768px){.stats-final{grid-template-columns:1fr 1fr}}

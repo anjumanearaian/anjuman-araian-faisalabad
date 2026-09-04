@@ -1,0 +1,1 @@
+export default function LeadershipSection(){return <section><h2>Our Leadership</h2></section>}

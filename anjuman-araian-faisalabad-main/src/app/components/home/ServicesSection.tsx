@@ -1,0 +1,1 @@
+export default function ServicesSection(){return <section><h2>Our Services</h2></section>}
