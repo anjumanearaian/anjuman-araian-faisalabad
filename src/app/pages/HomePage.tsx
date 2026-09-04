@@ -1,19 +1,21 @@
-import Hero from "../components/home/Hero";
-import Statistics from "../components/home/Statistics";
-import Leadership from "../components/home/Leadership";
-import Services from "../components/home/Services";
-import Activities from "../components/home/Activities";
-import Events from "../components/home/Events";
 
-export function HomePage() {
-  return (
-    <>
-      <Hero />
-      <Statistics />
-      <Leadership />
-      <Services />
-      <Activities />
-      <Events />
-    </>
-  );
+import HeroSection from "../components/home/HeroSection";
+import ActivitiesSection from "../components/home/ActivitiesSection";
+import LeadershipSection from "../components/home/LeadershipSection";
+import OrganizationSection from "../components/home/OrganizationSection";
+import ServicesSection from "../components/home/ServicesSection";
+import StatisticsSection from "../components/home/StatisticsSection";
+import EventsSection from "../components/home/EventsSection";
+import "../../styles/homepage-final.css";
+
+export function HomePage(){
+ return <>
+  <HeroSection/>
+  <ActivitiesSection/>
+  <LeadershipSection/>
+  <OrganizationSection/>
+  <ServicesSection/>
+  <StatisticsSection/>
+  <EventsSection/>
+ </>;
 }
