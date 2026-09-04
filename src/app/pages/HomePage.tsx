@@ -8,8 +8,11 @@ export function HomePage() {
         <h2>Latest Activities</h2>
       </section>
       <section>
-        <h2>Leadership</h2>
-      </section>
+<LeadershipSection />
+
+<ServicesSection />
+
+<EventsSection />      </section>
       <section>
         <h2>Services</h2>
       </section>
