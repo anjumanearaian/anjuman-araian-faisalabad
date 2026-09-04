@@ -1,0 +1,1 @@
+export default function OrganizationSection(){return <section><h2>Our Organization</h2></section>}
