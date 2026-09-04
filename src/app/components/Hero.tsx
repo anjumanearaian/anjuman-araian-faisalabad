@@ -5,7 +5,7 @@ const slides = [
   {
     image: "https://images.unsplash.com/photo-1603491656337-3b491147917c?w=1400&h=600&fit=crop&auto=format",
     title: "Anjuman-e-Araian Pakistan",
-    subtitle: "Serving the Araian Community Since 1947",
+    subtitle: "Serving the Araian Community Since 1987",
     description: "United in heritage, committed to progress, dedicated to the welfare of our community across generations.",
     cta: "Learn More",
     ctaHref: "#about",
