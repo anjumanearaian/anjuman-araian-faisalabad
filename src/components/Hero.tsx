@@ -1,11 +1,12 @@
-
 export default function Hero(){
  return (
-  <section className="hero">
-   <h1>Anjuman-e-Araian Faisalabad</h1>
+  <section className="hero-section">
+   <h1>Welcome to Anjuman-e-Araian Faisalabad</h1>
    <p>Unity • Welfare • Progress</p>
-   <button>Become a Member</button>
-   <button>Matrimonial Services</button>
+   <div>
+    <button>Become a Member</button>
+    <button>Matrimonial Services</button>
+   </div>
   </section>
  )
 }

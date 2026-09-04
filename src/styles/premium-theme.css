@@ -1,34 +1,34 @@
-
 :root{
- --green:#075b38;
- --gold:#c58b28;
- --cream:#faf7ef;
+ --green:#075B38;
+ --gold:#C58B28;
+ --cream:#FAF7EF;
 }
 body{
  margin:0;
- font-family:Arial,sans-serif;
  background:var(--cream);
+ font-family:Arial,sans-serif;
 }
-.hero{
- min-height:500px;
+.hero-section{
+ min-height:520px;
  display:flex;
  flex-direction:column;
  justify-content:center;
  align-items:center;
- background:linear-gradient(90deg,#075b38,#c58b28);
  color:white;
+ background:
+ linear-gradient(rgba(7,91,56,.7),rgba(197,139,40,.6));
 }
-.card{
- padding:30px;
- margin:15px;
- border-radius:15px;
+.card,.service-card{
  background:white;
- box-shadow:0 5px 20px #ddd;
+ padding:25px;
+ margin:12px;
+ border-radius:16px;
+ box-shadow:0 8px 25px rgba(0,0,0,.1);
 }
-.stats{
+.statistics{
+ background:var(--green);
+ color:white;
  display:flex;
  justify-content:space-around;
- background:#064b31;
- color:white;
  padding:40px;
 }

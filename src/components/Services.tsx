@@ -1,5 +1,4 @@
-
-const services=[
+const items=[
 'Membership Registration',
 'Matrimonial Services',
 'Member Directory',
@@ -9,7 +8,9 @@ const services=[
 ];
 
 export default function Services(){
- return <section>
- {services.map(x=><div className="card">{x}</div>)}
- </section>
+ return (
+  <section>
+   {items.map(item=><div className="service-card">{item}</div>)}
+  </section>
+ )
 }
