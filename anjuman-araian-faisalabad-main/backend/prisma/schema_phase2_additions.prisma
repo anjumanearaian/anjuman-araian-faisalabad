@@ -1,0 +1,31 @@
+model HeroSlider {
+ id Int @id @default(autoincrement())
+ title String
+ image String?
+ order Int @default(0)
+}
+
+model Leadership {
+ id Int @id @default(autoincrement())
+ name String
+ designation String
+ image String?
+}
+
+model Service {
+ id Int @id @default(autoincrement())
+ title String
+ description String?
+}
+
+model Activity {
+ id Int @id @default(autoincrement())
+ title String
+ image String?
+}
+
+model Event {
+ id Int @id @default(autoincrement())
+ title String
+ date String?
+}

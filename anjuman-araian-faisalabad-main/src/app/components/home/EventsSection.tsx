@@ -1,0 +1,1 @@
+export default function EventsSection(){return <section><h2>Events</h2></section>}
