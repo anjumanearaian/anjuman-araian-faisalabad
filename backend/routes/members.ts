@@ -230,9 +230,36 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         take: limit,
         include: isAdmin ? { familyInfo: true } : undefined,
         orderBy: { createdAt: "desc" },
-        omit: isAdmin 
-          ? { password: true } 
-          : { password: true, cnic: true, dob: true, adminNote: true, rejectionReason: true }, 
+        select: {
+  id: true,
+  memberNo: true,
+  fullName: true,
+  fatherName: true,
+  email: true,
+  phone: true,
+  whatsapp: true,
+  whatsappPublic: true,
+  city: true,
+  district: true,
+  province: true,
+  occupation: true,
+  education: true,
+  membershipType: true,
+  photoUrl: true,
+  status: true,
+  createdAt: true,
+  approvedAt: true,
+  isFeatured: true,
+  isFeaturedPortal: true,
+  ...(isAdmin ? {
+    cnic: true,
+    dob: true,
+    adminNote: true,
+    rejectionReason: true,
+    familyInfo: true
+  } : {})
+}
+        
       }),
       prisma.member.count({ where }),
     ]);
