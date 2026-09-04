@@ -1,18 +1,17 @@
 import HeroSlider from '../components/HeroSlider';
+import ActivitySection from '../components/ActivitySection';
+import LeadershipSection from '../components/LeadershipSection';
+import ServicesSection from '../components/ServicesSection';
+import EventsSection from '../components/EventsSection';
 
 export function HomePage() {
   return (
     <main>
       <HeroSlider />
-      <section>
-        <h2>Latest Activities</h2>
-      </section>
-      <section>
-        <h2>Leadership</h2>
-      </section>
-      <section>
-        <h2>Services</h2>
-      </section>
+      <ActivitySection />
+      <LeadershipSection />
+      <ServicesSection />
+      <EventsSection />
     </main>
   );
 }
