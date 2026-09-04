@@ -1,4 +1,36 @@
-
-.hero-final{min-height:520px;background:linear-gradient(#0007,#0007),url('/images/faisalabad.jpg') center/cover;display:flex;align-items:center;justify-content:center;text-align:center;color:white}
-.stats-final{display:grid;grid-template-columns:repeat(5,1fr);gap:20px;padding:40px;text-align:center}
-@media(max-width:768px){.stats-final{grid-template-columns:1fr 1fr}}
+:root{
+ --green:#075b38;
+ --gold:#c58b28;
+}
+.hero-final{
+ min-height:520px;
+ background:linear-gradient(120deg,var(--green),var(--gold));
+ color:white;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ text-align:center;
+}
+.hero-content h1{font-size:48px}
+.section-card{padding:40px}
+.cards{
+ display:flex;
+ gap:20px;
+ flex-wrap:wrap;
+}
+.card{
+ background:white;
+ padding:25px;
+ border-radius:15px;
+ box-shadow:0 8px 20px #ddd;
+}
+.stats-final{
+ display:flex;
+ justify-content:space-around;
+ background:var(--green);
+ color:white;
+ padding:40px;
+}
+@media(max-width:768px){
+.stats-final{display:grid;grid-template-columns:1fr 1fr}
+}
