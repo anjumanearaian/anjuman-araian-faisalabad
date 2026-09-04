@@ -228,7 +228,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        include: isAdmin ? { familyInfo: true } : undefined,
+        
         orderBy: { createdAt: "desc" },
         select: {
   id: true,
