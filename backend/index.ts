@@ -400,7 +400,8 @@ app.get("/api/automation/birthdays", async (req: Request, res: Response, next: N
   try {
     const expected = process.env.CRON_SECRET;
     if (!expected || req.headers.authorization !== `Bearer ${expected}`) return void res.status(401).json({ error: "Unauthorized" });
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", month: "2-digit", day: "2-digit" }).format(new Date());
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const today = `${parts.find(p => p.type === "month")?.value}-${parts.find(p => p.type === "day")?.value}`;
     const members = await prisma.member.findMany({ where: { status: "approved", email: { not: "" } }, select: { fullName: true, email: true, dob: true } });
     const birthdays = members.filter((m) => {
       const match = String(m.dob || "").match(/^(\d{4})-(\d{2})-(\d{2})/);

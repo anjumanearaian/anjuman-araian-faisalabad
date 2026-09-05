@@ -19,7 +19,7 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction): v
   const token = authHeader.split(" ")[1];
   try {
     const decoded = jwt.verify(token, getJwtSecret()) as any;
-    const allowedRoles = ["admin", "super_admin", "content_manager", "welfare_manager"];
+    const allowedRoles = ["admin", "super_admin"];
     if (!allowedRoles.includes(decoded.role)) {
       res.status(403).json({ error: "Admin access required" });
       return;
@@ -43,7 +43,7 @@ export const requireSuperAdmin = (req: Request, res: Response, next: NextFunctio
   const token = authHeader.split(" ")[1];
   try {
     const decoded = jwt.verify(token, getJwtSecret()) as any;
-    if (decoded.role !== "admin" && decoded.role !== "super_admin") {
+    if (decoded.role !== "super_admin") {
       res.status(403).json({ error: "Super Admin access required" });
       return;
     }
