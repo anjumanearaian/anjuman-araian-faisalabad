@@ -23,7 +23,7 @@ function Alert({
   className,
   variant,
   ...props
-}: React.ComponentProps<"div"> and VariantProps<typeof alertVariants>) {
+}: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
   return (
     <div
       data-slot="alert"

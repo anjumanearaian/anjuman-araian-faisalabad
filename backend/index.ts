@@ -94,6 +94,10 @@ import overseasRouter from "./routes/overseas";
 import leadershipRouter from "./routes/leadership";
 import messagesRouter from "./routes/messages";
 import revenueRouter from "./routes/revenue";
+import activitiesRouter from "./routes/activities";
+import eventsRouter from "./routes/events";
+import homepageRouter from "./routes/homepage";
+import servicesRouter from "./routes/services";
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use("/api/members", membersRouter);
@@ -105,12 +109,10 @@ app.use("/api/overseas", overseasRouter);
 app.use("/api/leadership", leadershipRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/revenue", revenueRouter);
-
-// Global Error Handler
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error(`[ERROR] ${req.method} ${req.url} →`, err.message || err);
-  res.status(500).json({ error: "Internal Server Error", details: err.message || "An unexpected error occurred" });
-});
+app.use("/api/activities", activitiesRouter);
+app.use("/api/events", eventsRouter);
+app.use("/api/homepage", homepageRouter);
+app.use("/api/services", servicesRouter);
 
 process.on("unhandledRejection", (reason, promise) => {
   console.error("[UnhandledRejection]", reason);
@@ -138,7 +140,7 @@ app.get("/api/health", async (req, res) => {
   const ok = database === "connected" && authConfigured;
   res.status(ok ? 200 : 503).json({
     status: ok ? "ok" : "setup_required",
-    version: "preview-1.0",
+    version: "4.1.0",
     database,
     authentication: authConfigured ? "configured" : "not_configured",
     storage: storageConfigured ? "configured" : "not_configured",
@@ -154,6 +156,9 @@ app.post("/api/auth/admin/login", loginLimiter, async (req: Request, res: Respon
       res.status(400).json({ error: "Email/Username and password are required" });
       return;
     }
+
+    // Ensure first-deployment credentials are created before the initial login.
+    await seedAdmin();
 
     // Look up admin from DB by username
     const admin = await prisma.admin.findFirst({

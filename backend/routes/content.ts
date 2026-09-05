@@ -16,7 +16,7 @@ const ContentSchema = z.object({
   time: z.string().nullable().optional(),
   location: z.string().max(300).nullable().optional(),
   category: z.string().min(1).max(100).default("General"),
-  status: z.enum(["draft", "published"]).default("draft"),
+  status: z.enum(["draft", "published", "rejected"]).default("draft"),
   images: z.array(z.string()).optional().default([]),
 });
 

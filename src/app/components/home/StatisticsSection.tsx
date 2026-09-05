@@ -1,5 +1,2 @@
-
-const data=[["500+","Members"],["7+","Committees"],["25+","Welfare Projects"],["3+","Countries"],["35+","Years"]];
-export default function StatisticsSection(){
- return <section className="stats-final">{data.map(x=><div><h2>{x[0]}</h2><p>{x[1]}</p></div>)}</section>
-}
+const data = [["300+", "Community Members"], ["7", "Working Committees"], ["35+", "Years of Service"], ["1", "Shared Community"]];
+export default function StatisticsSection() { return <section className="home-stats"><div className="home-shell">{data.map(([value, label]) => <div key={label}><strong>{value}</strong><span>{label}</span></div>)}</div></section>; }
