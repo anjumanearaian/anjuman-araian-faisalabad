@@ -140,7 +140,7 @@ app.get("/api/health", async (req, res) => {
   const ok = database === "connected" && authConfigured;
   res.status(ok ? 200 : 503).json({
     status: ok ? "ok" : "setup_required",
-    version: "4.0.0",
+    version: "4.1.0",
     database,
     authentication: authConfigured ? "configured" : "not_configured",
     storage: storageConfigured ? "configured" : "not_configured",

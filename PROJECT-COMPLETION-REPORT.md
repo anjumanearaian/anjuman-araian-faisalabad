@@ -1,6 +1,6 @@
 # Project Completion Report
 
-Release: 4.0.0
+Release: 4.1.0
 
 ## Completed and repaired
 
@@ -16,6 +16,8 @@ Release: 4.0.0
 - Added correct database setup and full verification scripts.
 - Added missing local hero assets, page metadata and production documentation.
 - Removed reliance on an incomplete nested project copy from the release package.
+- Replaced every legacy homepage placeholder component with an alias to the completed component.
+- Packaged the deployment ZIP with `package.json` at archive root to prevent an incorrect Vercel root directory.
 
 ## Verified
 
