@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { Router, Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -35,7 +36,7 @@ router.post("/email/request-otp", loginLimiter, async (req: Request, res: Respon
   try {
     const email = normalize(req.body?.email);
     if (!validEmail.test(email)) return void res.status(400).json({ error: "Enter a valid email address" });
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = String(randomInt(100000, 1000000));
     const codeHash = await bcrypt.hash(code, 10);
     await prisma.emailOtp.deleteMany({ where: { email, consumedAt: null } });
     await prisma.emailOtp.create({ data: { email, codeHash, expiresAt: new Date(Date.now() + 10 * 60 * 1000) } });
@@ -56,7 +57,8 @@ router.post("/email/verify-otp", loginLimiter, async (req: Request, res: Respons
       await prisma.emailOtp.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } });
       return void res.status(401).json({ error: "Incorrect verification code" });
     }
-    await prisma.emailOtp.update({ where: { id: record.id }, data: { consumedAt: new Date() } });
+    const consumed = await prisma.emailOtp.updateMany({ where: { id: record.id, consumedAt: null, expiresAt: { gt: new Date() }, attempts: { lt: 5 } }, data: { consumedAt: new Date() } });
+    if (consumed.count !== 1) return void res.status(401).json({ error: "Code already used or expired. Request a new code." });
     res.json(await issueSession(email));
   } catch (error) { next(error); }
 });

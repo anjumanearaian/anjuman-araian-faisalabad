@@ -100,7 +100,7 @@ router.post("/login", loginLimiter, validate(LoginSchema), async (req: Request, 
       return;
     }
     
-    if (member.status === "rejected") {
+    if (["rejected", "suspended", "deceased"].includes(member.status)) {
       res.status(403).json({ error: "Your registration was not approved. Please contact the administration." });
       return;
     }
@@ -247,7 +247,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       const token = authHeader.split(" ")[1];
       try {
         const decoded = jwt.verify(token, getJwtSecret()) as { role: string };
-        if (decoded.role === "admin" || decoded.role === "super_admin" || decoded.role === "content_manager" || decoded.role === "welfare_manager") {
+        if (decoded.role === "admin" || decoded.role === "super_admin") {
           isAdmin = true;
         } else if (decoded.role === "member") {
           isMember = true;
@@ -371,7 +371,7 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, ne
     const id = String(req.params.id);
     const { status, adminNote, rejectionReason } = req.body;
 
-    const validStatuses = ["pending", "approved", "rejected", "suspended"];
+    const validStatuses = ["pending", "approved", "rejected", "suspended", "deceased"];
     if (!validStatuses.includes(status)) {
       res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
       return;
@@ -422,6 +422,15 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
       return;
     }
 
+    if (!["admin", "super_admin", "member", "applicant"].includes(user.role)) {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+    if (user.role === "applicant") {
+      const own = await prisma.member.findUnique({ where: { id }, select: { authUserId: true, status: true } });
+      if (!own || own.authUserId !== user.id || own.status !== "approved") {
+        res.status(403).json({ error: "An approved membership belonging to this account is required" }); return;
+      }
+    }
     const rawUpdates = { ...req.body };
     const memberEditableFields = new Set([
       "fullName", "fatherName", "dob", "gender", "bloodGroup",
@@ -432,7 +441,7 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
     ]);
 
     let updates: any = rawUpdates;
-    if (user.role === "member") {
+    if (user.role === "member" || user.role === "applicant") {
       updates = Object.fromEntries(
         Object.entries(rawUpdates).filter(([key]) => memberEditableFields.has(key))
       );
@@ -444,6 +453,8 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
     }
 
     // Password changes use the dedicated current-password verification route.
+    delete updates.authUserId;
+    delete updates.familyInfo;
     delete updates.password;
     delete updates.status;
     delete updates.approvedAt;
@@ -484,6 +495,9 @@ router.post("/:id/change-password", requireMember, async (req: Request, res: Res
       return;
     }
 
+    if (!["admin", "super_admin", "member"].includes(user.role)) {
+      res.status(403).json({ error: "Use email or Google sign-in for this account" }); return;
+    }
     const { currentPassword, newPassword } = req.body || {};
     if (!currentPassword || !newPassword || String(newPassword).length < 8) {
       res.status(400).json({ error: "Current password and a new password of at least 8 characters are required" });
