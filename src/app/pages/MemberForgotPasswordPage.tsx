@@ -16,7 +16,7 @@ export function MemberForgotPasswordPage() {
   const [sent, setSent] = useState(false);
 
   const adminWhatsApp = settings.whatsappNumber ? settings.whatsappNumber.replace(/\D/g, "") : "923000000000";
-  const adminEmail = settings.contactEmail || "info@anjumanearaien.com";
+  const adminEmail = settings.contactEmail || "anjumanearaianfaisalabad@gmail.com";
 
   // Pre-formatted messages
   const getMessageString = () => {

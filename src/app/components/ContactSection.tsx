@@ -45,7 +45,7 @@ export function ContactSection() {
               {
                 icon: Mail,
                 title: "Email",
-                lines: settings.contactEmail ? [settings.contactEmail] : ["info@anjumanearaian.org", "welfare@anjumanearaian.org", "membership@anjumanearaian.org"],
+                lines: [settings.contactEmail || "anjumanearaianfaisalabad@gmail.com", "info@anjumanearaian.org"],
               },
               {
                 icon: Clock,

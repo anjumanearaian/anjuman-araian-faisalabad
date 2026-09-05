@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { Member } from "../lib/memberStore";
 
 import { apiClient } from "../lib/apiClient";
@@ -6,6 +6,7 @@ import { apiClient } from "../lib/apiClient";
 interface MemberContextType {
   member: Member | null;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  acceptSession: (session: { token: string; member?: Member | null }) => void;
   logout: () => void;
   refresh: () => Promise<void>;
 }
@@ -13,6 +14,7 @@ interface MemberContextType {
 const MemberContext = createContext<MemberContextType>({
   member: null,
   login: async () => ({ ok: false }),
+  acceptSession: () => {},
   logout: () => {},
   refresh: async () => {},
 });
@@ -42,6 +44,11 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     setMember(null);
   }, []);
 
+  const acceptSession = useCallback((session: { token: string; member?: Member | null }) => {
+    localStorage.setItem("araian_member_token", session.token);
+    setMember(session.member || null);
+  }, []);
+
   const refresh = useCallback(async () => {
     const token = localStorage.getItem("araian_member_token");
     if (!token) { setMember(null); return; }
@@ -54,8 +61,10 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useEffect(() => { void refresh(); }, [refresh]);
+
   return (
-    <MemberContext.Provider value={{ member, login, logout, refresh }}>
+    <MemberContext.Provider value={{ member, login, acceptSession, logout, refresh }}>
       {children}
     </MemberContext.Provider>
   );

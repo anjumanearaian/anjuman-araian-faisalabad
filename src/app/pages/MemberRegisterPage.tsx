@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { PageHeader } from "../components/PageHeader";
 import { CheckCircle, Upload, User, Phone, MapPin, BookOpen, FileText, Users } from "lucide-react";
@@ -8,6 +8,7 @@ import { getSiteSettings } from "../lib/settingsStore";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import { apiClient } from "../lib/apiClient";
 import { uploadFile } from "../lib/upload";
+import { PasswordlessSignIn } from "../components/PasswordlessSignIn";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
@@ -70,18 +71,44 @@ export function MemberRegisterPage() {
   const [done, setDone] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const settings = getSiteSettings();
+  const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem("araian_member_token")));
+  const [saveState, setSaveState] = useState<"loading" | "saved" | "saving" | "error">("loading");
+  const hydrated = useRef(false);
 
   const [form, setForm] = useState({
     fullName: "", fatherName: "", cnic: "", dob: "", gender: "Male", bloodGroup: "O+",
-    email: "", phone: "", whatsapp: "", address: "", city: "", district: "", province: "Punjab",
+    email: localStorage.getItem("araian_verified_email") || "", phone: "", whatsapp: "", address: "", city: "", district: "", province: "Punjab",
     occupation: "Agriculture", education: "Bachelor's",
+    designation: "", institutionName: "", businessName: "", memberCell: "male" as "male" | "women",
     membershipType: "ordinary" as MembershipType,
-    password: "", confirmPassword: "",
     photoUrl: "", cnicFrontUrl: "", cnicBackUrl: "", paymentProofUrl: "",
     additionalPhotos: [] as string[]
   });
 
   const [family, setFamily] = useState<FamilyInfo>(blankFamily());
+
+  useEffect(() => {
+    if (!authenticated) return;
+    apiClient<any>("/forms/membership").then((draft) => {
+      if (draft?.data) {
+        if (draft.data.form) setForm((old) => ({ ...old, ...draft.data.form }));
+        if (draft.data.family) setFamily((old) => ({ ...old, ...draft.data.family }));
+        if (typeof draft.currentStep === "number") setStep(Math.min(5, draft.currentStep));
+      }
+      setSaveState("saved"); hydrated.current = true;
+    }).catch(() => { setSaveState("error"); setAuthenticated(false); localStorage.removeItem("araian_member_token"); });
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!authenticated || !hydrated.current || done) return;
+    setSaveState("saving");
+    const timer = window.setTimeout(() => {
+      const meaningful = Object.values(form).filter(Boolean).length + Object.values(family).filter(Boolean).length;
+      apiClient("/forms/membership", { method: "PUT", body: JSON.stringify({ data: { form, family }, currentStep: step, completion: Math.min(95, Math.round((meaningful / 31) * 100)), status: "incomplete" }) })
+        .then(() => setSaveState("saved")).catch(() => setSaveState("error"));
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [form, family, step, authenticated, done]);
 
   const set = (k: keyof typeof form, v: any) => { setForm((f) => ({ ...f, [k]: v } as any)); setErrors((e) => ({ ...e, [k]: "" })); };
   const setFam = (k: keyof FamilyInfo, v: string) => setFamily((f) => ({ ...f, [k]: v }));
@@ -96,12 +123,6 @@ export function MemberRegisterPage() {
     }
     if (field === "phone" && form.phone && !/^\+?[0-9]{10,15}$/.test(form.phone.replace(/[\s-]/g, ""))) {
       errs.phone = "Enter a valid phone number (e.g. +92 300 1234567).";
-    }
-    if (field === "password" && form.password && form.password.length < 8) {
-      errs.password = "Password must be at least 8 characters.";
-    }
-    if (field === "confirmPassword" && form.confirmPassword && form.password !== form.confirmPassword) {
-      errs.confirmPassword = "Passwords do not match.";
     }
     setErrors(errs);
   };
@@ -140,10 +161,6 @@ export function MemberRegisterPage() {
       if (!form.city.trim()) errs.city = "City is required.";
       if (!form.address.trim()) errs.address = "Address is required.";
     }
-    if (step === 3) {
-      if (form.password.length < 8) errs.password = "Password must be at least 8 characters.";
-      if (form.password !== form.confirmPassword) errs.confirmPassword = "Passwords do not match.";
-    }
     if (step === 5) {
       if (!form.photoUrl) errs.photoUrl = "Passport photo is required.";
       if (!form.cnicFrontUrl) errs.cnicFrontUrl = "CNIC Front image is required.";
@@ -180,8 +197,11 @@ export function MemberRegisterPage() {
         province: form.province,
         occupation: form.occupation,
         education: form.education,
+        designation: form.designation,
+        institutionName: form.institutionName,
+        businessName: form.businessName,
+        memberCell: form.memberCell,
         membershipType: form.membershipType,
-        password: form.password,
         familyInfoPublic: false,
         photoUrl: form.photoUrl || undefined,
         cnicFrontUrl: form.cnicFrontUrl || undefined,
@@ -227,6 +247,8 @@ export function MemberRegisterPage() {
     }
   };
 
+  if (!authenticated) return <div><PageHeader title="Verify Your Email" subtitle="Sign in once, then your registration saves automatically" breadcrumb={["Home", "Member Portal", "Register"]} /><section style={{ maxWidth: 480, margin: "48px auto", padding: "0 24px" }}><div style={{ background: "white", borderRadius: 14, padding: 32, boxShadow: "0 6px 30px rgba(0,0,0,.08)" }}><h2 style={{ color: GREEN, marginTop: 0 }}>Start or resume your form</h2><p style={{ color: "#666", fontSize: 14, lineHeight: 1.7 }}>Use Google or any email address. We will restore every saved answer automatically.</p><PasswordlessSignIn onAuthenticated={(session) => { set("email", session.user.email); setAuthenticated(true); }} compact /></div></section></div>;
+
   if (done) {
     return (
       <div>
@@ -255,6 +277,7 @@ export function MemberRegisterPage() {
     <div>
       <PageHeader title="Member Registration" subtitle="Join the Anjuman-e-Araian family" breadcrumb={["Home", "Member Portal", "Register"]} />
       <section style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
+        <div aria-live="polite" style={{ textAlign: "right", color: saveState === "error" ? "#b91c1c" : "#64748b", fontSize: 12, marginBottom: 10 }}>{saveState === "saving" ? "Saving changes…" : saveState === "saved" ? "✓ All changes saved" : saveState === "error" ? "Could not save — check connection" : "Restoring saved form…"}</div>
         <StepIndicator current={step} />
         <div style={{ backgroundColor: "white", borderRadius: 14, padding: "36px 40px", boxShadow: "0 4px 24px rgba(0,0,0,0.07)", border: "1px solid rgba(26,77,46,0.08)" }}>
 
@@ -292,11 +315,11 @@ export function MemberRegisterPage() {
             <div>
               <SectionHead icon={Phone} title="Contact and Location" />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid">
-                <Field label="Email Address *" error={errors.email}><input type="email" style={inputStyle} value={form.email} onChange={(e) => set("email", e.target.value)} onBlur={() => handleBlur("email")} placeholder="you@example.com" /></Field>
+                <Field label="Verified Email Address *" error={errors.email}><input type="email" readOnly style={{ ...inputStyle, background: "#f0f7f3" }} value={form.email} /></Field>
                 <Field label="Phone Number *" error={errors.phone}><input type="tel" style={inputStyle} value={form.phone} onChange={(e) => set("phone", e.target.value)} onBlur={() => handleBlur("phone")} placeholder="+92 300 000 0000" /></Field>
                 <Field label="WhatsApp Number"><input type="tel" style={inputStyle} value={form.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} placeholder="Leave blank if same as phone" /></Field>
                 <Field label="City *" error={errors.city}><input style={inputStyle} value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="e.g. Faisalabad" /></Field>
-                <Field label="District"><input style={inputStyle} value={form.district} onChange={(e) => set("district", e.target.value)} placeholder="e.g. Faisalabad" /></Field>
+                <Field label="District"><input list="pakistan-districts" style={inputStyle} value={form.district} onChange={(e) => set("district", e.target.value)} placeholder="Select or type district" /><datalist id="pakistan-districts">{["Faisalabad","Lahore","Gujranwala","Sialkot","Rawalpindi","Multan","Sargodha","Jhang","Toba Tek Singh","Chiniot","Sheikhupura","Islamabad","Karachi","Peshawar","Quetta"].map(d => <option key={d} value={d} />)}</datalist></Field>
                 <Field label="Province"><select style={inputStyle} value={form.province} onChange={(e) => set("province", e.target.value)}>{provinces.map((p) => <option key={p}>{p}</option>)}</select></Field>
                 <div style={{ gridColumn: "span 2" }}>
                   <Field label="Full Address *" error={errors.address}><textarea rows={2} style={{ ...inputStyle, resize: "vertical" }} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="House number, street, area..." /></Field>
@@ -312,6 +335,9 @@ export function MemberRegisterPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid">
                 <Field label="Highest Education"><select style={inputStyle} value={form.education} onChange={(e) => set("education", e.target.value)}>{educationLevels.map((e) => <option key={e}>{e}</option>)}</select></Field>
                 <Field label="Occupation"><select style={inputStyle} value={form.occupation} onChange={(e) => set("occupation", e.target.value)}>{occupations.map((o) => <option key={o}>{o}</option>)}</select></Field>
+                <Field label="Designation / Role"><input style={inputStyle} value={form.designation} onChange={(e) => set("designation", e.target.value)} placeholder="e.g. Director, Teacher, Student" /></Field>
+                <Field label="Institute / Organization Name"><input style={inputStyle} value={form.institutionName} onChange={(e) => set("institutionName", e.target.value)} placeholder="School, college, university or employer" /></Field>
+                <div style={{ gridColumn: "span 2" }}><Field label="Business Name (if applicable)"><input style={inputStyle} value={form.businessName} onChange={(e) => set("businessName", e.target.value)} placeholder="Business or establishment name" /></Field></div>
               </div>
             </div>
           )}
@@ -319,7 +345,7 @@ export function MemberRegisterPage() {
           {/* Step 3 — Membership */}
           {step === 3 && (
             <div>
-              <SectionHead icon={FileText} title="Membership Type and Account" />
+              <SectionHead icon={FileText} title="Membership Type and Payment" subtitle="Your verified email is your account—no password is required." />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 16, marginBottom: 28 }} className="mem-grid">
                 {(settings.membershipTiers || []).map((tier) => (
                   <div key={tier.id} onClick={() => set("membershipType", tier.type)} style={{ border: `2px solid ${form.membershipType === tier.type ? GOLD : "#e5e7eb"}`, borderRadius: 10, padding: "16px 14px", cursor: "pointer", backgroundColor: form.membershipType === tier.type ? "#fff9ef" : "white" }}>
@@ -347,10 +373,7 @@ export function MemberRegisterPage() {
                   </div>
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid">
-                <Field label="Password *" error={errors.password}><input type="password" style={inputStyle} value={form.password} onChange={(e) => set("password", e.target.value)} onBlur={() => handleBlur("password")} placeholder="Create a strong password" /></Field>
-                <Field label="Confirm Password *" error={errors.confirmPassword}><input type="password" style={inputStyle} value={form.confirmPassword} onChange={(e) => set("confirmPassword", e.target.value)} onBlur={() => handleBlur("confirmPassword")} placeholder="Repeat your password" /></Field>
-              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid"><Field label="Member Category"><select style={inputStyle} value={form.membershipType} onChange={e => set("membershipType", e.target.value)}><option value="ordinary">Regular / Annual Member</option><option value="life">Life Member</option><option value="patron">Patron Member</option><option value="overseas">Overseas Member</option></select></Field><Field label="Community Cell"><select style={inputStyle} value={form.memberCell} onChange={e => set("memberCell", e.target.value)}><option value="male">Men's Cell</option><option value="women">Women's Cell</option></select></Field></div>
             </div>
           )}
 
@@ -399,7 +422,7 @@ export function MemberRegisterPage() {
           {/* Step 5 — Documents */}
           {step === 5 && (
             <div>
-              <SectionHead icon={Upload} title="Upload Documents and Payment Proof" subtitle="Max 2MB each. Accepted: JPG, PNG, PDF." />
+              <SectionHead icon={Upload} title="Upload Documents and Payment Proof" subtitle="Maximum 4MB each. Accepted: JPG, PNG, WebP or PDF." />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20, marginBottom: 24 }} className="doc-grid">
                 {[
                   { key: "photoUrl", label: "Passport Photo *", hint: "Recent photo, white background" },

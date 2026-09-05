@@ -6,16 +6,14 @@ const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
 
 export function SecretaryMessagePage() {
-  const [msg, setMsg] = useState<LeadershipMessageData | null>(null);
+  const [msg, setMsg] = useState<LeadershipMessageData>({ name: "Dr Mian Saqib Rahman", body: "We welcome members to participate in Anjuman-e-Araian Faisalabad's welfare, educational and community programmes.", attributes: [] });
 
   useEffect(() => {
     fetchLeadershipMessages().then(msgs => {
       const sMsg = msgs.find(m => m.type === "secretary");
       if (sMsg) setMsg(sMsg);
-    });
+    }).catch(() => {});
   }, []);
-
-  if (!msg) return <div style={{ padding: "100px 0", textAlign: "center" }}>Loading...</div>;
 
   return (
     <div>

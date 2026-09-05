@@ -44,7 +44,7 @@ export interface SiteSettings {
 
 const defaultSettings: SiteSettings = {
   whatsappNumber: "923008655522",
-  contactEmail: "info@anjumanearaian.org",
+  contactEmail: "anjumanearaianfaisalabad@gmail.com",
   contactPhone: "+92 300 865 5522",
   address: "Central Secretariat, Anjuman-e-Araian, Faisalabad, Pakistan",
   facebookUrl: "https://facebook.com",
@@ -56,14 +56,14 @@ const defaultSettings: SiteSettings = {
     { id: "p2", bankName: "EasyPaisa", accountTitle: "Admin", accountNo: "0300 000 0000" }
   ],
   membershipTiers: [
-    { id: "t1", type: "ordinary", name: "Ordinary Member", fee: "Rs. 500 / year", description: "Voting rights, welfare access, newsletter" },
-    { id: "t2", type: "life", name: "Life Member", fee: "Rs. 5,000 once", description: "All ordinary benefits + scholarship priority + annual convention" },
+    { id: "t1", type: "ordinary", name: "Regular / Annual Member", fee: "Rs. 1,000 / year", description: "Voting rights, welfare access and member directory" },
+    { id: "t2", type: "life", name: "Life Member", fee: "Rs. 3,000 once", description: "Permanent membership with all regular-member benefits" },
     { id: "t3", type: "patron", name: "Patron Member", fee: "Rs. 25,000 once", description: "All life benefits + advisory seat + VIP access" },
     { id: "t4", type: "overseas", name: "Overseas Member", fee: "$100 / year", description: "International networking, overseas chapter access, newsletter" }
   ],
   matrimonialPackages: [
-    { id: "mp1", name: "Standard Listing", fee: "Rs. 500 once", description: "Standard directory listing for finding a match.", isFeatured: false },
-    { id: "mp2", name: "Featured / VIP Listing", fee: "Rs. 2,000 once", description: "Priority placement at the top of the directory with a VIP badge.", isFeatured: true }
+    { id: "mp1", name: "Member Matrimonial Application", fee: "Rs. 3,000 once", description: "For an approved member or their son/daughter; member data is prefilled.", isFeatured: false },
+    { id: "mp2", name: "Non-Member Matrimonial Application", fee: "Rs. 5,000 once", description: "For a new applicant, including verification and office processing.", isFeatured: false }
   ]
 };
 

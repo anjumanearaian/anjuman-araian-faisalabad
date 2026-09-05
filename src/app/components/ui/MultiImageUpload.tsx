@@ -18,9 +18,9 @@ export function MultiImageUpload({ images = [], onChange, label }: MultiImageUpl
     if (!files.length) return;
 
     // Check file sizes
-    const oversized = files.find(f => f.size > 5 * 1024 * 1024);
+    const oversized = files.find(f => f.size > 4 * 1024 * 1024);
     if (oversized) {
-      setError("Each file must be less than 5MB");
+      setError("Each file must be 4MB or smaller");
       return;
     }
 

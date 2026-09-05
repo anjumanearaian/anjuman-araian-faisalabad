@@ -21,10 +21,6 @@ export function MemberPortalPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"directory" | "matrimonial" | "profile" | "edit" | "password" | "documents" | "family">("matrimonial");
   const [editForm, setEditForm] = useState<Record<string, string>>({});
-  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
-  const [pwErr, setPwErr] = useState("");
-  const [pwOk, setPwOk] = useState(false);
-  const [showPw, setShowPw] = useState(false);
   const [saved, setSaved] = useState(false);
 
   if (!member) {
@@ -67,25 +63,6 @@ export function MemberPortalPage() {
     }
   };
 
-  const savePassword = async () => {
-    setPwErr("");
-        if (pwForm.next.length < 8) { setPwErr("New password must be at least 8 characters."); return; }
-    if (pwForm.next !== pwForm.confirm) { setPwErr("Passwords do not match."); return; }
-    
-    try {
-      await apiClient(`/members/${member.id}/change-password`, {
-        method: "POST",
-        body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next })
-      });
-      await refresh();
-      setPwOk(true);
-      setPwForm({ current: "", next: "", confirm: "" });
-      setTimeout(() => setPwOk(false), 3000);
-    } catch (e: any) {
-      setPwErr("Failed to update password: " + e.message);
-    }
-  };
-
   const handleDocUpload = (key: string) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -113,7 +90,7 @@ export function MemberPortalPage() {
     { key: "matrimonial", label: "Matrimonial Directory" },
     { key: "profile", label: "My Profile" },
     { key: "edit", label: "Edit Details" },
-    { key: "password", label: "Change Password" },
+    { key: "password", label: "Login Security" },
     { key: "documents", label: "Documents" },
     { key: "family", label: "Family Info 🔒" },
   ];
@@ -277,24 +254,11 @@ export function MemberPortalPage() {
             </div>
           )}
 
-          {/* ── Password ── */}
+          {/* ── Passwordless security ── */}
           {tab === "password" && (
             <div>
-              <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginBottom: 24, paddingBottom: 14, borderBottom: "2px solid #f5f5f5" }}>Change Password</h3>
-              {pwOk && <div style={{ backgroundColor: "#dcfce7", borderRadius: 8, padding: "12px 16px", marginBottom: 20 }}><p style={{ color: "#15803d", fontSize: 14, margin: 0 }}>✓ Password updated successfully.</p></div>}
-              {pwErr && <div style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: "12px 16px", marginBottom: 20 }}><p style={{ color: "#b91c1c", fontSize: 14, margin: 0 }}>{pwErr}</p></div>}
-              <div style={{ maxWidth: 400, display: "flex", flexDirection: "column", gap: 16 }}>
-                {[["current", "Current Password"], ["next", "New Password"], ["confirm", "Confirm New Password"]].map(([k, label]) => (
-                  <div key={k}>
-                    <label style={{ display: "block", color: GREEN, fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{label}</label>
-                    <div style={{ position: "relative" }}>
-                      <input type={showPw ? "text" : "password"} style={{ ...inputStyle, paddingRight: 44 }} value={pwForm[k as keyof typeof pwForm]} onChange={(e) => { setPwErr(""); setPwForm((f) => ({ ...f, [k]: e.target.value })); }} />
-                      {k === "current" && <button type="button" onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#aaa" }}>{showPw ? <EyeOff size={16} /> : <Eye size={16} />}</button>}
-                    </div>
-                  </div>
-                ))}
-                <button onClick={savePassword} style={{ backgroundColor: GREEN, color: "white", border: "none", borderRadius: 8, padding: "11px 24px", fontWeight: 700, fontSize: 14, cursor: "pointer", alignSelf: "flex-start" }}>Update Password</button>
-              </div>
+              <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginBottom: 24, paddingBottom: 14, borderBottom: "2px solid #f5f5f5" }}>Passwordless Login Security</h3>
+              <div style={{ background: "#f0f7f3", border: "1px solid rgba(26,77,46,.15)", borderRadius: 12, padding: 22 }}><Shield size={24} color={GREEN} /><h4 style={{ color: GREEN, margin: "12px 0 6px" }}>No password is stored for this account</h4><p style={{ color: "#555", fontSize: 14, lineHeight: 1.8, margin: 0 }}>Sign in with Google or request a one-time code at <strong>{member.email}</strong>. Each code expires after 10 minutes, so there is no password to remember or reset.</p></div>
             </div>
           )}
 

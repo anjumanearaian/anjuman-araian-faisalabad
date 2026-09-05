@@ -2,15 +2,16 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 
 import prisma from "../lib/prisma";
-import { requireAdmin } from "../middleware/auth";
+import { requireAdmin, requireMember } from "../middleware/auth";
 import { validate } from "../middleware/validate";
+import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
 
 const router = Router();
 
 // ─── Validation Schema ────────────────────────────────────────────────────────
 const urlOrBase64 = z.string()
   .refine(
-    (val) => !val || val.startsWith("data:") || val.startsWith("http://") || val.startsWith("https://") || val.startsWith("/uploads/"),
+    (val) => !val || val.startsWith("data:") || val.startsWith("http://") || val.startsWith("https://") || val.startsWith("/uploads/") || val.startsWith("/api/files/"),
     { message: "Must be a valid URL or base64 data URI" }
   )
   .nullable()
@@ -30,6 +31,7 @@ const MatrimonialSchema = z.object({
   additionalPhotos: z.array(z.string()).optional(),
   paymentProofUrl: urlOrBase64,
   packageId: z.string().optional(),
+  relationToCandidate: z.string().max(100).optional(),
 });
 
 // ─── Get All Matrimonial Profiles — Admin Only ────────────────────────────────
@@ -92,7 +94,7 @@ router.get("/published", async (req: Request, res: Response, next: NextFunction)
 });
 
 // ─── Submit New Matrimonial Profile ──────────────────────────────────────────
-router.post("/submit", validate(MatrimonialSchema), async (req: Request, res: Response, next: NextFunction) => {
+router.post("/submit", requireMember, validate(MatrimonialSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Strip fields not in Prisma schema (e.g. packageId from frontend)
     const {
@@ -100,7 +102,12 @@ router.post("/submit", validate(MatrimonialSchema), async (req: Request, res: Re
       familyBackground, requirements, contact,
       photoUrl, paymentProofUrl,
       additionalPhotos: rawAdditional = [],
+      relationToCandidate,
     } = req.body;
+    const authUser = (req as any).user;
+    const linkedMember = await prisma.member.findFirst({ where: { OR: [{ authUserId: authUser.id }, { email: { equals: authUser.email, mode: "insensitive" } }], status: "approved" } });
+    const applicantType = linkedMember ? "member" : "non_member";
+    const feeAmount = linkedMember ? 3000 : 5000;
 
     // Filter out base64 strings — only keep server-uploaded /uploads/ URLs
     const cleanAdditional = (rawAdditional as string[]).filter(
@@ -115,11 +122,17 @@ router.post("/submit", validate(MatrimonialSchema), async (req: Request, res: Re
       photoUrl: photoUrl || null,
       paymentProofUrl: paymentProofUrl || null,
       additionalPhotos: JSON.stringify(cleanAdditional),
+      authUserId: authUser.id,
+      applicantType,
+      feeAmount,
+      relationToCandidate: relationToCandidate || "Self",
     };
     console.log("MATRIMONIAL SUBMIT REQ.BODY:", req.body);
     console.log("MATRIMONIAL CLEAN DATA:", data);
 
     const newProfile = await prisma.matrimonial.create({ data });
+    await prisma.formDraft.upsert({ where: { authUserId_formType: { authUserId: authUser.id, formType: "matrimonial" } }, update: { status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date() }, create: { authUserId: authUser.id, formType: "matrimonial", data: req.body, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date() } });
+    void sendEmail(MASTER_EMAIL, `New matrimonial application: ${name}`, emailFrame("New matrimonial application", `<p>${name} has submitted a ${applicantType.replace("_", "-")} matrimonial application.</p><p>Fee: <strong>PKR ${feeAmount.toLocaleString()}</strong><br>Contact: ${contact}</p>`)).catch(console.error);
     res.status(201).json({ ...newProfile, additionalPhotos: JSON.parse(newProfile.additionalPhotos || "[]") });
   } catch (err) {
     next(err);

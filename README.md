@@ -6,7 +6,7 @@ Production-oriented React, Express and PostgreSQL platform for the public websit
 
 - Responsive public website with home, about, history, constitution and leadership pages
 - News and events publishing workflow
-- Member registration, document upload, login, profile management and admin approval
+- Passwordless Google/email-OTP login, auto-saved member registration, document upload and admin approval
 - Private family information fields
 - Business directory submissions and approval workflow
 - Matrimonial inquiry submissions, payment status and privacy controls
@@ -34,7 +34,11 @@ The frontend opens on `http://localhost:5173` and proxies `/api` to the backend 
 - `ADMIN_USERNAME`: first administrator email/username
 - `ADMIN_PASSWORD`: strong first administrator password
 - `ALLOWED_ORIGINS`: comma-separated production origins
-- `BLOB_READ_WRITE_TOKEN`: provided when Vercel Blob is connected
+- `GOOGLE_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID`: Google Identity Services web client ID
+- `GMAIL_USER` and `GMAIL_APP_PASSWORD`: sends OTP, submission and birthday emails
+- `MASTER_EMAIL` and `INFO_EMAIL`: official notification and reply-to addresses
+- `CRON_SECRET`: protects the daily birthday automation endpoint
+- `BLOB_READ_WRITE_TOKEN`: optional Vercel Blob storage; PostgreSQL is used as a small-file fallback
 
 Never commit a real `.env` file. Change the initial admin password after first login.
 

@@ -26,8 +26,8 @@ const navLinks = [
     label: "Members",
     to: "/cabinet",
     children: [
-      { label: "Cabinet Members", to: "/cabinet" },
-      { label: "Executive Members", to: "/executive-members" },
+      { label: "Executive Council", to: "/cabinet" },
+      { label: "Executive Committee Members", to: "/executive-members" },
       { label: "Advisory Board", to: "/advisory-board" },
       { label: "Founders and Patrons", to: "/founders" },
       { label: "Ex-Presidents", to: "/ex-presidents" },
