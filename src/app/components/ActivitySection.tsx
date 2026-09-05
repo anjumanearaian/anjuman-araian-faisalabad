@@ -1,3 +1,8 @@
-export default function ActivitySection(){
- return <section className="section-card"><h2>Latest Activities</h2></section>
+export default function ActivitySection() {
+  return (
+    <section>
+      <h2>Latest Activities</h2>
+      <p>Latest organization activities will appear here.</p>
+    </section>
+  );
 }

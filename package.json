@@ -10,7 +10,9 @@
     "dev:frontend": "vite",
     "dev:backend": "cd backend && npm run dev",
     "prisma:generate": "cd backend && prisma generate",
-    "prisma:push": "cd backend && prisma db push"
+    "prisma:push": "prisma db push --schema=backend/prisma/schema.prisma",
+    "db:setup": "prisma db push --schema=backend/prisma/schema.prisma && prisma generate --schema=backend/prisma/schema.prisma",
+    "check": "tsc --noEmit && tsc -p backend/tsconfig.json --noEmit && vite build"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
