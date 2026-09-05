@@ -8,6 +8,9 @@
       "maxDuration": 10
     }
   },
+  "crons": [
+    { "path": "/api/automation/birthdays", "schedule": "0 4 * * *" }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/|uploads/).*)",

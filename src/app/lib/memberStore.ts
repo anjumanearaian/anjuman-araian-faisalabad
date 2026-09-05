@@ -41,7 +41,12 @@ export interface Member {
   // Membership
   membershipType: MembershipType;
   // Auth
-  password: string;
+  password?: string;
+  designation?: string;
+  institutionName?: string;
+  businessName?: string;
+  memberCell?: "male" | "women";
+  paymentStatus?: string;
   // Family info (private — admin only by default)
   family: FamilyInfo;
   familyInfoPublic: boolean;
@@ -124,4 +129,3 @@ export async function deleteMember(id: string) {
     method: "DELETE"
   });
 }
-

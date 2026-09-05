@@ -6,16 +6,14 @@ const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
 
 export function PresidentMessagePage() {
-  const [msg, setMsg] = useState<LeadershipMessageData | null>(null);
+  const [msg, setMsg] = useState<LeadershipMessageData>({ name: "Dr Ahsan-ul-Haq", body: "It is a privilege to serve the Araian community of Faisalabad. Our priorities are unity, welfare, education and transparent community service.", photo: "/images/president.jpg", attributes: [] });
 
   useEffect(() => {
     fetchLeadershipMessages().then(msgs => {
       const pMsg = msgs.find(m => m.type === "president");
       if (pMsg) setMsg(pMsg);
-    });
+    }).catch(() => {});
   }, []);
-
-  if (!msg) return <div style={{ padding: "100px 0", textAlign: "center" }}>Loading...</div>;
 
   return (
     <div>

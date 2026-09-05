@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
 import { useAdmin } from "../context/AdminContext";
-import { Shield, Eye, EyeOff, LogOut, Newspaper, CalendarDays, CheckCircle, XCircle, Clock, Edit2, Trash2, Plus, X, ArrowRight, Users, UserCheck, UserX, AlertCircle, Briefcase, DollarSign, MessageCircle, Heart, Globe, Settings, Image as ImageIcon, Crown, Star, Upload, ChevronLeft, ChevronRight, Phone, Mail, PieChart, BarChart3, Settings2, LayoutDashboard, ShieldAlert } from "lucide-react";
+import { Shield, Eye, EyeOff, LogOut, Newspaper, FileText, CalendarDays, CheckCircle, XCircle, Clock, Edit2, Trash2, Plus, X, ArrowRight, Users, UserCheck, UserX, AlertCircle, Briefcase, DollarSign, MessageCircle, Heart, Globe, Settings, Image as ImageIcon, Crown, Star, Upload, ChevronLeft, ChevronRight, Phone, Mail, PieChart, BarChart3, Settings2, LayoutDashboard, ShieldAlert } from "lucide-react";
 import { fetchAllContent, createContent, updateContent, deleteContent, NewsItem, EventItem, statusColors, ContentStatus, paginateData } from "../lib/contentStore";
 import { fetchAllMembers, updateMemberStatus, updateMember, deleteMember, statusColors as mStatusColors, Member, MemberStatus, MemberVisibility } from "../lib/memberStore";
 import { fetchAllBusinesses, updateBusinessStatus, updateBusiness, deleteBusiness, businessStatusColors, paymentStatusColors, Business, BusinessStatus, PaymentStatus, sponsorshipPackages } from "../lib/businessStore";
@@ -15,6 +15,7 @@ import { fetchOverseasChapters, createOverseasChapter, updateOverseasChapter, de
 import { getSiteSettings, saveSiteSettings, fetchSiteSettings, updateSiteSettings, SiteSettings, PaymentMethod, MembershipTier } from "../lib/settingsStore";
 import { fetchAllMessages, updateMessageStatus, deleteMessage, MessageRequest, MessageStatus } from "../lib/messageStore";
 import { getRevenueRecords, getProfitSharing, saveProfitSharing, RevenueRecord, ProfitSharingConfig, logRevenueRecord } from "../lib/revenueStore";
+import { apiClient } from "../lib/apiClient";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
@@ -113,7 +114,23 @@ function Dashboard() {
     if (role === "welfare_manager") return "dashboard";
     return "dashboard";
   };
-  const [tab, setTab] = useState<"dashboard" | "news" | "events" | "members" | "businesses" | "matrimonial" | "leadership" | "media" | "overseas" | "settings" | "messages" | "analytics" | "admins">(getInitialTab as any);
+  const [tab, setTab] = useState<"dashboard" | "news" | "events" | "members" | "forms" | "businesses" | "matrimonial" | "leadership" | "media" | "overseas" | "settings" | "messages" | "analytics" | "admins">(getInitialTab as any);
+  const [formDrafts, setFormDrafts] = useState<any[]>([]);
+  const [importMessage, setImportMessage] = useState("");
+
+  useEffect(() => { if (tab === "forms") apiClient<any[]>("/forms/admin/all").then(setFormDrafts).catch(() => setFormDrafts([])); }, [tab]);
+
+  const importMembers = async (file?: File) => {
+    if (!file) return;
+    setImportMessage("Reading spreadsheet…");
+    try {
+      const XLSX = await import("xlsx");
+      const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { defval: "" });
+      const result = await apiClient<{ imported: number; skipped: number }>("/members/import", { method: "POST", body: JSON.stringify({ rows }) });
+      setImportMessage(`${result.imported} members imported${result.skipped ? `, ${result.skipped} skipped` : ""}.`); loadContent();
+    } catch (error: any) { setImportMessage(error.message || "Import failed"); }
+  };
 
   // Messages state
   const [messages, setMessages] = useState<MessageRequest[]>([]);
@@ -584,6 +601,7 @@ return (
             ["news", "News & Updates", <Newspaper size={18} />],
             ["events", "Events", <CalendarDays size={18} />],
             ["members", `Members ${members.filter((m) => m.status === "pending").length > 0 ? `(${members.filter((m) => m.status === "pending").length})` : ""}`, <Users size={18} />],
+            ["forms", `Saved Forms ${formDrafts.filter((d) => d.status === "incomplete").length ? `(${formDrafts.filter((d) => d.status === "incomplete").length})` : ""}`, <FileText size={18} />],
             ["businesses", `Businesses ${businesses.filter((b) => b.status === "pending").length > 0 ? `(${businesses.filter((b) => b.status === "pending").length})` : ""}`, <Briefcase size={18} />],
             ["matrimonial", `Matrimonial ${matrimonials.filter((m) => m.status === "pending").length > 0 ? `(${matrimonials.filter((m) => m.status === "pending").length})` : ""}`, <Heart size={18} />],
             ["leadership", "Leadership", <Crown size={18} />],
@@ -598,7 +616,7 @@ return (
           const allowed = role === "content_manager"
             ? all.filter(([t]) => t === "dashboard" || t === "news" || t === "events" || t === "media")
             : role === "welfare_manager"
-              ? all.filter(([t]) => t === "dashboard" || t === "members" || t === "businesses" || t === "matrimonial")
+              ? all.filter(([t]) => t === "dashboard" || t === "members" || t === "forms" || t === "businesses" || t === "matrimonial")
               : all;
 
           return allowed.map(([t, label, icon]) => (
@@ -813,7 +831,8 @@ return (
             <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, margin: 0 }}>
               Member Registrations <span style={{ color: "#aaa", fontSize: 16, fontWeight: 400 }}>({members.length})</span>
             </h2>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <label style={{ ...actionBtn(GREEN), padding: "7px 13px" }}><Upload size={14} /> Import Excel / CSV<input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={e => { void importMembers(e.target.files?.[0]); e.target.value = ""; }} /></label>
               {(["all", "pending", "approved", "rejected", "inactive"] as const).map((s) => {
                 const count = s === "all" ? members.length : members.filter((m) => m.status === s).length;
                 const sc = s !== "all" ? mStatusColors[s] : null;
@@ -825,6 +844,7 @@ return (
               })}
             </div>
           </div>
+          {importMessage && <p style={{ background: "#f0f7f3", color: GREEN, padding: "10px 14px", borderRadius: 8, fontSize: 13 }}>{importMessage}</p>}
 
           <div style={{ backgroundColor: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'Lato', sans-serif", minWidth: 900 }}>
@@ -934,6 +954,8 @@ return (
           </div>
         </div>
       )}
+
+      {tab === "forms" && <div><div style={{ marginBottom: 20 }}><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, margin: 0 }}>Saved and Submitted Forms</h2><p style={{ color: "#666", fontSize: 14 }}>Incomplete forms remain visible here while applicants continue across multiple sessions.</p></div><div style={{ background: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}><thead><tr style={{ background: "#f8f5ef" }}>{["Applicant", "Form", "Progress", "Status", "Last Activity"].map(h => <th key={h} style={{ textAlign: "left", padding: 14, color: "#777", fontSize: 12 }}>{h}</th>)}</tr></thead><tbody>{formDrafts.map(d => <tr key={d.id} style={{ borderTop: "1px solid #eee" }}><td style={{ padding: 14 }}><strong style={{ color: GREEN }}>{d.authUser?.name || "Applicant"}</strong><div style={{ fontSize: 12, color: "#777" }}>{d.authUser?.email}</div></td><td style={{ padding: 14, textTransform: "capitalize" }}>{d.formType}</td><td style={{ padding: 14 }}><div style={{ width: 140, background: "#e5e7eb", height: 8, borderRadius: 8 }}><div style={{ width: `${d.completion}%`, height: 8, borderRadius: 8, background: d.status === "submitted" ? "#15803d" : GOLD }} /></div><small>{d.completion}%</small></td><td style={{ padding: 14 }}><span style={{ background: d.status === "submitted" ? "#dcfce7" : "#fef9c3", color: d.status === "submitted" ? "#166534" : "#854d0e", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{d.status === "submitted" ? "Submitted" : "Incomplete"}</span></td><td style={{ padding: 14, color: "#666", fontSize: 13 }}>{new Date(d.updatedAt).toLocaleString()}</td></tr>)}</tbody></table>{!formDrafts.length && <div style={{ padding: 40, textAlign: "center", color: "#999" }}>No saved forms yet.</div>}</div></div>}
 
       {/* ── BUSINESSES TAB ── */}
       {tab === "businesses" && (

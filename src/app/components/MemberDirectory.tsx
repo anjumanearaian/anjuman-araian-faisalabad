@@ -8,6 +8,7 @@ const GOLD = "#c8a04a";
 
 export function MemberDirectory({ currentMemberId }: { currentMemberId: string }) {
   const [search, setSearch] = useState("");
+  const [cell, setCell] = useState<"all" | "male" | "women">("all");
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [allMembers, setAllMembers] = useState<Member[]>([]);
 
@@ -20,13 +21,13 @@ export function MemberDirectory({ currentMemberId }: { currentMemberId: string }
   const filteredMembers = useMemo(() => {
     return allMembers.filter(m => {
       const q = search.toLowerCase();
-      return (
+      return (cell === "all" || (m.memberCell || (m.gender === "female" ? "women" : "male")) === cell) && (
         m.fullName.toLowerCase().includes(q) ||
         m.city.toLowerCase().includes(q) ||
         m.occupation.toLowerCase().includes(q)
       );
     });
-  }, [allMembers, search]);
+  }, [allMembers, search, cell]);
 
   const featured = filteredMembers.filter(m => m.isFeaturedPortal);
   const regular = filteredMembers.filter(m => !m.isFeaturedPortal).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -69,10 +70,10 @@ export function MemberDirectory({ currentMemberId }: { currentMemberId: string }
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, paddingBottom: 14, borderBottom: "2px solid #f5f5f5" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, paddingBottom: 14, borderBottom: "2px solid #f5f5f5", gap: 12, flexWrap: "wrap" }}>
         <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, margin: 0 }}>Member Directory</h3>
         
-        <div style={{ position: "relative" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><select value={cell} onChange={e => setCell(e.target.value as any)} style={{ border: "1px solid #ddd", borderRadius: 20, padding: "8px 12px", color: GREEN }}><option value="all">All Members</option><option value="male">Men's Cell</option><option value="women">Women's Cell</option></select><div style={{ position: "relative" }}>
           <Search size={16} color="#aaa" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
           <input
             type="text"
@@ -81,7 +82,7 @@ export function MemberDirectory({ currentMemberId }: { currentMemberId: string }
             onChange={(e) => setSearch(e.target.value)}
             style={{ padding: "8px 12px 8px 34px", borderRadius: 20, border: "1px solid #ddd", fontSize: 13, width: 240, outline: "none", fontFamily: "'Lato', sans-serif" }}
           />
-        </div>
+        </div></div>
       </div>
 
       {featured.length > 0 && (
@@ -136,6 +137,8 @@ export function MemberDirectory({ currentMemberId }: { currentMemberId: string }
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
                 <div><p style={{ margin: 0, fontSize: 11, color: "#888", textTransform: "uppercase" }}>Occupation</p><p style={{ margin: "4px 0 0", fontSize: 14, color: "#333", fontWeight: 500 }}>{selectedMember.occupation || "—"}</p></div>
                 <div><p style={{ margin: 0, fontSize: 11, color: "#888", textTransform: "uppercase" }}>Education</p><p style={{ margin: "4px 0 0", fontSize: 14, color: "#333", fontWeight: 500 }}>{selectedMember.education || "—"}</p></div>
+                <div><p style={{ margin: 0, fontSize: 11, color: "#888", textTransform: "uppercase" }}>Designation</p><p style={{ margin: "4px 0 0", fontSize: 14, color: "#333", fontWeight: 500 }}>{selectedMember.designation || "—"}</p></div>
+                <div><p style={{ margin: 0, fontSize: 11, color: "#888", textTransform: "uppercase" }}>Institute / Business</p><p style={{ margin: "4px 0 0", fontSize: 14, color: "#333", fontWeight: 500 }}>{selectedMember.businessName || selectedMember.institutionName || "—"}</p></div>
               </div>
 
               {selectedMember.familyInfoPublic && selectedMember.family && (

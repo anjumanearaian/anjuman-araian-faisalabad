@@ -4,6 +4,8 @@ import { Heart, CheckCircle, Upload, DollarSign, Star, Loader2, Send } from "luc
 import { createMatrimonial, MatrimonialProfile } from "../lib/matrimonialStore";
 import { getSiteSettings } from "../lib/settingsStore";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
+import { PasswordlessSignIn } from "../components/PasswordlessSignIn";
+import { apiClient } from "../lib/apiClient";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
@@ -11,7 +13,7 @@ const GOLD = "#c8a04a";
 const blank = {
   name: "", age: "", gender: "male", city: "", education: "", profession: "",
   familyBackground: "", requirements: "", contact: "", photoUrl: "", paymentProofUrl: "",
-  additionalPhotos: [] as string[], packageId: ""
+  additionalPhotos: [] as string[], packageId: "", relationToCandidate: "Self"
 };
 
 const API_BASE = "/api";
@@ -25,12 +27,32 @@ export function MatrimonialPage() {
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const isSubmitting = useRef(false); // guard against double submit
+  const hydrated = useRef(false);
+  const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem("araian_member_token")));
+  const [isMember, setIsMember] = useState(false);
+  const [saveState, setSaveState] = useState("Restoring saved form…");
 
   useEffect(() => {
     if (!form.packageId && settings.matrimonialPackages && settings.matrimonialPackages.length > 0) {
-      setForm(f => ({ ...f, packageId: settings.matrimonialPackages![0].id }));
+      setForm(f => ({ ...f, packageId: settings.matrimonialPackages![isMember ? 0 : 1]?.id || settings.matrimonialPackages![0].id }));
     }
-  }, [settings.matrimonialPackages]);
+  }, [settings.matrimonialPackages, isMember]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    apiClient<any>("/forms/matrimonial").then(async (draft) => {
+      if (draft?.data) setForm(old => ({ ...old, ...draft.data }));
+      try { const member = await apiClient<any>("/members/me"); const approved = member.status === "approved"; setIsMember(approved); setForm(old => ({ ...old, packageId: settings.matrimonialPackages?.[approved ? 0 : 1]?.id || old.packageId, city: approved ? (old.city || member.city) : old.city, contact: approved ? (old.contact || member.whatsapp || member.phone) : old.contact })); } catch { setIsMember(false); setForm(old => ({ ...old, packageId: settings.matrimonialPackages?.[1]?.id || old.packageId })); }
+      hydrated.current = true; setSaveState("✓ All changes saved");
+    }).catch(() => { setAuthenticated(false); localStorage.removeItem("araian_member_token"); });
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!authenticated || !hydrated.current || submitted) return;
+    setSaveState("Saving changes…");
+    const timer = window.setTimeout(() => apiClient("/forms/matrimonial", { method: "PUT", body: JSON.stringify({ data: form, completion: Math.min(95, Object.values(form).filter(Boolean).length * 9), status: "incomplete" }) }).then(() => setSaveState("✓ All changes saved")).catch(() => setSaveState("Could not save")), 800);
+    return () => window.clearTimeout(timer);
+  }, [form, authenticated, submitted]);
 
   const f = (key: string, val: string) => {
     setForm((p) => ({ ...p, [key]: val }));
@@ -42,8 +64,8 @@ export function MatrimonialPage() {
   const handleFileUpload = (key: string) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrors((err) => ({ ...err, [key]: "File size must be less than 5MB" }));
+    if (file.size > 4 * 1024 * 1024) {
+      setErrors((err) => ({ ...err, [key]: "File must be 4MB or smaller" }));
       return;
     }
 
@@ -129,6 +151,8 @@ export function MatrimonialPage() {
   };
   const labelStyle: React.CSSProperties = { display: "block", color: GREEN, fontSize: 13, fontWeight: 700, marginBottom: 6 };
 
+  if (!authenticated) return <div><PageHeader title="Matrimonial Service" subtitle="Secure and confidential proposal registration" breadcrumb={["Home", "Matrimonial"]} /><section style={{ maxWidth: 480, margin: "48px auto", padding: "0 24px" }}><div style={{ background: "white", borderRadius: 14, padding: 32, boxShadow: "0 6px 30px rgba(0,0,0,.08)" }}><h2 style={{ color: GREEN, marginTop: 0 }}>Verify before continuing</h2><p style={{ color: "#666", fontSize: 14, lineHeight: 1.7 }}>Sign in with Google or email OTP. Approved members receive the PKR 3,000 fee automatically; new applicants pay PKR 5,000.</p><PasswordlessSignIn onAuthenticated={() => setAuthenticated(true)} compact /></div></section></div>;
+
   return (
     <div>
       <PageHeader title="Matrimonial Service" subtitle="A trusted platform for Araian community members seeking a life partner" breadcrumb={["Home", "Matrimonial"]} />
@@ -144,6 +168,7 @@ export function MatrimonialPage() {
       </div>
 
       <section style={{ maxWidth: 900, margin: "0 auto", padding: "40px 16px" }} className="matrimonial-section">
+        {!submitted && <div style={{ textAlign: "right", color: "#64748b", fontSize: 12, marginBottom: 10 }}>{saveState}</div>}
         {submitted ? (
           <div style={{ textAlign: "center", padding: "64px 0" }}>
             <CheckCircle size={56} color={GREEN} style={{ margin: "0 auto 16px" }} />
@@ -167,7 +192,7 @@ export function MatrimonialPage() {
               <div style={{ marginBottom: 32 }}>
                 <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Select Package</h3>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 16 }}>
-                  {settings.matrimonialPackages.map(pkg => (
+                  {settings.matrimonialPackages.filter((_, index) => index === (isMember ? 0 : 1)).map(pkg => (
                     <div 
                       key={pkg.id} 
                       onClick={() => f("packageId", pkg.id)}
@@ -242,6 +267,7 @@ export function MatrimonialPage() {
               )}
               <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, marginBottom: 20, paddingBottom: 10, borderBottom: `2px solid #f0f0f0` }}>Candidate Information</h3>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }} className="form-2col">
+                <div><label style={labelStyle}>Applying For *</label><select style={inputStyle} value={form.relationToCandidate} onChange={e => f("relationToCandidate", e.target.value)}><option>Self</option><option>Son</option><option>Daughter</option><option>Brother</option><option>Sister</option><option>Other family member</option></select></div>
                 <div>
                   <label style={labelStyle}>Full Name *</label>
                   <input style={inputStyle} value={form.name} onChange={(e) => f("name", e.target.value)} placeholder="Candidate's Name" />

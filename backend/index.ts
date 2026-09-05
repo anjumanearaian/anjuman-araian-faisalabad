@@ -7,11 +7,14 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { put } from "@vercel/blob";
+import { emailFrame, sendEmail } from "./lib/email";
 
 import prisma from "./lib/prisma";
 import membersRouter from "./routes/members";
 import businessesRouter from "./routes/businesses";
 import matrimonialRouter from "./routes/matrimonial";
+import passwordlessAuthRouter from "./routes/passwordlessAuth";
+import formDraftsRouter from "./routes/formDrafts";
 import contentRouter from "./routes/content";
 import { loginLimiter, apiLimiter, uploadLimiter } from "./middleware/rateLimiter";
 import { requireSuperAdmin, requireAdmin } from "./middleware/auth";
@@ -113,6 +116,8 @@ app.use("/api/activities", activitiesRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/services", servicesRouter);
+app.use("/api/auth", passwordlessAuthRouter);
+app.use("/api/forms", formDraftsRouter);
 
 process.on("unhandledRejection", (reason, promise) => {
   console.error("[UnhandledRejection]", reason);
@@ -140,10 +145,12 @@ app.get("/api/health", async (req, res) => {
   const ok = database === "connected" && authConfigured;
   res.status(ok ? 200 : 503).json({
     status: ok ? "ok" : "setup_required",
-    version: "4.1.0",
+    version: "5.0.0",
     database,
     authentication: authConfigured ? "configured" : "not_configured",
-    storage: storageConfigured ? "configured" : "not_configured",
+    storage: storageConfigured ? "vercel_blob" : (databaseConfigured ? "database_fallback" : "not_configured"),
+    passwordlessEmail: process.env.GMAIL_APP_PASSWORD ? "configured" : "not_configured",
+    googleSignIn: process.env.GOOGLE_CLIENT_ID ? "configured" : "not_configured",
     timestamp: new Date().toISOString(),
   });
 });
@@ -232,17 +239,32 @@ app.get("/api/settings", async (req: Request, res: Response, next: NextFunction)
         data: {
           id: "settings",
           whatsappNumber: "923008655522",
-          contactEmail: "info@anjumanearaian.org",
+          contactEmail: "anjumanearaianfaisalabad@gmail.com",
           contactPhone: "+92 300 865 5522",
           address: "Central Secretariat, Anjuman-e-Araian, Faisalabad, Pakistan",
           facebookUrl: "https://facebook.com",
           twitterUrl: "https://twitter.com",
           instagramUrl: "https://instagram.com",
           linkedinUrl: "https://linkedin.com",
+          membershipTiers: [
+            { id: "t1", type: "ordinary", name: "Regular / Annual Member", fee: "Rs. 1,000 / year", description: "Voting rights, welfare access and member directory" },
+            { id: "t2", type: "life", name: "Life Member", fee: "Rs. 3,000 once", description: "Permanent membership with all regular-member benefits" },
+            { id: "t3", type: "patron", name: "Patron Member", fee: "Rs. 25,000 once", description: "Patron benefits and advisory access" },
+            { id: "t4", type: "overseas", name: "Overseas Member", fee: "$100 / year", description: "International chapter access" },
+          ],
+          matrimonialPackages: [
+            { id: "mp1", name: "Member Matrimonial Application", fee: "Rs. 3,000 once", description: "For an approved member or their son/daughter", isFeatured: false },
+            { id: "mp2", name: "Non-Member Matrimonial Application", fee: "Rs. 5,000 once", description: "Includes verification and office processing", isFeatured: false },
+          ],
         },
       });
     }
-    res.json(settings);
+    const membershipTiers = Array.isArray(settings.membershipTiers) ? (settings.membershipTiers as any[]).map((tier) => tier.type === "ordinary" ? { ...tier, name: "Regular / Annual Member", fee: "Rs. 1,000 / year" } : tier.type === "life" ? { ...tier, fee: "Rs. 3,000 once" } : tier) : settings.membershipTiers;
+    const matrimonialPackages = [
+      { id: "mp1", name: "Member Matrimonial Application", fee: "Rs. 3,000 once", description: "For an approved member or their son/daughter; member data is prefilled.", isFeatured: false },
+      { id: "mp2", name: "Non-Member Matrimonial Application", fee: "Rs. 5,000 once", description: "For a new applicant, including verification and office processing.", isFeatured: false },
+    ];
+    res.json({ ...settings, contactEmail: "anjumanearaianfaisalabad@gmail.com", membershipTiers, matrimonialPackages });
   } catch (err) {
     next(err);
   }
@@ -275,7 +297,7 @@ app.put("/api/settings", requireAdmin, async (req: Request, res: Response, next:
     const createData: any = {
       id: "settings",
       whatsappNumber: payload.whatsappNumber || "923008655522",
-      contactEmail: payload.contactEmail || "info@anjumanearaian.org",
+      contactEmail: payload.contactEmail || "anjumanearaianfaisalabad@gmail.com",
       contactPhone: payload.contactPhone || "+92 300 865 5522",
       address: payload.address || "Central Secretariat, Anjuman-e-Araian, Faisalabad, Pakistan",
       facebookUrl: payload.facebookUrl || "https://facebook.com",
@@ -335,11 +357,19 @@ app.post(
         return;
       }
 
-      // Local development only. Never rely on this branch in Vercel production.
-      if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-        res.status(503).json({
-          error: "File storage is not configured. Connect a Vercel Blob store to this project.",
+      // Reliable production fallback: keep small documents in PostgreSQL when
+      // Vercel Blob has not been connected yet.
+      if (process.env.DATABASE_URL) {
+        const stored = await prisma.storedFile.create({
+          data: {
+            originalName: req.file.originalname,
+            mimeType: req.file.mimetype,
+            size: req.file.size,
+            category: String(req.body?.category || "document").slice(0, 40),
+            data: req.file.buffer,
+          },
         });
+        res.json({ url: `/api/files/${stored.id}` });
         return;
       }
 
@@ -352,6 +382,34 @@ app.post(
     }
   }
 );
+
+app.get("/api/files/:id", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const file = await prisma.storedFile.findUnique({ where: { id: String(req.params.id) } });
+    if (!file) return void res.status(404).json({ error: "File not found" });
+    res.setHeader("Content-Type", file.mimeType);
+    res.setHeader("Content-Length", String(file.size));
+    res.setHeader("Content-Disposition", `inline; filename="${file.originalName.replace(/[\"\r\n]/g, "")}"`);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(Buffer.from(file.data));
+  } catch (error) { next(error); }
+});
+
+// Daily birthday automation. Vercel sends CRON_SECRET as a bearer token.
+app.get("/api/automation/birthdays", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const expected = process.env.CRON_SECRET;
+    if (!expected || req.headers.authorization !== `Bearer ${expected}`) return void res.status(401).json({ error: "Unauthorized" });
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", month: "2-digit", day: "2-digit" }).format(new Date());
+    const members = await prisma.member.findMany({ where: { status: "approved", email: { not: "" } }, select: { fullName: true, email: true, dob: true } });
+    const birthdays = members.filter((m) => {
+      const match = String(m.dob || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return match ? `${match[2]}-${match[3]}` === today : false;
+    }).slice(0, 100);
+    const results = await Promise.allSettled(birthdays.map((member) => sendEmail(member.email, "Happy Birthday from Anjuman-e-Araian Faisalabad", emailFrame("Happy Birthday!", `<p>Dear ${member.fullName},</p><p>Anjuman-e-Araian Faisalabad wishes you a very happy birthday. May the coming year bring health, happiness and success to you and your family.</p>`))));
+    res.json({ matched: birthdays.length, sent: results.filter((r) => r.status === "fulfilled" && r.value.sent).length });
+  } catch (error) { next(error); }
+});
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req: Request, res: Response) => {
@@ -375,7 +433,7 @@ async function seedAdmin() {
   try {
     const count = await prisma.admin.count();
     if (count === 0) {
-      const username = process.env.ADMIN_USERNAME;
+      const username = process.env.ADMIN_USERNAME || "anjumanearaianfaisalabad@gmail.com";
       const rawPassword = process.env.ADMIN_PASSWORD;
 
       if (!username || !rawPassword) {
@@ -388,7 +446,7 @@ async function seedAdmin() {
       const hashedPassword = await bcrypt.hash(password, salt);
 
       await prisma.admin.create({
-        data: { username, password: hashedPassword, role: "admin" },
+        data: { username, password: hashedPassword, role: "super_admin" },
       });
 
       console.log(`[SETUP] Admin account created. Username: "${username}"`);

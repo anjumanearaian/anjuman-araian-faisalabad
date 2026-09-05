@@ -41,7 +41,7 @@ export function CabinetPage() {
     fetchLeadershipProfiles().then((res: LeadershipProfile[]) => {
       setCabinet(res.filter((p: LeadershipProfile) => p.category === "cabinet"));
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, []);
   const t0 = cabinet.filter((p: LeadershipProfile) => p.tier === 0);
   const t1 = cabinet.filter((p: LeadershipProfile) => p.tier === 1);
@@ -50,11 +50,11 @@ export function CabinetPage() {
 
   return (
     <div>
-      <PageHeader title="Cabinet Members" subtitle="Organizational hierarchy of the Central Cabinet" breadcrumb={["Home", "Leadership", "Cabinet Members"]} />
+      <PageHeader title="Executive Council" subtitle="President, General Secretary, office bearers and executive leadership" breadcrumb={["Home", "Leadership", "Executive Council"]} />
 
       <section style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 24px" }}>
         <p style={{ color: "#666", fontSize: 15, lineHeight: 1.9, textAlign: "center", marginBottom: 48 }}>
-          The Central Cabinet of Anjuman-e-Araian Pakistan is elected democratically every three years by registered members at the Annual General Meeting.
+          Anjuman-e-Araian Faisalabad is led by its President and General Secretary, supported by office bearers and the Executive Committee. This structure reflects the terminology used in the organization's meetings and records.
         </p>
 
         {t0.length > 0 && (

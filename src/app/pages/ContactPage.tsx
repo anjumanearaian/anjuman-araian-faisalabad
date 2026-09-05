@@ -7,7 +7,7 @@ const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
 
 const offices = [
-  { city: "Lahore (Head Office)", address: "12 Temple Road, Lahore — 54000", phone: "+92 42 1234 5678", email: "info@anjumanearaian.org" },
+  { city: "Faisalabad (Head Office)", address: "Central Secretariat, Anjuman-e-Araian, Faisalabad", phone: "+92 300 865 5522", email: "anjumanearaianfaisalabad@gmail.com" },
   { city: "Karachi", address: "Plot 45, Block 7, Gulshan-e-Iqbal, Karachi", phone: "+92 21 3456 7890", email: "karachi@anjumanearaian.org" },
   { city: "Islamabad", address: "House 10, Street 4, F-8/2, Islamabad", phone: "+92 51 2345 6789", email: "islamabad@anjumanearaian.org" },
   { city: "Faisalabad", address: "Canal Road, Near Government College, Faisalabad", phone: "+92 41 3456 7890", email: "faisalabad@anjumanearaian.org" },

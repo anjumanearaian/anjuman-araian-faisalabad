@@ -11,7 +11,7 @@ export default function LeadershipSection() {
     { id: "secretary", name: "Dr Mian Saqib Rahman", role: "General Secretary", city: "Faisalabad", category: "cabinet" as const },
   ];
   return <section className="home-section home-section--green"><div className="home-shell">
-    <div className="home-heading home-heading--light"><div><span className="home-eyebrow">Community stewardship</span><h2>Our Leadership</h2></div><Link to="/cabinet">Full cabinet <ArrowRight size={17} /></Link></div>
+    <div className="home-heading home-heading--light"><div><span className="home-eyebrow">Community stewardship</span><h2>Our Leadership</h2></div><Link to="/cabinet">Executive Council <ArrowRight size={17} /></Link></div>
     <div className="home-leaders">{display.map((leader) => <article key={leader.id}><div className="home-leader-photo">{leader.image ? <img src={leader.image} alt={leader.name} /> : <UserRound size={34} />}</div><div><h3>{leader.name}</h3><p>{leader.role}</p><span>{leader.city}</span></div></article>)}</div>
   </div></section>;
 }

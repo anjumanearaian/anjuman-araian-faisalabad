@@ -7,6 +7,7 @@ import prisma from "../lib/prisma";
 import { requireAdmin, requireMember } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { loginLimiter, registerLimiter } from "../middleware/rateLimiter";
+import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
 
 const router = Router();
 function getJwtSecret(): string {
@@ -16,8 +17,8 @@ function getJwtSecret(): string {
 }
 
 const urlOrBase64 = z.string().refine(
-  (s) => s.startsWith("http") || s.startsWith("/uploads/") || s.startsWith("data:image/"),
-  { message: "Must be a valid URL, /uploads/ path, or base64 image" }
+  (s) => s.startsWith("http") || s.startsWith("/uploads/") || s.startsWith("/api/files/") || s.startsWith("data:image/"),
+  { message: "Must be a valid uploaded file URL" }
 );
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
@@ -38,8 +39,11 @@ const RegisterSchema = z.object({
   province: z.string().min(2).max(100),
   occupation: z.string().min(2).max(150),
   education: z.string().min(2).max(150),
+  designation: z.string().max(150).optional().default(""),
+  institutionName: z.string().max(200).optional().default(""),
+  businessName: z.string().max(200).optional().default(""),
+  memberCell: z.enum(["male", "women"]).optional().default("male"),
   membershipType: z.string().min(1),
-  password: z.string().min(8, "Password must be at least 8 characters"),
   familyInfoPublic: z.boolean().optional().default(false),
   photoUrl: urlOrBase64,
   cnicFrontUrl: urlOrBase64,
@@ -85,7 +89,7 @@ router.post("/login", loginLimiter, validate(LoginSchema), async (req: Request, 
       return;
     }
 
-    const isMatch = await bcrypt.compare(password, member.password);
+    const isMatch = member.password ? await bcrypt.compare(password, member.password) : false;
     if (!isMatch) {
       res.status(401).json({ error: "Invalid credentials" });
       return;
@@ -114,9 +118,14 @@ router.post("/login", loginLimiter, validate(LoginSchema), async (req: Request, 
 });
 
 // ─── Register New Member ──────────────────────────────────────────────────────
-router.post("/register", registerLimiter, validate(RegisterSchema), async (req: Request, res: Response, next: NextFunction) => {
+router.post("/register", registerLimiter, requireMember, validate(RegisterSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { familyInfo, password, additionalPhotos, ...memberData } = req.body;
+    const { familyInfo, additionalPhotos, ...memberData } = req.body;
+    const authUser = (req as any).user;
+    if (authUser.role !== "applicant" || String(authUser.email).toLowerCase() !== String(memberData.email).toLowerCase()) {
+      res.status(403).json({ error: "Please verify this email before submitting" });
+      return;
+    }
     const additionalPhotosJson = additionalPhotos ? JSON.stringify(additionalPhotos) : null;
 
     // Prevent duplicate member accounts by email or CNIC.
@@ -132,10 +141,6 @@ router.post("/register", registerLimiter, validate(RegisterSchema), async (req: 
       });
       return;
     }
-
-    // Hash password
-    const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(password, salt);
 
     // Generate unique Member No — use transaction to prevent race condition
     const newMember = await prisma.$transaction(async (tx) => {
@@ -154,7 +159,9 @@ router.post("/register", registerLimiter, validate(RegisterSchema), async (req: 
         data: {
           ...memberData,
           additionalPhotos: additionalPhotosJson,
-          password: hashedPassword,
+          password: null,
+          authUserId: authUser.id,
+          paymentStatus: "submitted",
           memberNo,
           ...(familyInfo
             ? { familyInfo: { create: familyInfo } }
@@ -174,6 +181,13 @@ router.post("/register", registerLimiter, validate(RegisterSchema), async (req: 
       timeout: 30000,
     });
 
+    await prisma.formDraft.upsert({
+      where: { authUserId_formType: { authUserId: authUser.id, formType: "membership" } },
+      update: { status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date() },
+      create: { authUserId: authUser.id, formType: "membership", data: req.body, currentStep: 5, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date() },
+    });
+    void sendEmail(MASTER_EMAIL, `New membership application: ${memberData.fullName}`, emailFrame("New membership application", `<p><strong>${memberData.fullName}</strong> has submitted a ${memberData.membershipType} membership form.</p><p>Email: ${memberData.email}<br>Phone: ${memberData.phone}<br>Member No: ${newMember.memberNo}</p>`)).catch(console.error);
+    void sendEmail(memberData.email, "Membership application received", emailFrame("Application received", `<p>Dear ${memberData.fullName},</p><p>Your application is complete and has been sent to the administration. You can use the same email OTP to check its status.</p><p>Reference: <strong>${newMember.memberNo}</strong></p>`)).catch(console.error);
     res.status(201).json(stripPassword(newMember));
   } catch (err: any) {
     if (err.code === "P2002") {
@@ -183,6 +197,43 @@ router.post("/register", registerLimiter, validate(RegisterSchema), async (req: 
     }
     next(err);
   }
+});
+
+// ─── Excel/CSV Member Import — Admin Only ───────────────────────────────────
+router.post("/import", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 2000) : [];
+    if (!rows.length) return void res.status(400).json({ error: "The spreadsheet has no data rows" });
+    const value = (row: any, ...names: string[]) => {
+      const entries = Object.entries(row || {});
+      for (const name of names) {
+        const found = entries.find(([key]) => key.toLowerCase().replace(/[^a-z0-9]/g, "") === name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+        if (found && found[1] !== undefined && found[1] !== null) return String(found[1]).trim();
+      }
+      return "";
+    };
+    const stamp = Date.now().toString().slice(-8);
+    const data = rows.map((row: any, index: number) => {
+      const genderRaw = value(row, "gender", "sex").toLowerCase();
+      const membershipRaw = value(row, "membershipType", "membership", "memberType", "category").toLowerCase();
+      const gender = genderRaw.startsWith("f") ? "female" : "male";
+      return {
+        memberNo: value(row, "memberNo", "membershipNo", "memberId") || `ARA-IMP-${stamp}-${String(index + 1).padStart(4, "0")}`,
+        fullName: value(row, "fullName", "name", "memberName") || "Imported Member",
+        fatherName: value(row, "fatherName", "father") || "Not provided",
+        cnic: value(row, "cnic", "nic") || `IMPORT-${stamp}-${index + 1}`,
+        dob: value(row, "dob", "dateOfBirth", "birthday"), gender, bloodGroup: value(row, "bloodGroup", "blood"),
+        email: value(row, "email", "emailAddress"), phone: value(row, "phone", "mobile", "contact"), whatsapp: value(row, "whatsapp", "whatsAppNo"),
+        address: value(row, "address"), city: value(row, "city"), district: value(row, "district"), province: value(row, "province") || "Punjab",
+        occupation: value(row, "occupation", "profession") || "Not provided", education: value(row, "education", "qualification") || "Not provided",
+        designation: value(row, "designation", "role"), institutionName: value(row, "institutionName", "institute", "organization"), businessName: value(row, "businessName", "business"),
+        memberCell: gender === "female" ? "women" : "male", membershipType: membershipRaw.includes("life") ? "life" : membershipRaw.includes("patron") ? "patron" : membershipRaw.includes("overseas") ? "overseas" : "ordinary",
+        password: null, status: "approved", paymentStatus: "recorded", showOnPortal: true,
+      };
+    });
+    const result = await prisma.member.createMany({ data, skipDuplicates: true });
+    res.status(201).json({ imported: result.count, skipped: data.length - result.count });
+  } catch (error) { next(error); }
 });
 
 // ─── Get All Members (Public & Admin) ─────────────────────────────────────────
@@ -244,6 +295,10 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
   province: true,
   occupation: true,
   education: true,
+  designation: true,
+  institutionName: true,
+  businessName: true,
+  memberCell: true,
   membershipType: true,
   photoUrl: true,
   status: true,
@@ -281,6 +336,10 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         province: m.province,
         occupation: m.occupation,
         education: m.education,
+        designation: m.designation,
+        institutionName: m.institutionName,
+        businessName: m.businessName,
+        memberCell: m.memberCell,
         membershipType: m.membershipType,
         photoUrl: m.photoUrl,
         isFeatured: m.isFeatured,
@@ -336,6 +395,10 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, ne
   createdAt: true
 }
     });
+
+    if (status === "approved" || status === "rejected") {
+      void sendEmail(updated.email, status === "approved" ? "Your membership is approved" : "Membership application update", emailFrame(status === "approved" ? "Membership approved" : "Application update", status === "approved" ? `<p>Dear ${updated.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been approved.</p><p>Member No: <strong>${updated.memberNo}</strong></p>` : `<p>Dear ${updated.fullName},</p><p>Your application needs attention. ${rejectionReason || "Please contact the office for details."}</p>`)).catch(console.error);
+    }
 
     res.json(updated);
   } catch (err: any) {
@@ -433,7 +496,7 @@ router.post("/:id/change-password", requireMember, async (req: Request, res: Res
       return;
     }
 
-    const matches = await bcrypt.compare(currentPassword, member.password);
+    const matches = member.password ? await bcrypt.compare(currentPassword, member.password) : false;
     if (!matches) {
       res.status(401).json({ error: "Current password is incorrect" });
       return;
@@ -478,14 +541,21 @@ router.get("/me", async (req: Request, res: Response, next: NextFunction) => {
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, getJwtSecret()) as any;
 
-    const member = await prisma.member.findUnique({
-      where: { id: decoded.id },
+    const member = decoded.role === "applicant"
+      ? await prisma.member.findFirst({
+      where: { OR: [{ authUserId: decoded.id }, { email: { equals: decoded.email, mode: "insensitive" } }] },
       select: {
         id: true,
         memberNo: true,
         fullName: true,
+        fatherName: true,
+        cnic: true,
+        dob: true,
+        gender: true,
+        bloodGroup: true,
         email: true,
         phone: true,
+        address: true,
         status: true,
         createdAt: true,
         familyInfo: true,
@@ -496,14 +566,24 @@ router.get("/me", async (req: Request, res: Response, next: NextFunction) => {
         province: true,
         occupation: true,
         education: true,
+        designation: true,
+        institutionName: true,
+        businessName: true,
+        memberCell: true,
+        paymentStatus: true,
         membershipType: true,
         whatsapp: true,
         whatsappPublic: true
       }
-    });
+    }) : await prisma.member.findUnique({ where: { id: decoded.id }, select: {
+        id: true, memberNo: true, fullName: true, fatherName: true, cnic: true, dob: true, gender: true, bloodGroup: true, email: true, phone: true, address: true,
+        status: true, createdAt: true, familyInfo: true, additionalPhotos: true,
+        photoUrl: true, city: true, district: true, province: true, occupation: true,
+        education: true, designation: true, institutionName: true, businessName: true, memberCell: true, paymentStatus: true, membershipType: true, whatsapp: true, whatsappPublic: true
+      } });
 
     if (!member) {
-      res.status(404).json({ error: "Member not found" });
+      res.status(404).json({ error: "No submitted membership profile yet" });
       return;
     }
 
@@ -512,6 +592,7 @@ router.get("/me", async (req: Request, res: Response, next: NextFunction) => {
 
     res.json({
       ...member,
+      family: member.familyInfo,
       additionalPhotos,
     });
   } catch (err: any) {

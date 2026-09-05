@@ -24,15 +24,15 @@ router.get("/", requireAdmin, async (req, res) => {
 
     // Defaults for mapping
     const defaultMembershipTiers = [
-      { type: "ordinary", name: "Ordinary Member", fee: "Rs. 500 / year" },
-      { type: "life", name: "Life Member", fee: "Rs. 5,000 once" },
+      { type: "ordinary", name: "Regular / Annual Member", fee: "Rs. 1,000 / year" },
+      { type: "life", name: "Life Member", fee: "Rs. 3,000 once" },
       { type: "patron", name: "Patron Member", fee: "Rs. 25,000 once" },
       { type: "overseas", name: "Overseas Member", fee: "$100 / year" }
     ];
 
     const defaultMatrimonialPackages = [
-      { name: "Standard Listing", fee: "Rs. 500 once", isFeatured: false },
-      { name: "Featured / VIP Listing", fee: "Rs. 2,000 once", isFeatured: true }
+      { name: "Member Matrimonial Application", fee: "Rs. 3,000 once", isFeatured: false },
+      { name: "Non-Member Matrimonial Application", fee: "Rs. 5,000 once", isFeatured: false }
     ];
 
     const defaultSponsorshipPackages: Record<string, { name: string; price: string }> = {
@@ -122,9 +122,9 @@ router.get("/", requireAdmin, async (req, res) => {
         const pkg = parsedMatPackages.find((p: any) => p.isFeatured === isFeatured) || 
                     parsedMatPackages.find((p: any) => p.name.toLowerCase().includes(isFeatured ? "featured" : "standard"));
         
-        const itemName = pkg?.name || (isFeatured ? "Featured / VIP Listing" : "Standard Listing");
-        const feeString = pkg?.fee || (isFeatured ? "Rs. 2,000 once" : "Rs. 500 once");
-        const amount = parseFeeAmount(feeString);
+        const itemName = mat.applicantType === "member" ? "Member Matrimonial Application" : "Non-Member Matrimonial Application";
+        const feeString = `Rs. ${mat.feeAmount || (mat.applicantType === "member" ? 3000 : 5000)} once`;
+        const amount = mat.feeAmount || parseFeeAmount(feeString);
         const paymentFrequency = determineFrequency(feeString);
 
         records.push({

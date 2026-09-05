@@ -32,8 +32,8 @@ model Message {
 }
 
 model Member {
-  id               String       @id @default(uuid())
-  memberNo         String       @unique
+  id               String    @id @default(uuid())
+  memberNo         String    @unique
   fullName         String
   fatherName       String
   cnic             String
@@ -43,7 +43,7 @@ model Member {
   email            String
   phone            String
   whatsapp         String
-  whatsappPublic   Boolean      @default(false)
+  whatsappPublic   Boolean   @default(false)
   address          String
   city             String
   district         String
@@ -51,12 +51,19 @@ model Member {
   occupation       String
   education        String
   membershipType   String
-  password         String
-  familyInfoPublic Boolean      @default(false)
-  status           String       @default("pending")
-  visibility       String       @default("private")
-  showOnWeb        Boolean      @default(false)
-  showOnPortal     Boolean      @default(true)
+  password         String?
+  authUserId       String?   @unique
+  authUser         AuthUser? @relation(fields: [authUserId], references: [id], onDelete: SetNull)
+  designation      String?
+  institutionName  String?
+  businessName     String?
+  memberCell       String    @default("male")
+  paymentStatus    String    @default("pending")
+  familyInfoPublic Boolean   @default(false)
+  status           String    @default("pending")
+  visibility       String    @default("private")
+  showOnWeb        Boolean   @default(false)
+  showOnPortal     Boolean   @default(true)
   photoUrl         String?
   cnicFrontUrl     String?
   cnicBackUrl      String?
@@ -64,10 +71,10 @@ model Member {
   additionalPhotos String?
   adminNote        String?
   rejectionReason  String?
-  isFeatured       Boolean      @default(false)
-  isFeaturedPortal Boolean      @default(false)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  isFeatured       Boolean   @default(false)
+  isFeaturedPortal Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   approvedAt       DateTime?
 
   familyInfo FamilyInfo?
@@ -78,9 +85,9 @@ model Member {
 }
 
 model FamilyInfo {
-  id                     String @id @default(uuid())
-  memberId               String @unique
-  member                 Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  id                     String  @id @default(uuid())
+  memberId               String  @unique
+  member                 Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
   fatherName             String?
   familyBranch           String?
   spouseName             String?
@@ -125,30 +132,93 @@ model Business {
 }
 
 model Matrimonial {
-  id               String   @id @default(uuid())
-  name             String
-  gender           String
-  age              String
-  city             String
-  education        String
-  profession       String
-  familyBackground String
-  requirements     String
-  contact          String
-  photoUrl         String?
-  additionalPhotos String?
-  paymentProofUrl  String?
-  status           String   @default("pending")
-  paymentStatus    String   @default("pending")
-  adminNote        String?
-  isFeatured       Boolean  @default(false)
-  showOnPortal     Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                  String    @id @default(uuid())
+  name                String
+  gender              String
+  age                 String
+  city                String
+  education           String
+  profession          String
+  familyBackground    String
+  requirements        String
+  contact             String
+  photoUrl            String?
+  additionalPhotos    String?
+  paymentProofUrl     String?
+  status              String    @default("pending")
+  paymentStatus       String    @default("pending")
+  adminNote           String?
+  isFeatured          Boolean   @default(false)
+  showOnPortal        Boolean   @default(false)
+  authUserId          String?
+  authUser            AuthUser? @relation(fields: [authUserId], references: [id], onDelete: SetNull)
+  applicantType       String    @default("non_member")
+  feeAmount           Int       @default(5000)
+  relationToCandidate String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([status])
   @@index([paymentStatus])
   @@index([isFeatured])
+  @@index([createdAt])
+}
+
+model AuthUser {
+  id          String        @id @default(uuid())
+  email       String        @unique
+  name        String?
+  provider    String        @default("email")
+  verifiedAt  DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  member      Member?
+  drafts      FormDraft[]
+  matrimonial Matrimonial[]
+
+  @@index([email])
+}
+
+model EmailOtp {
+  id         String    @id @default(uuid())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
+}
+
+model FormDraft {
+  id            String    @id @default(uuid())
+  authUserId    String
+  authUser      AuthUser  @relation(fields: [authUserId], references: [id], onDelete: Cascade)
+  formType      String
+  data          Json
+  currentStep   Int       @default(0)
+  completion    Int       @default(0)
+  status        String    @default("incomplete")
+  paymentStatus String    @default("pending")
+  submittedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([authUserId, formType])
+  @@index([formType, status])
+  @@index([updatedAt])
+}
+
+model StoredFile {
+  id           String   @id @default(uuid())
+  originalName String
+  mimeType     String
+  size         Int
+  category     String   @default("document")
+  data         Bytes
+  createdAt    DateTime @default(now())
+
   @@index([createdAt])
 }
 
@@ -186,24 +256,24 @@ model OverseasChapter {
   coordinator String
   phone       String
   email       String
-  members     Int @default(0)
+  members     Int    @default(0)
 }
 
 model LeadershipProfile {
-  id          String @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   role        String
-  tier        Int @default(2)
+  tier        Int     @default(2)
   city        String
-  category    String @default("cabinet")
+  category    String  @default("cabinet")
   image       String?
   period      String?
   description String?
 }
 
 model LeadershipMessage {
-  id         String @id @default(uuid())
-  type       String @unique
+  id         String  @id @default(uuid())
+  type       String  @unique
   name       String
   body       String
   photo      String?
@@ -211,7 +281,7 @@ model LeadershipMessage {
 }
 
 model SiteSettings {
-  id                  String @id @default("settings")
+  id                  String  @id @default("settings")
   whatsappNumber      String
   contactEmail        String
   contactPhone        String
@@ -230,16 +300,16 @@ model SiteSettings {
   memorandumPdfName   String?
   rulesPdfUrl         String?
   rulesPdfName        String?
-  developerPercentage Int? @default(20)
+  developerPercentage Int?    @default(20)
 }
 
 model RevenueRecord {
-  id               String @id @default(uuid())
+  id               String   @id @default(uuid())
   customerName     String
   itemType         String
   itemName         String
   amount           Float
-  paymentFrequency String @default("one_time")
+  paymentFrequency String   @default("one_time")
   date             DateTime @default(now())
 
   @@index([itemType])
