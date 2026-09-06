@@ -13,7 +13,7 @@ import prisma from "./lib/prisma";
 import membersRouter from "./routes/members";
 import businessesRouter from "./routes/businesses";
 import matrimonialRouter from "./routes/matrimonial";
-import passwordlessAuthRouter from "./routes/passwordlessAuth";
+
 import formDraftsRouter from "./routes/formDrafts";
 import contentRouter from "./routes/content";
 import { loginLimiter, apiLimiter, uploadLimiter } from "./middleware/rateLimiter";
@@ -116,7 +116,7 @@ app.use("/api/activities", activitiesRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/services", servicesRouter);
-app.use("/api/auth", passwordlessAuthRouter);
+
 app.use("/api/forms", formDraftsRouter);
 
 process.on("unhandledRejection", (reason, promise) => {
