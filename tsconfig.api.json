@@ -1,0 +1,15 @@
+{
+  "extends": "./backend/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "api/**/*.ts",
+    "backend/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "backend/node_modules",
+    "backend/dist"
+  ]
+}

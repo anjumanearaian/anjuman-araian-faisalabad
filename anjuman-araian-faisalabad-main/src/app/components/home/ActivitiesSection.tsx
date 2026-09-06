@@ -1,1 +1,0 @@
-export default function ActivitiesSection(){return <section><h2>Latest Activities</h2></section>}

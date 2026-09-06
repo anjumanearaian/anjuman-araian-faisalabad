@@ -1,6 +1,8 @@
+> تازہ routing correction کے لیے پہلے READ-FIRST-404-FIX-UR.md پڑھیں۔ v5.0.1 کی API entry میں رہ جانے والی خرابی v5.0.2 میں درست کی گئی ہے۔
+
 # انجمن ارائیاں فیصل آباد: Login اور OTP کی تشخیصی رپورٹ
 
-تاریخ: 6 ستمبر 2026 | اصلاحی ورژن: 5.0.1-auth-fix
+تاریخ: 6 ستمبر 2026 | اصلاحی ورژن: 5.0.2-routing-fix
 
 ## حتمی نتیجہ
 
@@ -99,7 +101,7 @@ Vercel میں source update اور variables محفوظ کرنے کے بعد ن�
 ```json
 {
   "status": "ok",
-  "version": "5.0.1-auth-fix",
+  "version": "5.0.2-routing-fix",
   "database": "connected",
   "authTables": "ready",
   "authentication": "configured",

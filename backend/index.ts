@@ -159,7 +159,7 @@ app.get("/api/health", async (req, res) => {
   const ok = database === "connected" && authConfigured && authTables === "ready";
   res.status(ok ? 200 : 503).json({
     status: ok ? "ok" : "setup_required",
-    version: "5.0.1-auth-fix",
+    version: "5.0.2-routing-fix",
     database,
     authTables,
     authentication: authConfigured ? "configured" : "not_configured",
@@ -429,12 +429,9 @@ app.get("/api/automation/birthdays", async (req: Request, res: Response, next: N
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req: Request, res: Response) => {
-  res.status(404).json({ error: "Route not found" });
-});
-
-app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found. Confirm that the latest backend is deployed." });
 });
+
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
