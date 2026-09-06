@@ -17,7 +17,7 @@ export function PasswordlessSignIn({ onAuthenticated, compact = false }: { onAut
     const render = () => {
       if (!window.google?.accounts?.id || !googleRef.current) return;
       window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: async ({ credential }: { credential: string }) => {
-        try { setBusy(true); setError(""); finish(await apiClient<Session>("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) })); }
+        try { setBusy(true); setError(""); finish(await apiClient<Session> { method: "POST", body: JSON.stringify({ credential }) })); }
         catch (e: any) { setError(e.message || "Google sign-in failed"); } finally { setBusy(false); }
       }});
       window.google.accounts.id.renderButton(googleRef.current, { theme: "outline", size: "large", width: compact ? 320 : 360, text: "continue_with" });
@@ -27,8 +27,8 @@ export function PasswordlessSignIn({ onAuthenticated, compact = false }: { onAut
     return () => { script.onload = null; };
   }, [compact]);
 
-  const requestCode = async () => { setBusy(true); setError(""); setNotice(""); try { const data = await apiClient<{ message: string; devOtp?: string }>("/api/auth/email/request-otp", { method: "POST", body: JSON.stringify({ email }) }); setSent(true); setNotice(data.devOtp ? `Development code: ${data.devOtp}` : "A 6-digit code has been sent. It expires in 10 minutes."); } catch (e: any) { setError(e.message || "Could not send code"); } finally { setBusy(false); } };
-  const verify = async () => { setBusy(true); setError(""); try { finish(await apiClient<Session>("/api/auth/email/verify-otp", { method: "POST", body: JSON.stringify({ email, code }) })); } catch (e: any) { setError(e.message || "Code verification failed"); } finally { setBusy(false); } };
+  const requestCode = async () => { setBusy(true); setError(""); setNotice(""); try { const data = await apiClient<{ message: string; devOtp?: string }>(, { method: "POST", body: JSON.stringify({ email }) }); setSent(true); setNotice(data.devOtp ? `Development code: ${data.devOtp}` : "A 6-digit code has been sent. It expires in 10 minutes."); } catch (e: any) { setError(e.message || "Could not send code"); } finally { setBusy(false); } };
+  const verify = async () => { setBusy(true); setError(""); try { finish(await apiClient<Session>(, { method: "POST", body: JSON.stringify({ email, code }) })); } catch (e: any) { setError(e.message || "Code verification failed"); } finally { setBusy(false); } };
   const input: React.CSSProperties = { width: "100%", padding: "12px 14px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, boxSizing: "border-box" };
   return <div>
     {GOOGLE_CLIENT_ID && <><div ref={googleRef} style={{ display: "flex", justifyContent: "center", minHeight: 44 }} /><div style={{ display: "flex", alignItems: "center", gap: 10, color: "#9ca3af", fontSize: 12, margin: "18px 0" }}><span style={{ height: 1, background: "#e5e7eb", flex: 1 }} />OR USE EMAIL OTP<span style={{ height: 1, background: "#e5e7eb", flex: 1 }} /></div></>}
