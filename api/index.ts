@@ -1,1 +1,3 @@
-app.use("/api/auth", passwordlessAuthRouter);
+import app from "../backend/index";
+
+export default app;
