@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { Member } from "../lib/memberStore";
 
-import { apiClient } from "../lib/apiClient";
+import { ApiError, apiClient } from "../lib/apiClient";
 
 interface MemberContextType {
   member: Member | null;
@@ -57,7 +57,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       setMember(data);
     } catch (e) {
       setMember(null);
-      localStorage.removeItem("araian_member_token");
+      if (e instanceof ApiError && e.status === 401) localStorage.removeItem("araian_member_token");
     }
   }, []);
 

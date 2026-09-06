@@ -7,25 +7,30 @@ export const INFO_EMAIL =
   process.env.INFO_EMAIL || "info@anjumanearaian.org";
 
 
-function transporter() {
-  const host = process.env.SMTP_HOST;
+function smtpConfig() {
+  // Explicit SMTP configuration takes priority. Retain documented Gmail aliases.
+  const explicit = Boolean(process.env.SMTP_HOST || process.env.SMTP_USER || process.env.SMTP_PASSWORD);
+  const host = explicit ? process.env.SMTP_HOST : "smtp.gmail.com";
+  const user = explicit ? process.env.SMTP_USER : process.env.GMAIL_USER;
+  const pass = explicit ? process.env.SMTP_PASSWORD : process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
   const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD;
-
-  if (!host || !user || !pass) return null;
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure: false,
-    auth: {
-      user,
-      pass,
-    },
-  });
+  return { host, user, pass, port };
 }
 
+export function emailConfigured() {
+  const { host, user, pass, port } = smtpConfig();
+  return Boolean(host && user && pass && Number.isInteger(port) && port > 0 && port <= 65535);
+}
+
+function transporter() {
+  const { host, user, pass, port } = smtpConfig();
+  if (!emailConfigured()) return null;
+  return nodemailer.createTransport({
+    host, port, secure: port === 465, requireTLS: port !== 465,
+    auth: { user, pass },
+    connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 10000,
+  });
+}
 
 export async function sendEmail(
   to: string,
@@ -48,7 +53,7 @@ export async function sendEmail(
 
   await mailer.sendMail({
 
-    from: `Anjuman-e-Araian Faisalabad <${process.env.EMAIL_FROM || MASTER_EMAIL}>`,
+    from: `Anjuman-e-Araian Faisalabad <${process.env.EMAIL_FROM || smtpConfig().user || MASTER_EMAIL}>`,
 
     to,
 
