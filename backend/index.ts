@@ -7,9 +7,10 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { put } from "@vercel/blob";
-import { emailFrame, sendEmail } from "./lib/email";
+import { emailFrame, emailConfigured, sendEmail } from "./lib/email";
 
 import prisma from "./lib/prisma";
+import authRouter from "./routes/auth";
 import membersRouter from "./routes/members";
 import businessesRouter from "./routes/businesses";
 import matrimonialRouter from "./routes/matrimonial";
@@ -103,6 +104,7 @@ import homepageRouter from "./routes/homepage";
 import servicesRouter from "./routes/services";
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+app.use("/api/auth", authRouter);
 app.use("/api/members", membersRouter);
 app.use("/api/businesses", businessesRouter);
 app.use("/api/matrimonial", matrimonialRouter);
@@ -142,14 +144,27 @@ app.get("/api/health", async (req, res) => {
     }
   }
 
-  const ok = database === "connected" && authConfigured;
+  let authTables = "not_checked";
+  if (database === "connected") {
+    try {
+      await Promise.all([
+        prisma.admin.findFirst({ select: { id: true } }),
+        prisma.authUser.findFirst({ select: { id: true } }),
+        prisma.emailOtp.findFirst({ select: { id: true } }),
+        prisma.formDraft.findFirst({ select: { id: true } }),
+      ]);
+      authTables = "ready";
+    } catch { authTables = "missing_or_unavailable"; }
+  }
+  const ok = database === "connected" && authConfigured && authTables === "ready";
   res.status(ok ? 200 : 503).json({
     status: ok ? "ok" : "setup_required",
-    version: "5.0.0",
+    version: "5.0.1-auth-fix",
     database,
+    authTables,
     authentication: authConfigured ? "configured" : "not_configured",
     storage: storageConfigured ? "vercel_blob" : (databaseConfigured ? "database_fallback" : "not_configured"),
-    passwordlessEmail: process.env.GMAIL_APP_PASSWORD ? "configured" : "not_configured",
+    passwordlessEmail: emailConfigured() ? "configured" : "not_configured",
     googleSignIn: process.env.GOOGLE_CLIENT_ID ? "configured" : "not_configured",
     timestamp: new Date().toISOString(),
   });
@@ -417,15 +432,26 @@ app.use((req: Request, res: Response) => {
   res.status(404).json({ error: "Route not found" });
 });
 
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "API endpoint not found. Confirm that the latest backend is deployed." });
+});
+
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  const status = err.status || err.statusCode || 500;
+  const setupErrors: Record<string, string> = {
+    P2021: "Database tables are missing. The administrator must apply the Prisma schema.",
+    P2022: "Database columns are missing. The administrator must update the Prisma schema.",
+    P1000: "Database credentials were rejected. Check DATABASE_URL.",
+    P1001: "Database could not be reached. Check DATABASE_URL and database availability.",
+  };
+  const setupError = setupErrors[err.code];
+  const status = setupError ? 503 : (err.status || err.statusCode || 500);
   const isProduction = process.env.NODE_ENV === "production";
 
   console.error(`[ERROR] ${req.method} ${req.path} →`, err.message);
 
   res.status(status).json({
-    error: isProduction && status === 500 ? "Internal server error" : err.message,
+    error: setupError || (isProduction && status === 500 ? "Internal server error" : err.message),
   });
 });
 
