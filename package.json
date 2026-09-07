@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "prisma generate --schema=backend/prisma/schema.prisma",
-    "build": "vite build",
+    "build": "tsc -p backend/tsconfig.json && vite build",
     "dev": "vite",
     "dev:frontend": "vite",
     "dev:backend": "cd backend && npm run dev",
