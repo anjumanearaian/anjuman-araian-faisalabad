@@ -1,4 +1,7 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
+// The frontend and backend are deployed together on the same Vercel project.
+// Always use the same-origin /api prefix so preview/stale deployment URLs or an
+// outdated VITE_API_URL cannot send requests to the wrong deployment.
+export const API_BASE_URL = "/api";
 
 export class ApiError extends Error {
   public details?: Record<string, string[]>;
@@ -39,7 +42,8 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     delete headers["Content-Type"];
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const requestUrl = `${API_BASE_URL}${endpoint}`;
+  const response = await fetch(requestUrl, {
     ...options,
     headers,
   });
@@ -55,7 +59,7 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
       }
     } catch (e) {
       errorMessage = response.status === 404
-        ? "Login API was not found (HTTP 404). Ask the administrator to deploy the updated backend."
+        ? `API route ${requestUrl} was not found (HTTP 404).`
         : `Server request failed (HTTP ${response.status}). Check deployment logs.`;
     }
     throw new ApiError(errorMessage, details, response.status);
