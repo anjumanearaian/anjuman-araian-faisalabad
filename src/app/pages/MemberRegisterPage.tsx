@@ -6,7 +6,7 @@ import { provinces, bloodGroups, educationLevels, occupations, relationships, bl
 import type { Member, MembershipType, FamilyInfo } from "../lib/memberStore";
 import { getSiteSettings } from "../lib/settingsStore";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
-import { apiClient } from "../lib/apiClient";
+import { ApiError, apiClient } from "../lib/apiClient";
 import { uploadFile } from "../lib/upload";
 import { PasswordlessSignIn } from "../components/PasswordlessSignIn";
 
@@ -96,7 +96,14 @@ export function MemberRegisterPage() {
         if (typeof draft.currentStep === "number") setStep(Math.min(5, draft.currentStep));
       }
       setSaveState("saved"); hydrated.current = true;
-    }).catch(() => { setSaveState("error"); setAuthenticated(false); localStorage.removeItem("araian_member_token"); });
+   }).catch((e) => {
+  setSaveState("error");
+
+  if (e instanceof ApiError && e.status === 401) {
+    setAuthenticated(false);
+    localStorage.removeItem("araian_member_token");
+  }
+});
   }, [authenticated]);
 
   useEffect(() => {
