@@ -87,9 +87,74 @@ export const blankFamily = (): FamilyInfo => ({
 
 export const provinces = ["Punjab", "Sindh", "KPK", "Balochistan", "Azad Kashmir", "Gilgit-Baltistan", "Federal"];
 export const bloodGroups = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
-export const educationLevels = ["Matric", "Intermediate", "Bachelor's", "Master's", "PhD", "Other"];
-export const occupations = ["Agriculture", "Business", "Doctor", "Engineer", "Lawyer", "Government Service", "Teacher", "Retired", "Student", "Other"];
+
+// Canonical master lists used wherever member education/occupation is edited.
+// A member may select Other and provide a detail, but that detail is not silently
+// promoted to the master list. An administrator can review it first, preventing
+// duplicate variants such as MBA/M.B.A. being treated as separate education levels.
+export const educationLevels = [
+  "Primary",
+  "Middle",
+  "Matric",
+  "Intermediate",
+  "Diploma / Certificate",
+  "Bachelor's",
+  "Master's",
+  "MPhil / MS",
+  "PhD",
+  "Professional Qualification",
+  "Other",
+];
+
+export const occupations = [
+  "Agriculture",
+  "Business",
+  "Government Service",
+  "Private Service",
+  "Doctor",
+  "Veterinarian",
+  "Engineer",
+  "Lawyer",
+  "Teacher",
+  "Banking / Finance",
+  "IT / Technology",
+  "Armed Forces",
+  "Self-Employed",
+  "Homemaker",
+  "Retired",
+  "Student",
+  "Other",
+];
+
 export const relationships = ["Father", "Mother", "Brother", "Sister", "Son", "Daughter", "Spouse", "Uncle", "Friend", "Other"];
+
+export const OPTION_DETAIL_SEPARATOR = " — ";
+
+export function splitStructuredOption(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return { base: "", detail: "" };
+  const index = raw.indexOf(OPTION_DETAIL_SEPARATOR);
+  if (index < 0) return { base: raw, detail: "" };
+  return {
+    base: raw.slice(0, index).trim(),
+    detail: raw.slice(index + OPTION_DETAIL_SEPARATOR.length).trim(),
+  };
+}
+
+export function structuredOptionForEdit(value: string | null | undefined, options: readonly string[]) {
+  const raw = String(value || "").trim();
+  const parsed = splitStructuredOption(raw);
+  if (parsed.base && options.includes(parsed.base)) return parsed;
+  // Legacy or free-text values are preserved under Other instead of being lost.
+  return { base: "Other", detail: raw };
+}
+
+export function joinStructuredOption(base?: string | null, detail?: string | null) {
+  const cleanBase = String(base || "").trim();
+  const cleanDetail = String(detail || "").trim();
+  if (!cleanBase) return cleanDetail;
+  return cleanDetail ? `${cleanBase}${OPTION_DETAIL_SEPARATOR}${cleanDetail}` : cleanBase;
+}
 
 export const statusColors: Record<MemberStatus, { bg: string; text: string; label: string }> = {
   pending:  { bg: "#fef9c3", text: "#854d0e", label: "Pending Approval" },
