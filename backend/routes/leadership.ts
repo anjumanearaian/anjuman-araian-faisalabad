@@ -60,6 +60,42 @@ function publicProfile(item: any) {
   return { ...profile, name: linked.fullName || profile.name, city: linked.city || profile.city, image: linked.photoUrl || profile.image };
 }
 
+// Admin-only searchable source for assigning an existing master member to a leadership role.
+// Sensitive fields are deliberately excluded from the response.
+router.get("/member-options", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (q.length < 1) return void res.json({ members: [] });
+
+    const members = await prisma.member.findMany({
+      where: {
+        status: "approved",
+        OR: [
+          { fullName: { contains: q, mode: "insensitive" } },
+          { memberNo: { contains: q, mode: "insensitive" } },
+          { cnic: { contains: q, mode: "insensitive" } },
+          { phone: { contains: q, mode: "insensitive" } },
+          { whatsapp: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      orderBy: { fullName: "asc" },
+      take: 20,
+      select: {
+        id: true,
+        memberNo: true,
+        fullName: true,
+        city: true,
+        photoUrl: true,
+        occupation: true,
+        designation: true,
+        membershipType: true,
+      },
+    });
+
+    res.json({ members });
+  } catch (error) { next(error); }
+});
+
 router.get("/profiles", async (_req, res, next) => {
   try {
     if (await prisma.leadershipProfile.count() === 0) {
