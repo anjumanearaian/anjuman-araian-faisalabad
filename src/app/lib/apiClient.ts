@@ -30,10 +30,12 @@ function getAuthToken(endpoint: string) {
 
 function needsNestedProxy(endpoint: string) {
   const pathname = endpoint.split("?")[0];
-  return pathname === "/content/published" ||
-    /^\/content\/[^/]+$/.test(pathname) ||
-    pathname.startsWith("/leadership/") ||
-    /^\/members\/[^/]+\/status$/.test(pathname);
+  // Vercel can resolve the single-segment API handlers directly, but nested
+  // Express routes are not reliably matched as filesystem functions. Send every
+  // multi-segment route through the catch-all proxy so forms, business submit,
+  // matrimonial submit, admin form lists and other nested endpoints behave the
+  // same on production, preview deployments and the future custom domain.
+  return pathname.split("/").filter(Boolean).length > 1;
 }
 
 function buildRequestUrl(endpoint: string) {
