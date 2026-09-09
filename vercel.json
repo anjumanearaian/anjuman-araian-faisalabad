@@ -17,19 +17,31 @@
   "rewrites": [
     {
       "source": "/api/content/published",
-      "destination": "/api/[...path]"
+      "destination": "/api/__proxy?__path=content/published"
     },
     {
       "source": "/api/content/:id",
-      "destination": "/api/[...path]"
+      "destination": "/api/__proxy?__path=content/:id"
     },
     {
-      "source": "/api/leadership/:path*",
-      "destination": "/api/[...path]"
+      "source": "/api/leadership/profiles",
+      "destination": "/api/__proxy?__path=leadership/profiles"
+    },
+    {
+      "source": "/api/leadership/profiles/:id",
+      "destination": "/api/__proxy?__path=leadership/profiles/:id"
+    },
+    {
+      "source": "/api/leadership/messages",
+      "destination": "/api/__proxy?__path=leadership/messages"
+    },
+    {
+      "source": "/api/leadership/messages/:type",
+      "destination": "/api/__proxy?__path=leadership/messages/:type"
     },
     {
       "source": "/api/members/:id/status",
-      "destination": "/api/[...path]"
+      "destination": "/api/__proxy?__path=members/:id/status"
     },
     {
       "source": "/((?!api/|uploads/).*)",
