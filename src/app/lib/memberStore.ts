@@ -1,4 +1,4 @@
-export type MemberStatus = "pending" | "approved" | "rejected" | "inactive";
+export type MemberStatus = "pending" | "approved" | "rejected" | "inactive" | "suspended" | "deceased";
 export type MemberVisibility = "public" | "private";
 export type MembershipType = "ordinary" | "life" | "patron" | "overseas";
 
@@ -18,6 +18,7 @@ export interface FamilyInfo {
 
 export interface Member {
   id: string;
+  formNo?: string;
   memberNo: string;
   // Personal
   fullName: string;
@@ -48,7 +49,8 @@ export interface Member {
   memberCell?: "male" | "women";
   paymentStatus?: string;
   // Family info (private — admin only by default)
-  family: FamilyInfo;
+  family?: FamilyInfo;
+  familyInfo?: FamilyInfo;
   familyInfoPublic: boolean;
   // Status
   status: MemberStatus;
@@ -57,7 +59,7 @@ export interface Member {
   showOnPortal: boolean;
   isFeatured?: boolean;
   isFeaturedPortal?: boolean;
-  // Documents (base64)
+  // Documents
   photoUrl: string;
   cnicFrontUrl: string;
   cnicBackUrl: string;
@@ -157,10 +159,12 @@ export function joinStructuredOption(base?: string | null, detail?: string | nul
 }
 
 export const statusColors: Record<MemberStatus, { bg: string; text: string; label: string }> = {
-  pending:  { bg: "#fef9c3", text: "#854d0e", label: "Pending Approval" },
-  approved: { bg: "#dcfce7", text: "#15803d", label: "Approved" },
-  rejected: { bg: "#fee2e2", text: "#b91c1c", label: "Rejected" },
-  inactive: { bg: "#f3f4f6", text: "#6b7280", label: "Inactive" },
+  pending:   { bg: "#fef9c3", text: "#854d0e", label: "Pending Approval" },
+  approved:  { bg: "#dcfce7", text: "#15803d", label: "Approved" },
+  rejected:  { bg: "#fee2e2", text: "#b91c1c", label: "Rejected" },
+  inactive:  { bg: "#f3f4f6", text: "#6b7280", label: "Inactive" },
+  suspended: { bg: "#ffedd5", text: "#9a3412", label: "Suspended" },
+  deceased:  { bg: "#e5e7eb", text: "#374151", label: "Deceased" },
 };
 
 import { apiClient } from "./apiClient";
@@ -175,6 +179,18 @@ export async function fetchAllMembers(page: number = 1, limit: number = 10) {
   }
 }
 
+export async function fetchAdminMembers() {
+  const data = await apiClient<{ members: Member[] }>("/members/admin-center");
+  return data.members || [];
+}
+
+export async function createAdminMember(data: Partial<Member> & Record<string, unknown>) {
+  return apiClient<Member>("/members/admin-create", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function updateMemberStatus(id: string, status: MemberStatus, rejectionReason?: string, adminNote?: string) {
   await apiClient(`/members/${id}/status`, {
     method: "PATCH",
@@ -183,7 +199,7 @@ export async function updateMemberStatus(id: string, status: MemberStatus, rejec
 }
 
 export async function updateMember(id: string, partial: Partial<Member>) {
-  await apiClient(`/members/${id}`, {
+  return apiClient<Member>(`/members/${id}`, {
     method: "PATCH",
     body: JSON.stringify(partial)
   });
