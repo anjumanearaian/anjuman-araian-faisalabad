@@ -16,32 +16,22 @@ function bodyOf(req: any) {
 }
 
 function restoreNestedApiPath(req: any) {
-  try {
-    const current = new URL(String(req.url || "/api/__proxy"), "http://localhost");
-    const queryPath = req?.query?.__path;
-    const proxyPath = current.searchParams.get("__path") || (Array.isArray(queryPath) ? queryPath[0] : queryPath);
-    if (!proxyPath) return;
+  const rawUrl = String(req.url || "");
+  const qIndex = rawUrl.indexOf("?");
+  const pathname = qIndex >= 0 ? rawUrl.slice(0, qIndex) : rawUrl;
+  const query = qIndex >= 0 ? rawUrl.slice(qIndex) : "";
+  const prefix = "/api/__proxy__";
+  if (!pathname.startsWith(prefix)) return;
 
-    const passthrough = new URLSearchParams();
-    const sourceQuery = req?.query && typeof req.query === "object" ? req.query : {};
-    for (const [key, raw] of Object.entries(sourceQuery)) {
-      if (key === "__path" || key === "path") continue;
-      const values = Array.isArray(raw) ? raw : [raw];
-      for (const value of values) {
-        if (value !== undefined && value !== null) passthrough.append(key, String(value));
-      }
-    }
-
-    // Some runtimes leave the query only on req.url. Preserve any values that
-    // were not exposed through req.query.
-    for (const [key, value] of current.searchParams.entries()) {
-      if (key === "__path" || key === "path" || passthrough.has(key)) continue;
-      passthrough.append(key, value);
-    }
-
-    const qs = passthrough.toString();
-    req.url = `/api/${String(proxyPath).replace(/^\/+/, "")}${qs ? `?${qs}` : ""}`;
-  } catch {}
+  const encoded = pathname.slice(prefix.length);
+  const nested = encoded
+    .split("__")
+    .filter(Boolean)
+    .map((part) => {
+      try { return decodeURIComponent(part); } catch { return part; }
+    })
+    .join("/");
+  if (nested) req.url = `/api/${nested}${query}`;
 }
 
 export default async function handler(req: any, res: any) {
