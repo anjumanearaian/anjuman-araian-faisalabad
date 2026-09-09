@@ -56,16 +56,116 @@ function restoreNestedApiPath(req: any) {
   } catch {}
 }
 
-function adminUser(req: any) {
+function tokenUser(req: any) {
   try {
     const authHeader = String(req.headers?.authorization || "");
     if (!authHeader.startsWith("Bearer ") || !process.env.JWT_SECRET) return null;
-    const user = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET) as any;
-    return ["admin", "super_admin"].includes(String(user?.role || "")) ? user : null;
+    return jwt.verify(authHeader.slice(7), process.env.JWT_SECRET) as any;
   } catch { return null; }
 }
 
+function adminUser(req: any) {
+  const user = tokenUser(req);
+  return user && ["admin", "super_admin"].includes(String(user?.role || "")) ? user : null;
+}
+
 function text(value: any, fallback = "") { return String(value ?? fallback).trim(); }
+
+function normalized(value: any) {
+  return text(value).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function preferenceHit(requirements: any, value: any) {
+  const req = normalized(requirements);
+  const target = normalized(value);
+  if (!req || !target) return false;
+  if (req.includes(target)) return true;
+  const tokens = target.split(" ").filter((v) => v.length >= 2);
+  return tokens.some((v) => req.includes(v));
+}
+
+function compatibilityScore(own: any, target: any) {
+  if (!own || !target) return null;
+  if (normalized(own.gender) === normalized(target.gender)) return 0;
+  let score = 25;
+  if (normalized(own.city) && normalized(own.city) === normalized(target.city)) score += 5;
+  if (preferenceHit(own.requirements, target.city)) score += 10;
+  if (preferenceHit(own.requirements, target.education)) score += 10;
+  if (preferenceHit(own.requirements, target.profession)) score += 15;
+  if (preferenceHit(target.requirements, own.city)) score += 10;
+  if (preferenceHit(target.requirements, own.education)) score += 10;
+  if (preferenceHit(target.requirements, own.profession)) score += 15;
+  return Math.max(0, Math.min(100, score));
+}
+
+async function secureMatrimonialPublished(req: any, res: any) {
+  const user = tokenUser(req);
+  if (!user || ["admin", "super_admin"].includes(String(user?.role || ""))) {
+    return res.status(401).json({ error: "An approved member login is required to view the matrimonial directory." });
+  }
+
+  const identity: any[] = [];
+  if (user.id) identity.push({ authUserId: String(user.id) });
+  if (user.email) identity.push({ email: { equals: String(user.email), mode: "insensitive" } });
+  if (!identity.length) return res.status(401).json({ error: "Your member session is not valid. Please sign in again." });
+
+  const member = await prisma.member.findFirst({
+    where: { status: "approved", OR: identity },
+    select: { id: true, memberNo: true, fullName: true },
+  });
+  if (!member) return res.status(403).json({ error: "Approved membership is required before matrimonial profiles can be viewed." });
+
+  const rawUrl = new URL(String(req.url || "/api/matrimonial/published"), "http://localhost");
+  const page = Math.max(1, Number(rawUrl.searchParams.get("page") || 1) || 1);
+  const limit = Math.min(100, Math.max(1, Number(rawUrl.searchParams.get("limit") || 20) || 20));
+
+  const own = user.id ? await prisma.matrimonial.findFirst({
+    where: { authUserId: String(user.id), status: "approved", paymentStatus: { in: ["received", "verified"] } },
+    orderBy: { createdAt: "desc" },
+  }) : null;
+
+  const where: any = {
+    status: "approved",
+    showOnPortal: true,
+    paymentStatus: { in: ["received", "verified"] },
+  };
+  if (own?.id) where.id = { not: own.id };
+  if (own?.gender) where.gender = { not: own.gender };
+
+  const [profiles, total] = await Promise.all([
+    prisma.matrimonial.findMany({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true, gender: true, age: true, city: true, education: true, profession: true,
+        requirements: true, photoUrl: true, isFeatured: true, createdAt: true,
+      },
+    }),
+    prisma.matrimonial.count({ where }),
+  ]);
+
+  const safeProfiles = profiles.map((p: any) => ({
+    id: p.id,
+    profileCode: `AAF-MAT-${String(p.id).replace(/-/g, "").slice(0, 8).toUpperCase()}`,
+    gender: p.gender,
+    age: p.age,
+    city: p.city,
+    education: p.education,
+    profession: p.profession,
+    photoUrl: p.photoUrl || undefined,
+    isFeatured: Boolean(p.isFeatured),
+    matchScore: compatibilityScore(own, p),
+    createdAt: p.createdAt,
+  }));
+
+  return res.json({
+    profiles: safeProfiles,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    viewer: { memberNo: member.memberNo, hasApprovedMatrimonialProfile: Boolean(own) },
+  });
+}
 
 async function createAdminMember(req: any, res: any) {
   const user = adminUser(req);
@@ -191,6 +291,15 @@ export default async function handler(req: any, res: any) {
   restoreNestedApiPath(req);
   const pathname = String(req.url || "").split("?")[0];
   const method = String(req.method || "").toUpperCase();
+
+  if (pathname === "/api/matrimonial/published" && method === "GET") {
+    try {
+      return await secureMatrimonialPublished(req, res);
+    } catch (error) {
+      console.error("Secure matrimonial directory failed", error);
+      return res.status(500).json({ error: "The matrimonial directory could not be loaded securely. Please try again." });
+    }
+  }
 
   // The separate approval-center screen used these admin-only operations, but
   // they did not exist in the Express member router. Keep them inside the
