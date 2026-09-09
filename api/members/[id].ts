@@ -65,10 +65,24 @@ async function syncMembershipDraft(authUserId: string | null | undefined, update
     select: { data: true },
   });
   if (!draft) return;
-  const existing = draft.data && typeof draft.data === "object" && !Array.isArray(draft.data) ? draft.data as Record<string, unknown> : {};
+
+  const existing = draft.data && typeof draft.data === "object" && !Array.isArray(draft.data)
+    ? draft.data as Record<string, any>
+    : {};
+
+  // Membership drafts are normally stored as { form, family }. Keep that shape
+  // intact so corrections made from the member portal also appear in the saved
+  // registration form used by administrators and future PDF/print output.
+  let nextData: Record<string, any>;
+  if (existing.form && typeof existing.form === "object" && !Array.isArray(existing.form)) {
+    nextData = { ...existing, form: { ...existing.form, ...updates } };
+  } else {
+    nextData = { ...existing, ...updates };
+  }
+
   await prisma.formDraft.update({
     where: { authUserId_formType: { authUserId, formType: "membership" } },
-    data: { data: { ...existing, ...updates } },
+    data: { data: nextData },
   });
 }
 
