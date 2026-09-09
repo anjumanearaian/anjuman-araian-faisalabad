@@ -4,18 +4,18 @@ import prisma from "./prisma";
 const dbFile = (url: string) => url.match(/^\/api\/files\/([0-9a-f-]{36})$/i)?.[1] || "";
 const blobFile = (url: string) => /^https:\/\/[^/]*blob\.vercel-storage\.com\//i.test(url);
 
-function containsJsonValue(value: unknown, url: string) {
-  if (Array.isArray(value)) return value.some((item) => item === url || containsJsonValue(item, url));
-  if (value && typeof value === "object") return Object.values(value as Record<string, unknown>).some((item) => item === url || containsJsonValue(item, url));
+function containsJsonValue(value: unknown, url: string): boolean {
+  if (Array.isArray(value)) return value.some((item): boolean => item === url || containsJsonValue(item, url));
+  if (value && typeof value === "object") return Object.values(value as Record<string, unknown>).some((item): boolean => item === url || containsJsonValue(item, url));
   return false;
 }
 
-export function isManagedFileUrl(value?: string | null) {
+export function isManagedFileUrl(value?: string | null): boolean {
   const url = String(value || "").trim();
   return Boolean(url && (dbFile(url) || blobFile(url)));
 }
 
-async function isReferenced(url: string) {
+async function isReferenced(url: string): Promise<boolean> {
   if (await prisma.member.findFirst({ where: { OR: [
     { photoUrl: url }, { cnicFrontUrl: url }, { cnicBackUrl: url }, { paymentProofUrl: url }, { additionalPhotos: { contains: url } }
   ] }, select: { id: true } })) return true;
@@ -40,7 +40,7 @@ async function isReferenced(url: string) {
   return false;
 }
 
-export async function deleteManagedFileIfUnreferenced(value?: string | null) {
+export async function deleteManagedFileIfUnreferenced(value?: string | null): Promise<void> {
   const url = String(value || "").trim();
   if (!isManagedFileUrl(url) || await isReferenced(url)) return;
 
@@ -52,7 +52,7 @@ export async function deleteManagedFileIfUnreferenced(value?: string | null) {
   if (blobFile(url)) await del(url).catch(() => undefined);
 }
 
-export async function cleanupRemovedFiles(before: Array<string | null | undefined>, after: Array<string | null | undefined>) {
+export async function cleanupRemovedFiles(before: Array<string | null | undefined>, after: Array<string | null | undefined>): Promise<void> {
   const keep = new Set(after.map((x) => String(x || "").trim()).filter(Boolean));
   const removed = [...new Set(before.map((x) => String(x || "").trim()).filter(Boolean))].filter((url) => !keep.has(url));
   for (const url of removed) await deleteManagedFileIfUnreferenced(url);
