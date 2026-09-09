@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Heart, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Heart, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordlessSignIn } from "../components/PasswordlessSignIn";
 import { apiClient } from "../lib/apiClient";
+import { MatrimonialProfile } from "../lib/matrimonialStore";
+import { MatrimonialExistingProfilePage } from "./MatrimonialExistingProfilePage";
 import { MatrimonialPage } from "./MatrimonialPage";
 
 const GREEN = "#1a4d2e";
@@ -14,18 +16,30 @@ type GateState = "checking" | "login" | "approved" | "pending" | "not_member" | 
 export function MatrimonialMemberOnlyPage() {
   const [state, setState] = useState<GateState>("checking");
   const [member, setMember] = useState<any>(null);
+  const [profile, setProfile] = useState<MatrimonialProfile | null | undefined>(undefined);
   const [error, setError] = useState("");
 
   const checkMember = async () => {
     const token = localStorage.getItem("araian_member_token");
-    if (!token) { setState("login"); return; }
-    setState("checking"); setError("");
+    if (!token) { setState("login"); setProfile(undefined); return; }
+    setState("checking"); setProfile(undefined); setError("");
     try {
       const m = await apiClient<any>("/members/me");
       setMember(m);
-      if (m?.status === "approved") setState("approved");
-      else if (m?.id) setState("pending");
-      else setState("not_member");
+      if (m?.status === "approved") {
+        setState("approved");
+        try {
+          const mine = await apiClient<{ profile: MatrimonialProfile | null }>("/matrimonial/mine");
+          setProfile(mine?.profile || null);
+        } catch (e: any) {
+          setError(e?.message || "Your matrimonial profile could not be loaded.");
+          setProfile(null);
+        }
+      } else if (m?.id) {
+        setState("pending");
+      } else {
+        setState("not_member");
+      }
     } catch (e: any) {
       if (e?.status === 404 || e?.status === 403) setState("not_member");
       else if (e?.status === 401) { localStorage.removeItem("araian_member_token"); setState("login"); }
@@ -35,7 +49,13 @@ export function MatrimonialMemberOnlyPage() {
 
   useEffect(() => { void checkMember(); }, []);
 
-  if (state === "approved") return <MatrimonialPage />;
+  if (state === "approved") {
+    if (profile === undefined) {
+      return <div><PageHeader title="Matrimonial Service" subtitle="Private matrimonial service for approved Anjuman members" breadcrumb={["Home", "Matrimonial"]} /><div style={{ minHeight: 320, display: "grid", placeItems: "center", color: "#666" }}><div style={{ textAlign: "center" }}><Loader2 size={28} color={GREEN} className="mat-gate-spin" /><p>Loading your matrimonial record...</p></div></div><style>{`.mat-gate-spin{animation:matGateSpin .9s linear infinite}@keyframes matGateSpin{to{transform:rotate(360deg)}}`}</style></div>;
+    }
+    if (profile) return <MatrimonialExistingProfilePage profile={profile} onSaved={(updated) => setProfile(updated)} />;
+    return <MatrimonialPage />;
+  }
 
   return <div>
     <PageHeader title="Matrimonial Service" subtitle="Private matrimonial service for approved Anjuman members" breadcrumb={["Home", "Matrimonial"]} />
