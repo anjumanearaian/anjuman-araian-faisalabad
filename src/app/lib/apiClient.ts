@@ -15,10 +15,16 @@ export class ApiError extends Error {
 }
 
 function getAuthToken(endpoint: string) {
-  if (["/members/me", "/members/register", "/members/login"].includes(endpoint) || (endpoint.startsWith("/forms/") && !endpoint.startsWith("/forms/admin/"))) {
+  const memberFirst =
+    ["/members/me", "/members/register", "/members/login", "/matrimonial/submit"].includes(endpoint) ||
+    (endpoint.startsWith("/forms/") && !endpoint.startsWith("/forms/admin/")) ||
+    (endpoint.startsWith("/matrimonial/match-requests") && !endpoint.startsWith("/matrimonial/match-requests/admin"));
+
+  if (memberFirst) {
     return localStorage.getItem("araian_member_token") || sessionStorage.getItem("araian_admin_token") || null;
   }
-  // Members might store token in localStorage, Admins in sessionStorage
+  // Admin operations prefer the admin token. Member token remains a fallback for
+  // endpoints that explicitly permit members.
   return sessionStorage.getItem("araian_admin_token") || localStorage.getItem("araian_member_token") || null;
 }
 
@@ -28,7 +34,6 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     ...(options.headers as Record<string, string> || {}),
   };
 
-  // Add JSON content type if not already set and not FormData
   if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
@@ -37,7 +42,6 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  // If using FormData, let the browser set the Content-Type header with the boundary
   if (options.body instanceof FormData) {
     delete headers["Content-Type"];
   }
@@ -54,10 +58,8 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     try {
       const errorData = await response.json();
       errorMessage = errorData.error || errorMessage;
-      if (errorData.details) {
-        details = errorData.details;
-      }
-    } catch (e) {
+      if (errorData.details) details = errorData.details;
+    } catch {
       errorMessage = response.status === 404
         ? `API route ${requestUrl} was not found (HTTP 404).`
         : `Server request failed (HTTP ${response.status}). Check deployment logs.`;
@@ -65,16 +67,12 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     throw new ApiError(errorMessage, details, response.status);
   }
 
-  // Handle empty responses
   const text = await response.text();
-  if (!text) {
-    return {} as T;
-  }
+  if (!text) return {} as T;
 
   try {
     return JSON.parse(text) as T;
-  } catch (e) {
-    // If response is not JSON, just return text as any (e.g. string)
+  } catch {
     return text as any as T;
   }
 }
