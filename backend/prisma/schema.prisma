@@ -33,6 +33,7 @@ model Message {
 
 model Member {
   id               String    @id @default(uuid())
+  formNo           String?   @unique
   memberNo         String    @unique
   fullName         String
   fatherName       String
@@ -77,7 +78,8 @@ model Member {
   updatedAt        DateTime  @updatedAt
   approvedAt       DateTime?
 
-  familyInfo FamilyInfo?
+  familyInfo         FamilyInfo?
+  leadershipProfiles LeadershipProfile[]
 
   @@index([status])
   @@index([membershipType])
@@ -158,10 +160,37 @@ model Matrimonial {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  requestedMatches MatrimonialMatchRequest[] @relation("RequesterProfile")
+  receivedMatches  MatrimonialMatchRequest[] @relation("TargetProfile")
+
   @@index([status])
   @@index([paymentStatus])
   @@index([isFeatured])
+  @@index([authUserId])
   @@index([createdAt])
+}
+
+model MatrimonialMatchRequest {
+  id                  String      @id @default(uuid())
+  requesterAuthUserId String
+  requesterAuthUser   AuthUser    @relation(fields: [requesterAuthUserId], references: [id], onDelete: Cascade)
+  requesterProfileId  String
+  requesterProfile    Matrimonial @relation("RequesterProfile", fields: [requesterProfileId], references: [id], onDelete: Cascade)
+  targetProfileId     String
+  targetProfile       Matrimonial @relation("TargetProfile", fields: [targetProfileId], references: [id], onDelete: Cascade)
+  status              String      @default("pending_admin")
+  requesterMessage    String?
+  adminNote           String?
+  adminApprovedAt     DateTime?
+  targetRespondedAt   DateTime?
+  contactReleasedAt   DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@unique([requesterProfileId, targetProfileId])
+  @@index([requesterAuthUserId])
+  @@index([targetProfileId])
+  @@index([status])
 }
 
 model AuthUser {
@@ -175,6 +204,7 @@ model AuthUser {
   member      Member?
   drafts      FormDraft[]
   matrimonial Matrimonial[]
+  matchRequests MatrimonialMatchRequest[]
 
   @@index([email])
 }
@@ -261,6 +291,8 @@ model OverseasChapter {
 
 model LeadershipProfile {
   id          String  @id @default(uuid())
+  memberId    String?
+  member      Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
   name        String
   role        String
   tier        Int     @default(2)
@@ -269,6 +301,8 @@ model LeadershipProfile {
   image       String?
   period      String?
   description String?
+
+  @@index([memberId])
 }
 
 model LeadershipMessage {
