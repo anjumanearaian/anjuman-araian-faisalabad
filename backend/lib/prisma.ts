@@ -24,7 +24,21 @@ function normalizeDatabaseUrl(raw?: string) {
   return value;
 }
 
-const normalizedDatabaseUrl = normalizeDatabaseUrl(process.env.DATABASE_URL);
+const rawDatabaseUrl =
+  process.env.POSTGRES_PRISMA_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.DATABASE_URL;
+
+const normalizedDatabaseUrl =
+  normalizeDatabaseUrl(rawDatabaseUrl);
+
+if (!normalizedDatabaseUrl) {
+  throw new Error(
+    "Database connection is not configured"
+  );
+}
+
+process.env.DATABASE_URL = normalizedDatabaseUrl;
 if (normalizedDatabaseUrl) {
   process.env.DATABASE_URL = normalizedDatabaseUrl;
 }
