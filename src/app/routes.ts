@@ -12,6 +12,7 @@ import { ExPresidentsPage } from "./pages/ExPresidentsPage";
 import { CabinetPage } from "./pages/CabinetPage";
 import { ExecutiveMembersPage } from "./pages/ExecutiveMembersPage";
 import { AdvisoryBoardPage } from "./pages/AdvisoryBoardPage";
+import { MembersDirectoryPage } from "./pages/MembersDirectoryPage";
 import { EventsPage } from "./pages/EventsPage";
 import { MediaPage } from "./pages/MediaPage";
 import { NewsPage } from "./pages/NewsPage";
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
       { path: "secretary-message", Component: SecretaryMessagePage },
       { path: "founders", Component: FoundersPage },
       { path: "ex-presidents", Component: ExPresidentsPage },
+      { path: "members-directory", Component: MembersDirectoryPage },
       { path: "cabinet", Component: CabinetPage },
       { path: "executive-members", Component: ExecutiveMembersPage },
       { path: "advisory-board", Component: AdvisoryBoardPage },
