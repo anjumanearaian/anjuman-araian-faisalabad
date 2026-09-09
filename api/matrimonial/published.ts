@@ -1,7 +1,9 @@
-import { createRequire } from "node:module";
+import proxyHandler from "../[...path]";
 
-const require = createRequire(import.meta.url);
-const backendModule = require("../../backend/dist/index.js");
-const app = backendModule.default ?? backendModule;
-
-export default app;
+export default async function handler(req: any, res: any) {
+  const raw = String(req.url || "");
+  const query = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
+  req.url = `/api/__proxy__matrimonial__published${query}`;
+  req.query = { ...(req.query || {}), path: "__proxy__matrimonial__published" };
+  return proxyHandler(req, res);
+}
