@@ -16,7 +16,7 @@ import {
   searchReferralMembers,
 } from "../lib/memberStore";
 import type { MembershipType, FamilyInfo, MemberChild, ReferralCandidate } from "../lib/memberStore";
-import { pakistanDistricts, pakistanMajorCities, suggestLocation } from "../lib/pakistanLocations";
+import { citiesForProvince, districtForCity } from "../lib/pakistanLocations";
 import { getSiteSettings } from "../lib/settingsStore";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import { ApiError, apiClient } from "../lib/apiClient";
@@ -166,14 +166,18 @@ export function MemberRegisterPage() {
   };
   const setFam = (k: keyof FamilyInfo, v: string) => setFamily((f) => ({ ...f, [k]: v }));
 
+  const provinceCities = citiesForProvince(form.province);
+  const onProvinceChange = (province: string) => {
+    const allowed = citiesForProvince(province);
+    setForm((old) => {
+      const city = allowed.includes(old.city) ? old.city : "";
+      return { ...old, province, city, district: city ? districtForCity(city) : "" };
+    });
+    setErrors((e) => ({ ...e, city: "" }));
+  };
+
   const onCityChange = (city: string) => {
-    const hint = suggestLocation(city);
-    setForm((old) => ({
-      ...old,
-      city,
-      district: hint.district || old.district,
-      province: hint.province || old.province,
-    }));
+    setForm((old) => ({ ...old, city, district: districtForCity(city) }));
     setErrors((e) => ({ ...e, city: "" }));
   };
 
@@ -257,7 +261,7 @@ export function MemberRegisterPage() {
           address: form.address,
           localArea: form.localArea,
           city: form.city,
-          district: form.district,
+          district: districtForCity(form.city),
           province: form.province,
           occupation: joinStructuredOption(form.occupation, form.occupationDetail),
           education: joinStructuredOption(form.education, form.educationDetail),
@@ -313,14 +317,13 @@ export function MemberRegisterPage() {
             <Field label="Blood Group"><select style={inputStyle} value={form.bloodGroup} onChange={(e) => set("bloodGroup", e.target.value)}>{bloodGroups.map((b) => <option key={b}>{b}</option>)}</select></Field>
           </div></div>}
 
-          {step === 1 && <div><SectionHead icon={Phone} title="Contact and Location" subtitle="Choose the major city/town; type the exact locality, tehsil, village or area separately." /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid">
+          {step === 1 && <div><SectionHead icon={Phone} title="Contact and Location" subtitle="Choose the province/region first, then select the relevant city or town and enter the exact local area separately." /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid">
             <Field label="Verified Email Address *"><input type="email" readOnly style={{ ...inputStyle, background: "#f0f7f3" }} value={form.email} /></Field>
             <Field label="Phone Number *" error={errors.phone}><input type="tel" style={inputStyle} value={form.phone} onChange={(e) => set("phone", e.target.value)} onBlur={() => handleBlur("phone")} placeholder="+92 300 000 0000" /></Field>
             <Field label="WhatsApp Number" hint="Leave blank if it is the same as your phone number."><input type="tel" style={inputStyle} value={form.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} /></Field>
-            <Field label="City / Town *" error={errors.city} hint="Search a major Pakistan city/town. If it is not listed, type it manually."><input list="pakistan-cities" style={inputStyle} value={form.city} onChange={(e) => onCityChange(e.target.value)} /><datalist id="pakistan-cities">{pakistanMajorCities.map((x) => <option key={x} value={x} />)}</datalist></Field>
-            <Field label="District" hint="For Karachi, select the relevant district; for smaller places you may type the district manually."><input list="pakistan-districts" style={inputStyle} value={form.district} onChange={(e) => set("district", e.target.value)} /><datalist id="pakistan-districts">{pakistanDistricts.map((x) => <option key={x} value={x} />)}</datalist></Field>
-            <Field label="Province / Region"><select style={inputStyle} value={form.province} onChange={(e) => set("province", e.target.value)}>{provinces.map((p) => <option key={p}>{p}</option>)}</select></Field>
-            <div style={{ gridColumn: "span 2" }}><Field label="Local Area / Tehsil / Town / Village" hint="Examples: Iqbal Town, Samundri, Mamu Kanjan, Chak 456 GB. This keeps village-level data flexible without an enormous dropdown."><input style={inputStyle} value={form.localArea} onChange={(e) => set("localArea", e.target.value)} placeholder="Area, tehsil, town, village or chak" /></Field></div>
+            <Field label="Province / Region *"><select style={inputStyle} value={form.province} onChange={(e) => onProvinceChange(e.target.value)}>{provinces.map((p) => <option key={p}>{p}</option>)}</select></Field>
+            <Field label="City / Town *" error={errors.city} hint="The suggestions below belong to the selected province/region. You may still type a smaller town manually."><input list="province-cities" style={inputStyle} value={form.city} onChange={(e) => onCityChange(e.target.value)} /><datalist id="province-cities">{provinceCities.map((x) => <option key={x} value={x} />)}</datalist></Field>
+            <Field label="Local Area / Tehsil / Town / Village" hint="Examples: Iqbal Town, Samundri, Mamu Kanjan, Chak 456 GB. District is stored automatically for legacy database compatibility."><input style={inputStyle} value={form.localArea} onChange={(e) => set("localArea", e.target.value)} placeholder="Area, tehsil, town, village or chak" /></Field>
             <div style={{ gridColumn: "span 2" }}><Field label="Full Address *" error={errors.address}><textarea rows={2} style={{ ...inputStyle, resize: "vertical" }} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="House / street / road / area and any other details" /></Field></div>
           </div></div>}
 
