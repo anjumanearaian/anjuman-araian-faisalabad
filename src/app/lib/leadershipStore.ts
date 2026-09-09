@@ -7,7 +7,7 @@ export interface LeadershipProfile {
   role: string;
   city: string;
   tier?: number;
-  category: "cabinet" | "executive" | "advisory" | "founder" | "expresident";
+  category: string;
   image?: string;
   period?: string;
   description?: string;
