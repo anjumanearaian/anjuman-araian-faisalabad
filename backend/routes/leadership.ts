@@ -29,9 +29,36 @@ const parseMessage = (item: any) => {
 };
 
 async function normalizeLinkedProfile(data: any) {
-  if (!data.memberId) return data;
+  let linkedMemberId = data.memberId ? String(data.memberId) : "";
+  const historicalManualCategory = ["founder", "expresident"].includes(String(data.category || "").toLowerCase());
+
+  // Current organizational positions must point back to the master Member row.
+  // For compatibility with the older Admin Leadership form, an exact approved
+  // member name is auto-linked. Typos/new duplicate person records are rejected.
+  if (!linkedMemberId && !historicalManualCategory) {
+    const exactMatches = await prisma.member.findMany({
+      where: {
+        status: "approved",
+        fullName: { equals: String(data.name || "").trim(), mode: "insensitive" },
+      },
+      select: { id: true },
+      take: 2,
+    });
+    if (exactMatches.length === 1) linkedMemberId = exactMatches[0].id;
+    else {
+      const error: any = new Error(
+        exactMatches.length > 1
+          ? "More than one approved member has this name. Assign the role from Member & Approval Center so the correct Member ID is used."
+          : "Current leadership and committee roles must be assigned to an existing approved member from Member & Approval Center."
+      );
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  if (!linkedMemberId) return data;
   const member = await prisma.member.findUnique({
-    where: { id: String(data.memberId) },
+    where: { id: linkedMemberId },
     select: { id: true, status: true, fullName: true, city: true, photoUrl: true },
   });
   if (!member) {
@@ -127,8 +154,14 @@ router.post("/profiles", requireAdmin, async (req: Request, res: Response, next:
 router.put("/profiles/:id", requireAdmin, validate(ProfileSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
-    const previous = await prisma.leadershipProfile.findUnique({ where: { id }, select: { image: true } });
-    const data = await normalizeLinkedProfile({ ...req.body });
+    const previous = await prisma.leadershipProfile.findUnique({ where: { id }, select: { image: true, memberId: true, name: true, category: true, city: true } });
+    const data = await normalizeLinkedProfile({
+      name: previous?.name || "",
+      city: previous?.city || "Faisalabad",
+      category: previous?.category || "cabinet",
+      memberId: previous?.memberId || null,
+      ...req.body,
+    });
     const updated = await prisma.leadershipProfile.update({ where: { id }, data });
     if (previous?.image && previous.image !== updated.image) await deleteManagedFileIfUnreferenced(previous.image);
     res.json(updated);
