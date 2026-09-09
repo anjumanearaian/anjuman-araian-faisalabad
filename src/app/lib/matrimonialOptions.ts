@@ -24,12 +24,10 @@ export const SECT_OPTIONS = [
   "Sunni", "Shia", "Other / Prefer not to specify"
 ];
 
-export const PARTNER_EDUCATION_OPTIONS = [
-  "No Preference", "Matric or above", "Intermediate or above", "Bachelor or above", "Master or above", "Professional Degree", "Doctorate / PhD"
-];
-
+// Keep preference values aligned with candidate values. This makes matching
+// deterministic instead of depending on free-text synonyms.
+export const PARTNER_EDUCATION_OPTIONS = ["No Preference", ...EDUCATION_OPTIONS];
 export const PARTNER_PROFESSION_OPTIONS = ["No Preference", ...PROFESSION_OPTIONS.filter((v) => v !== "Student")];
-
 export const PARTNER_MARITAL_OPTIONS = ["No Preference", ...MARITAL_STATUS_OPTIONS];
 
 export function buildFamilyBackground(input: {
