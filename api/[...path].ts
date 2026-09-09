@@ -16,22 +16,50 @@ function bodyOf(req: any) {
 }
 
 function restoreNestedApiPath(req: any) {
-  const rawUrl = String(req.url || "");
-  const qIndex = rawUrl.indexOf("?");
-  const pathname = qIndex >= 0 ? rawUrl.slice(0, qIndex) : rawUrl;
-  const query = qIndex >= 0 ? rawUrl.slice(qIndex) : "";
-  const prefix = "/api/__proxy__";
-  if (!pathname.startsWith(prefix)) return;
+  try {
+    const rawUrl = String(req.url || "");
+    const parsed = new URL(rawUrl || "/", "http://localhost");
+    const prefix = "__proxy__";
 
-  const encoded = pathname.slice(prefix.length);
-  const nested = encoded
-    .split("__")
-    .filter(Boolean)
-    .map((part) => {
-      try { return decodeURIComponent(part); } catch { return part; }
-    })
-    .join("/");
-  if (nested) req.url = `/api/${nested}${query}`;
+    let encoded = "";
+    const pathnamePrefix = `/api/${prefix}`;
+    if (parsed.pathname.startsWith(pathnamePrefix)) {
+      encoded = parsed.pathname.slice(pathnamePrefix.length);
+    }
+
+    const caughtPath = req?.query?.path;
+    const caught = Array.isArray(caughtPath) ? caughtPath.join("/") : String(caughtPath || "");
+    if (!encoded && caught.startsWith(prefix)) {
+      encoded = caught.slice(prefix.length);
+    }
+    if (!encoded) return;
+
+    const nested = encoded
+      .split("__")
+      .filter(Boolean)
+      .map((part) => {
+        try { return decodeURIComponent(part); } catch { return part; }
+      })
+      .join("/");
+    if (!nested) return;
+
+    const passthrough = new URLSearchParams();
+    const sourceQuery = req?.query && typeof req.query === "object" ? req.query : {};
+    for (const [key, raw] of Object.entries(sourceQuery)) {
+      if (key === "path") continue;
+      const values = Array.isArray(raw) ? raw : [raw];
+      for (const value of values) {
+        if (value !== undefined && value !== null) passthrough.append(key, String(value));
+      }
+    }
+    for (const [key, value] of parsed.searchParams.entries()) {
+      if (key === "path" || passthrough.has(key)) continue;
+      passthrough.append(key, value);
+    }
+
+    const qs = passthrough.toString();
+    req.url = `/api/${nested}${qs ? `?${qs}` : ""}`;
+  } catch {}
 }
 
 export default async function handler(req: any, res: any) {
