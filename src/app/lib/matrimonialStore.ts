@@ -24,6 +24,7 @@ export interface MatrimonialProfile {
   adminNote?: string;
   showOnPortal?: boolean;
   isFeatured?: boolean;
+  matchScore?: number | null;
   packageId?: string;
   applicantType?: string;
   feeAmount?: number;
@@ -53,7 +54,12 @@ export const matrimonialStatusColors: Record<MatrimonialStatus, { bg: string; te
 export async function fetchAllMatrimonials(page: number = 1, limit: number = 10, includePending: boolean = false) {
   const endpoint = includePending ? `/matrimonial?page=${page}&limit=${limit}` : `/matrimonial/published?page=${page}&limit=${limit}`;
   const res = (await apiClient(endpoint)) as any;
-  return { data: (res.profiles || []) as MatrimonialProfile[], total: res.pagination?.total || 0, totalPages: res.pagination?.totalPages || 0 };
+  return {
+    data: (res.profiles || []) as MatrimonialProfile[],
+    total: res.pagination?.total || 0,
+    totalPages: res.pagination?.totalPages || 0,
+    viewer: res.viewer,
+  };
 }
 
 export async function createMatrimonial(data: Record<string, unknown>) {
