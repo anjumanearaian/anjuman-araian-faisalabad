@@ -48,7 +48,7 @@ function requireAdminUser(user: any) {
 
 async function nextMemberNo() {
   const year = new Date().getFullYear();
-  const prefix = `AAF-M-${year}-`;
+  const prefix = `ARA-${year}-`;
   const latest = await prisma.member.findFirst({
     where: { memberNo: { startsWith: prefix } },
     orderBy: { memberNo: "desc" },
@@ -76,7 +76,6 @@ export default async function handler(req: any, res: any) {
   const method = String(req.method || "GET").toUpperCase();
   const id = readId(req);
 
-  // Full admin list used by the dedicated Member & Approval Center.
   if (method === "GET" && id === "admin-center") {
     try {
       const user = verifyToken(req);
@@ -98,7 +97,6 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  // Manual member creation by an administrator. Blank number fields are generated automatically.
   if (method === "POST" && id === "admin-create") {
     try {
       const user = verifyToken(req);
@@ -181,8 +179,6 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  // Keep every existing method on the Express backend. This exact Vercel route
-  // intercepts only PATCH for controlled self-service/admin profile updates.
   if (method !== "PATCH") {
     return app(req, res);
   }
@@ -234,7 +230,6 @@ export default async function handler(req: any, res: any) {
       );
     }
 
-    // Verified login email cannot be silently changed from a profile edit.
     delete updates.email;
     delete updates.authUserId;
     delete updates.familyInfo;
