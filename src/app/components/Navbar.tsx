@@ -24,8 +24,10 @@ const navLinks = [
   },
   {
     label: "Members",
-    to: "/cabinet",
+    to: "/members-directory",
     children: [
+      { label: "Members Directory", to: "/members-directory" },
+      { label: "Women Wing", to: "/members-directory?cell=women" },
       { label: "Executive Council", to: "/cabinet" },
       { label: "Executive Committee Members", to: "/executive-members" },
       { label: "Advisory Board", to: "/advisory-board" },
@@ -64,12 +66,13 @@ export function Navbar() {
   const { member } = useMember();
   const settings = getSiteSettings();
 
-  const isActive = (to: string) =>
-    to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+  const isActive = (to: string) => {
+    const cleanTo = to.split("?")[0];
+    return cleanTo === "/" ? location.pathname === "/" : location.pathname.startsWith(cleanTo);
+  };
 
   return (
     <header style={{ fontFamily: "'Poppins', sans-serif", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}>
-      {/* Top bar */}
       <div style={{ backgroundColor: GREEN, padding: "8px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 13 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
@@ -96,7 +99,6 @@ export function Navbar() {
         </div>
       </div>
 
-      {/* Logo + Nav */}
       <div style={{ backgroundColor: "white", borderBottom: "1px solid #fde6f1" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 80 }}>
           <Link to="/" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
@@ -129,18 +131,22 @@ export function Navbar() {
                   {link.children && <ChevronDown size={12} />}
                 </Link>
                 {link.children && openDropdown === link.label && (
-                  <div style={{ position: "absolute", top: "100%", left: 0, backgroundColor: "white", borderRadius: "0 0 8px 8px", boxShadow: "0 8px 28px rgba(0,0,0,0.13)", borderTop: `3px solid ${GOLD}`, minWidth: 210, zIndex: 200, padding: "4px 0" }}>
-                    {link.children.map((child) => (
-                      <Link
-                        key={child.to}
-                        to={child.to}
-                        style={{ display: "block", padding: "10px 20px", fontSize: 13, textDecoration: "none", color: location.pathname === child.to ? GREEN : "#3a3a3a", fontWeight: location.pathname === child.to ? 700 : 400 }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = GREEN; (e.currentTarget as HTMLElement).style.color = "white"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; (e.currentTarget as HTMLElement).style.color = location.pathname === child.to ? GREEN : "#3a3a3a"; }}
-                      >
-                        {child.label}
-                      </Link>
-                    ))}
+                  <div style={{ position: "absolute", top: "100%", left: 0, backgroundColor: "white", borderRadius: "0 0 8px 8px", boxShadow: "0 8px 28px rgba(0,0,0,0.13)", borderTop: `3px solid ${GOLD}`, minWidth: 225, zIndex: 200, padding: "4px 0" }}>
+                    {link.children.map((child) => {
+                      const childPath = child.to.split("?")[0];
+                      const childActive = location.pathname === childPath && (!child.to.includes("?") || location.search === child.to.slice(child.to.indexOf("?")));
+                      return (
+                        <Link
+                          key={child.to}
+                          to={child.to}
+                          style={{ display: "block", padding: "10px 20px", fontSize: 13, textDecoration: "none", color: childActive ? GREEN : "#3a3a3a", fontWeight: childActive ? 700 : 400 }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = GREEN; (e.currentTarget as HTMLElement).style.color = "white"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; (e.currentTarget as HTMLElement).style.color = childActive ? GREEN : "#3a3a3a"; }}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
                   </div>
                 )}
               </div>
