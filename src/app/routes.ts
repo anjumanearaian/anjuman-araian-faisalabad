@@ -18,7 +18,9 @@ import { NewsPage } from "./pages/NewsPage";
 import { OverseasPage } from "./pages/OverseasPage";
 import { ContactPage } from "./pages/ContactPage";
 import { MatrimonialPage } from "./pages/MatrimonialPage";
+import { MatrimonialRequestsPage } from "./pages/MatrimonialRequestsPage";
 import { AdminPage } from "./pages/AdminPage";
+import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
 import { MemberRegisterPage } from "./pages/MemberRegisterPage";
 import { MemberLoginPage } from "./pages/MemberLoginPage";
 import { MemberPortalPage } from "./pages/MemberPortalPage";
@@ -31,6 +33,10 @@ export const router = createBrowserRouter([
   {
     path: "admin",
     Component: AdminPage,
+  },
+  {
+    path: "admin/members",
+    Component: AdminMemberCenterPage,
   },
   {
     Component: Layout,
@@ -53,6 +59,7 @@ export const router = createBrowserRouter([
       { path: "overseas", Component: OverseasPage },
       { path: "contact", Component: ContactPage },
       { path: "matrimonial", Component: MatrimonialPage },
+      { path: "matrimonial/requests", Component: MatrimonialRequestsPage },
       { path: "business", Component: BusinessPage },
       { path: "business/submit", Component: BusinessSubmitPage },
       { path: "member/register", Component: MemberRegisterPage },
