@@ -63,6 +63,13 @@ function restoreNestedApiPath(req: any) {
 }
 
 export default async function handler(req: any, res: any) {
+  const beforeUrl = String(req.url || "");
+  const beforeQuery = req?.query ?? null;
+  const inspectHaystack = `${beforeUrl} ${JSON.stringify(beforeQuery)}`;
+  if (inspectHaystack.includes("__inspect__")) {
+    return res.status(200).json({ url: beforeUrl, query: beforeQuery, method: req.method });
+  }
+
   restoreNestedApiPath(req);
   const pathname = String(req.url || "").split("?")[0];
   const match = pathname.match(/\/api\/members\/([^/]+)\/status\/?$/);
