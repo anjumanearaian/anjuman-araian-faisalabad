@@ -107,72 +107,49 @@ export const provinces = ["Punjab", "Sindh", "KPK", "Balochistan", "Azad Kashmir
 export const bloodGroups = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
 
 export const educationLevels = [
-  "Primary",
-  "Middle",
-  "Matric",
-  "Intermediate",
-  "Diploma / Certificate",
-  "Bachelor's",
-  "Master's",
-  "MPhil / MS",
-  "PhD",
-  "Professional Qualification",
-  "Other",
+  "Primary", "Middle", "Matric", "Intermediate", "Diploma / Certificate", "Bachelor's", "Master's", "MPhil / MS", "PhD", "Professional Qualification", "Other",
 ];
 
 export const childEducationLevels = [
-  "Not Started",
-  "Pre-School",
-  "Primary",
-  "Middle",
-  "Matric",
-  "Intermediate",
-  "Diploma / Certificate",
-  "Bachelor's",
-  "Master's",
-  "MPhil / MS",
-  "PhD",
-  "Professional Qualification",
-  "Other",
+  "Not Started", "Pre-School", "Primary", "Middle", "Matric", "Intermediate", "Diploma / Certificate", "Bachelor's", "Master's", "MPhil / MS", "PhD", "Professional Qualification", "Other",
 ];
 
 export const occupations = [
-  "Agriculture",
-  "Business",
-  "Government Service",
-  "Private Service",
-  "Doctor",
-  "Veterinarian",
-  "Engineer",
-  "Lawyer",
-  "Teacher",
-  "Banking / Finance",
-  "IT / Technology",
-  "Armed Forces",
-  "Self-Employed",
-  "Homemaker",
-  "Retired",
-  "Student",
-  "Other",
+  "Agriculture", "Business", "Government Service", "Private Service", "Doctor", "Veterinarian", "Engineer", "Lawyer", "Teacher", "Banking / Finance", "IT / Technology", "Armed Forces", "Self-Employed", "Homemaker", "Retired", "Student", "Other",
 ];
+
+// Canonical titles used across membership, directory and leadership forms. Free
+// text remains available for a title that is not yet in the controlled list.
+export const designationSuggestions = [
+  "Chairman", "President", "Vice President", "Senior Vice President", "General Secretary", "Joint Secretary", "Finance Secretary", "Information Secretary",
+  "Chief Executive Officer", "Managing Director", "Executive Director", "Director", "General Manager", "Deputy General Manager", "Manager", "Assistant Manager",
+  "Owner / Proprietor", "Partner", "Consultant", "Professor", "Associate Professor", "Assistant Professor", "Lecturer", "Researcher", "Officer", "Other",
+];
+
+export function canonicalDesignation(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const key = raw.toLowerCase().replace(/[.\-_]/g, " ").replace(/\s+/g, " ").trim();
+  const aliases: Record<string, string> = {
+    "ceo": "Chief Executive Officer", "chief executive": "Chief Executive Officer", "chief executive officer": "Chief Executive Officer",
+    "md": "Managing Director", "managing director": "Managing Director",
+    "gm": "General Manager", "general manager": "General Manager",
+    "svp": "Senior Vice President", "senior vice president": "Senior Vice President",
+    "vp": "Vice President", "vice president": "Vice President",
+    "gen sec": "General Secretary", "general secretary": "General Secretary",
+    "owner": "Owner / Proprietor", "proprietor": "Owner / Proprietor", "owner proprietor": "Owner / Proprietor",
+  };
+  return aliases[key] || raw;
+}
 
 export const relationships = ["Father", "Mother", "Brother", "Sister", "Son", "Daughter", "Spouse", "Uncle", "Aunt", "Friend", "Other"];
 
-// Suggestions only. These fields are optional, private and always allow free text.
 export const casteBiradariSuggestions = [
-  "Araian", "Jatt", "Rajput", "Gujjar", "Syed", "Sheikh", "Mughal", "Pathan / Pashtun", "Awan", "Kamboh",
-  "Kashmiri", "Qureshi", "Ansari", "Malik", "Rana", "Chaudhry", "Other"
+  "Araian", "Jatt", "Rajput", "Gujjar", "Syed", "Sheikh", "Mughal", "Pathan / Pashtun", "Awan", "Kamboh", "Kashmiri", "Qureshi", "Ansari", "Malik", "Rana", "Chaudhry", "Other"
 ];
 
 export const religiousSectSuggestions = [
-  "Prefer not to say",
-  "Sunni",
-  "Sunni - Barelvi",
-  "Sunni - Deobandi",
-  "Sunni - Ahl-e-Hadith",
-  "Shia",
-  "Ismaili",
-  "Other"
+  "Prefer not to say", "Sunni", "Sunni - Barelvi", "Sunni - Deobandi", "Sunni - Ahl-e-Hadith", "Shia", "Ismaili", "Other"
 ];
 
 export const OPTION_DETAIL_SEPARATOR = " — ";
@@ -182,10 +159,7 @@ export function splitStructuredOption(value?: string | null) {
   if (!raw) return { base: "", detail: "" };
   const index = raw.indexOf(OPTION_DETAIL_SEPARATOR);
   if (index < 0) return { base: raw, detail: "" };
-  return {
-    base: raw.slice(0, index).trim(),
-    detail: raw.slice(index + OPTION_DETAIL_SEPARATOR.length).trim(),
-  };
+  return { base: raw.slice(0, index).trim(), detail: raw.slice(index + OPTION_DETAIL_SEPARATOR.length).trim() };
 }
 
 export function structuredOptionForEdit(value: string | null | undefined, options: readonly string[]) {
@@ -203,12 +177,12 @@ export function joinStructuredOption(base?: string | null, detail?: string | nul
 }
 
 export const statusColors: Record<MemberStatus, { bg: string; text: string; label: string }> = {
-  pending:   { bg: "#fef9c3", text: "#854d0e", label: "Pending Approval" },
-  approved:  { bg: "#dcfce7", text: "#15803d", label: "Approved" },
-  rejected:  { bg: "#fee2e2", text: "#b91c1c", label: "Rejected" },
-  inactive:  { bg: "#f3f4f6", text: "#6b7280", label: "Inactive" },
+  pending: { bg: "#fef9c3", text: "#854d0e", label: "Pending Approval" },
+  approved: { bg: "#dcfce7", text: "#15803d", label: "Approved" },
+  rejected: { bg: "#fee2e2", text: "#b91c1c", label: "Rejected" },
+  inactive: { bg: "#f3f4f6", text: "#6b7280", label: "Inactive" },
   suspended: { bg: "#ffedd5", text: "#9a3412", label: "Suspended" },
-  deceased:  { bg: "#e5e7eb", text: "#374151", label: "Deceased" },
+  deceased: { bg: "#e5e7eb", text: "#374151", label: "Deceased" },
 };
 
 export async function fetchAllMembers(page: number = 1, limit: number = 10) {
@@ -234,28 +208,30 @@ export async function searchReferralMembers(query: string) {
 }
 
 export async function createAdminMember(data: Partial<Member> & Record<string, unknown>) {
-  return apiClient<Member>("/members/admin-create", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
+  return apiClient<Member>("/members/admin-create", { method: "POST", body: JSON.stringify(data) });
 }
 
 export async function updateMemberStatus(id: string, status: MemberStatus, rejectionReason?: string, adminNote?: string) {
-  await apiClient(`/members/${id}/status`, {
+  // Approval is deliberately a two-step accounting action. The admin confirms
+  // that the relevant fee has actually been received; only then do we mark the
+  // payment verified before the existing protected approval endpoint runs.
+  if (status === "approved") {
+    const confirmed = typeof window === "undefined" || window.confirm("Confirm that the relevant membership fee has been received and verified. Approve this member now?");
+    if (!confirmed) return { cancelled: true };
+    await updateMember(id, { paymentStatus: "verified" });
+  }
+  return apiClient(`/members/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, rejectionReason, adminNote })
   });
 }
 
 export async function updateMember(id: string, partial: Partial<Member> & Record<string, unknown>) {
-  return apiClient<Member>(`/members/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(partial)
-  });
+  const payload = { ...partial } as Record<string, unknown>;
+  if (typeof payload.designation === "string") payload.designation = canonicalDesignation(payload.designation);
+  return apiClient<Member>(`/members/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 }
 
 export async function deleteMember(id: string) {
-  await apiClient(`/members/${id}`, {
-    method: "DELETE"
-  });
+  await apiClient(`/members/${id}`, { method: "DELETE" });
 }
