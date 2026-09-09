@@ -28,6 +28,25 @@ function getAuthToken(endpoint: string) {
   return sessionStorage.getItem("araian_admin_token") || localStorage.getItem("araian_member_token") || null;
 }
 
+function needsNestedProxy(endpoint: string) {
+  const pathname = endpoint.split("?")[0];
+  return pathname === "/content/published" ||
+    /^\/content\/[^/]+$/.test(pathname) ||
+    pathname.startsWith("/leadership/") ||
+    /^\/members\/[^/]+\/status$/.test(pathname);
+}
+
+function buildRequestUrl(endpoint: string) {
+  if (!needsNestedProxy(endpoint)) return `${API_BASE_URL}${endpoint}`;
+
+  const question = endpoint.indexOf("?");
+  const pathname = question >= 0 ? endpoint.slice(0, question) : endpoint;
+  const queryString = question >= 0 ? endpoint.slice(question + 1) : "";
+  const params = new URLSearchParams(queryString);
+  params.set("__path", pathname.replace(/^\/+/, ""));
+  return `${API_BASE_URL}/__proxy?${params.toString()}`;
+}
+
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken(endpoint);
   const headers: Record<string, string> = {
@@ -46,7 +65,7 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     delete headers["Content-Type"];
   }
 
-  const requestUrl = `${API_BASE_URL}${endpoint}`;
+  const requestUrl = buildRequestUrl(endpoint);
   const response = await fetch(requestUrl, {
     ...options,
     headers,
