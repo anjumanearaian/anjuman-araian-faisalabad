@@ -70,7 +70,7 @@ const cityHints: Record<string, LocationSuggestion> = {
   multan: { district: "Multan", province: "Punjab" },
   bahawalpur: { district: "Bahawalpur", province: "Punjab" },
   "rahim yar khan": { district: "Rahim Yar Khan", province: "Punjab" },
-  karachi: { province: "Sindh" },
+  karachi: { district: "Karachi", province: "Sindh" },
   hyderabad: { district: "Hyderabad", province: "Sindh" },
   sukkur: { district: "Sukkur", province: "Sindh" },
   larkana: { district: "Larkana", province: "Sindh" },
@@ -84,6 +84,35 @@ const cityHints: Record<string, LocationSuggestion> = {
   skardu: { district: "Skardu", province: "Gilgit-Baltistan" },
 };
 
+function sliceCities(start: string, end: string) {
+  const from = pakistanMajorCities.indexOf(start);
+  const to = pakistanMajorCities.indexOf(end);
+  return from >= 0 && to >= from ? pakistanMajorCities.slice(from, to + 1) : [];
+}
+
+export const pakistanCitiesByProvince: Record<string, string[]> = {
+  Punjab: sliceCities("Faisalabad", "Karor Lal Esan"),
+  Sindh: sliceCities("Karachi", "Kandhkot"),
+  KPK: sliceCities("Peshawar", "Chitral"),
+  Balochistan: sliceCities("Quetta", "Dera Allah Yar"),
+  Federal: ["Islamabad"],
+  "Azad Kashmir": sliceCities("Muzaffarabad", "Bagh AJK"),
+  "Gilgit-Baltistan": sliceCities("Gilgit", "Chilas"),
+};
+
+export function citiesForProvince(province: string): string[] {
+  const selected = pakistanCitiesByProvince[String(province || "").trim()];
+  return selected?.length ? selected : pakistanMajorCities;
+}
+
 export function suggestLocation(city: string): LocationSuggestion {
   return cityHints[String(city || "").trim().toLowerCase()] || {};
+}
+
+// District remains in the current database schema for compatibility, but forms
+// can hide the field. Known cities use their district hint; otherwise the city
+// itself is a safe legacy value until a fuller tehsil/district mapping is added.
+export function districtForCity(city: string): string {
+  const clean = String(city || "").trim();
+  return suggestLocation(clean).district || clean;
 }
