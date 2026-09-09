@@ -17,12 +17,33 @@ const digest = (email: string, code: string) => createHmac("sha256", secret()).u
 
 async function session(email: string, name?: string) {
   const user = await prisma.authUser.upsert({
-    where: { email }, update: { verifiedAt: new Date() },
+    where: { email }, update: { verifiedAt: new Date(), ...(name ? { name } : {}) },
     create: { email, name, verifiedAt: new Date() },
   });
-  const member = await prisma.member.findUnique({ where: { authUserId: user.id } });
-  // The applicant identity is required by registration and form draft routes.
-  // It never grants administrator rights.
+
+  let member = await prisma.member.findUnique({ where: { authUserId: user.id } });
+
+  // Older/imported members may already exist under the same verified email but
+  // pre-date AuthUser linking. Attach that record once instead of forcing the
+  // person to re-enter an email or create a second profile for business or
+  // matrimonial services.
+  if (!member) {
+    const matchingMember = await prisma.member.findFirst({
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        OR: [{ authUserId: null }, { authUserId: user.id }],
+      },
+    });
+    if (matchingMember) {
+      member = matchingMember.authUserId
+        ? matchingMember
+        : await prisma.member.update({ where: { id: matchingMember.id }, data: { authUserId: user.id } });
+    }
+  }
+
+  // The applicant identity is required by registration and saved-form routes.
+  // It never grants administrator rights. Service pages inspect the attached
+  // member status to decide whether member benefits/prefill apply.
   const token = jwt.sign({ id: user.id, email: user.email, role: "applicant" }, secret(), { expiresIn: "7d" });
   const safeMember = member ? (({ password, ...rest }) => rest)(member) : null;
   return { token, user: { id: user.id, email: user.email, name: user.name }, member: safeMember };
@@ -62,17 +83,27 @@ router.post("/email/verify-otp", loginLimiter, async (req, res, next) => {
     const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
     if (!validEmail(email) || !/^\d{6}$/.test(code)) return void res.status(400).json({ error: "Enter your email and the 6-digit code." });
     secret();
-    const verified = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${email}))`;
       const record = await tx.emailOtp.findFirst({ where: { email }, orderBy: { createdAt: "desc" } });
-      if (!record || record.consumedAt || record.expiresAt.getTime() <= Date.now() || record.attempts >= 5) return false;
+      if (!record) return { ok: false, reason: "missing" } as const;
+      if (record.consumedAt) return { ok: false, reason: "used" } as const;
+      if (record.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" } as const;
+      if (record.attempts >= 5) return { ok: false, reason: "attempts" } as const;
       const expected = Buffer.from(record.codeHash, "hex");
       const actual = Buffer.from(digest(email, code), "hex");
       const matches = expected.length === actual.length && timingSafeEqual(expected, actual);
       await tx.emailOtp.update({ where: { id: record.id }, data: { attempts: { increment: 1 }, ...(matches ? { consumedAt: new Date() } : {}) } });
-      return matches;
+      return matches ? { ok: true, reason: "ok" } as const : { ok: false, reason: "wrong" } as const;
     });
-    if (!verified) return void res.status(400).json({ error: "Code is invalid, expired, already used, or has too many attempts. Request a new code." });
+    if (!result.ok) {
+      const message = result.reason === "expired" ? "This login code has expired. Request a new code."
+        : result.reason === "used" ? "This login code has already been used. Request a new code."
+        : result.reason === "attempts" ? "Too many incorrect attempts. Request a new code."
+        : result.reason === "missing" ? "No active login code was found. Request a new code."
+        : "The login code is incorrect. Please check the latest email or request a new code.";
+      return void res.status(400).json({ error: message });
+    }
     res.json(await session(email));
   } catch (error) { next(error); }
 });
