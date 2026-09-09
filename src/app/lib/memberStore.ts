@@ -1,10 +1,21 @@
+import { apiClient } from "./apiClient";
+
 export type MemberStatus = "pending" | "approved" | "rejected" | "inactive" | "suspended" | "deceased";
 export type MemberVisibility = "public" | "private";
 export type MembershipType = "ordinary" | "life" | "patron" | "overseas";
 
+export interface MemberChild {
+  id?: string;
+  fullName: string;
+  dob: string;
+  education: string;
+}
+
 export interface FamilyInfo {
   fatherName: string;
   familyBranch: string;
+  caste: string;
+  religiousSect: string;
   spouseName: string;
   childrenCount: string;
   childrenDetails: string;
@@ -16,56 +27,59 @@ export interface FamilyInfo {
   emergencyRelationship: string;
 }
 
+export interface ReferralCandidate {
+  id: string;
+  memberNo: string;
+  fullName: string;
+  city: string;
+}
+
 export interface Member {
   id: string;
   formNo?: string;
   memberNo: string;
-  // Personal
   fullName: string;
   fatherName: string;
   cnic: string;
   dob: string;
   gender: string;
   bloodGroup: string;
-  // Contact
   email: string;
   phone: string;
   whatsapp: string;
   whatsappPublic: boolean;
   address: string;
+  localArea?: string;
   city: string;
   district: string;
   province: string;
-  // Professional
   occupation: string;
   education: string;
-  // Membership
   membershipType: MembershipType;
-  // Auth
   password?: string;
   designation?: string;
   institutionName?: string;
   businessName?: string;
   memberCell?: "male" | "women";
   paymentStatus?: string;
-  // Family info (private — admin only by default)
   family?: FamilyInfo;
   familyInfo?: FamilyInfo;
+  children?: MemberChild[];
   familyInfoPublic: boolean;
-  // Status
+  referrerMemberId?: string | null;
+  referrerMember?: ReferralCandidate | null;
+  referralStatus?: string;
   status: MemberStatus;
-  visibility: MemberVisibility; // Keep for legacy
+  visibility: MemberVisibility;
   showOnWeb: boolean;
   showOnPortal: boolean;
   isFeatured?: boolean;
   isFeaturedPortal?: boolean;
-  // Documents
   photoUrl: string;
   cnicFrontUrl: string;
   cnicBackUrl: string;
   paymentProofUrl?: string;
   additionalPhotos?: string[];
-  // Meta
   createdAt: string;
   updatedAt: string;
   approvedAt: string;
@@ -76,8 +90,10 @@ export interface Member {
 export const blankFamily = (): FamilyInfo => ({
   fatherName: "",
   familyBranch: "",
+  caste: "",
+  religiousSect: "",
   spouseName: "",
-  childrenCount: "",
+  childrenCount: "0",
   childrenDetails: "",
   familyContactName: "",
   familyContactNumber: "",
@@ -90,11 +106,23 @@ export const blankFamily = (): FamilyInfo => ({
 export const provinces = ["Punjab", "Sindh", "KPK", "Balochistan", "Azad Kashmir", "Gilgit-Baltistan", "Federal"];
 export const bloodGroups = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
 
-// Canonical master lists used wherever member education/occupation is edited.
-// A member may select Other and provide a detail, but that detail is not silently
-// promoted to the master list. An administrator can review it first, preventing
-// duplicate variants such as MBA/M.B.A. being treated as separate education levels.
 export const educationLevels = [
+  "Primary",
+  "Middle",
+  "Matric",
+  "Intermediate",
+  "Diploma / Certificate",
+  "Bachelor's",
+  "Master's",
+  "MPhil / MS",
+  "PhD",
+  "Professional Qualification",
+  "Other",
+];
+
+export const childEducationLevels = [
+  "Not Started",
+  "Pre-School",
   "Primary",
   "Middle",
   "Matric",
@@ -128,7 +156,24 @@ export const occupations = [
   "Other",
 ];
 
-export const relationships = ["Father", "Mother", "Brother", "Sister", "Son", "Daughter", "Spouse", "Uncle", "Friend", "Other"];
+export const relationships = ["Father", "Mother", "Brother", "Sister", "Son", "Daughter", "Spouse", "Uncle", "Aunt", "Friend", "Other"];
+
+// Suggestions only. These fields are optional, private and always allow free text.
+export const casteBiradariSuggestions = [
+  "Araian", "Jatt", "Rajput", "Gujjar", "Syed", "Sheikh", "Mughal", "Pathan / Pashtun", "Awan", "Kamboh",
+  "Kashmiri", "Qureshi", "Ansari", "Malik", "Rana", "Chaudhry", "Other"
+];
+
+export const religiousSectSuggestions = [
+  "Prefer not to say",
+  "Sunni",
+  "Sunni - Barelvi",
+  "Sunni - Deobandi",
+  "Sunni - Ahl-e-Hadith",
+  "Shia",
+  "Ismaili",
+  "Other"
+];
 
 export const OPTION_DETAIL_SEPARATOR = " — ";
 
@@ -147,7 +192,6 @@ export function structuredOptionForEdit(value: string | null | undefined, option
   const raw = String(value || "").trim();
   const parsed = splitStructuredOption(raw);
   if (parsed.base && options.includes(parsed.base)) return parsed;
-  // Legacy or free-text values are preserved under Other instead of being lost.
   return { base: "Other", detail: raw };
 }
 
@@ -167,8 +211,6 @@ export const statusColors: Record<MemberStatus, { bg: string; text: string; labe
   deceased:  { bg: "#e5e7eb", text: "#374151", label: "Deceased" },
 };
 
-import { apiClient } from "./apiClient";
-
 export async function fetchAllMembers(page: number = 1, limit: number = 10) {
   try {
     const data = await apiClient<any>(`/members?page=${page}&limit=${limit}`);
@@ -181,6 +223,13 @@ export async function fetchAllMembers(page: number = 1, limit: number = 10) {
 
 export async function fetchAdminMembers() {
   const data = await apiClient<{ members: Member[] }>("/members/admin-center");
+  return data.members || [];
+}
+
+export async function searchReferralMembers(query: string) {
+  const q = query.trim();
+  if (q.length < 2) return [] as ReferralCandidate[];
+  const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`);
   return data.members || [];
 }
 
@@ -198,7 +247,7 @@ export async function updateMemberStatus(id: string, status: MemberStatus, rejec
   });
 }
 
-export async function updateMember(id: string, partial: Partial<Member>) {
+export async function updateMember(id: string, partial: Partial<Member> & Record<string, unknown>) {
   return apiClient<Member>(`/members/${id}`, {
     method: "PATCH",
     body: JSON.stringify(partial)
