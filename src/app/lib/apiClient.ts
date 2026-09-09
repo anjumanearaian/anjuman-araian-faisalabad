@@ -42,9 +42,13 @@ function buildRequestUrl(endpoint: string) {
   const question = endpoint.indexOf("?");
   const pathname = question >= 0 ? endpoint.slice(0, question) : endpoint;
   const queryString = question >= 0 ? endpoint.slice(question + 1) : "";
-  const params = new URLSearchParams(queryString);
-  params.set("__path", pathname.replace(/^\/+/, ""));
-  return `${API_BASE_URL}/__proxy?${params.toString()}`;
+  const encodedPath = pathname
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("__");
+  return `${API_BASE_URL}/__proxy__${encodedPath}${queryString ? `?${queryString}` : ""}`;
 }
 
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
