@@ -197,8 +197,12 @@ export default async function handler(req: any, res: any) {
   // existing catch-all function so no database connection or Vercel function
   // configuration needs to change.
   if (pathname === "/api/members/admin-create" && method === "POST") {
-    try { return await createAdminMember(req, res); }
-    catch (error) { return app.emit?.("error", error) || res.status(500).json({ error: "Could not create member." }); }
+    try {
+      return await createAdminMember(req, res);
+    } catch (error) {
+      console.error("Admin member create failed", error);
+      return res.status(500).json({ error: "Could not create member. Please review the entered data and try again." });
+    }
   }
 
   const memberEdit = pathname.match(/^\/api\/members\/([^/]+)$/);
