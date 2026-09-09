@@ -16,6 +16,22 @@
   ],
   "rewrites": [
     {
+      "source": "/api/content/published",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/api/content/:id",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/api/leadership/:path*",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/api/members/:id/status",
+      "destination": "/api/[...path]"
+    },
+    {
       "source": "/((?!api/|uploads/).*)",
       "destination": "/index.html"
     }
