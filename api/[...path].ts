@@ -15,7 +15,22 @@ function bodyOf(req: any) {
   return req.body;
 }
 
+function restoreNestedApiPath(req: any) {
+  try {
+    const current = new URL(String(req.url || "/api/__proxy"), "http://localhost");
+    const proxyPath = current.searchParams.get("__path");
+    if (!proxyPath) return;
+    current.searchParams.delete("__path");
+    const qs = current.searchParams.toString();
+    req.url = `/api/${String(proxyPath).replace(/^\/+/, "")}${qs ? `?${qs}` : ""}`;
+    if (req.query && typeof req.query === "object") {
+      try { delete req.query.__path; } catch {}
+    }
+  } catch {}
+}
+
 export default async function handler(req: any, res: any) {
+  restoreNestedApiPath(req);
   const pathname = String(req.url || "").split("?")[0];
   const match = pathname.match(/\/api\/members\/([^/]+)\/status\/?$/);
 
