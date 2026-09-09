@@ -12,7 +12,7 @@ const ProfileSchema = z.object({
   role: z.string().min(2).max(150),
   city: z.string().max(100).default("Faisalabad"),
   tier: z.number().int().min(0).max(10).default(2),
-  category: z.enum(["cabinet", "executive", "advisory", "founder", "expresident"]),
+  category: z.string().trim().min(2).max(100).default("cabinet"),
   image: z.string().max(3000).optional().nullable(),
   period: z.string().max(100).optional().nullable(),
   description: z.string().max(3000).optional().nullable(),
