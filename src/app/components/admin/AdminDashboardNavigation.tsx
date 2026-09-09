@@ -45,12 +45,46 @@ function enhanceCards() {
   }
 }
 
+function enhanceMatrimonialPanel() {
+  if (window.location.pathname !== "/admin") return;
+  const heading = Array.from(document.querySelectorAll<HTMLElement>("h1,h2,h3"))
+    .find((el) => (el.textContent || "").toLowerCase().includes("matrimonial submissions"));
+  if (!heading) return;
+  const row = heading.parentElement;
+  if (!row || row.dataset.matrimonialCenterLinked === "1") return;
+  row.dataset.matrimonialCenterLinked = "1";
+  const link = document.createElement("a");
+  link.href = "/admin/matrimonial";
+  link.textContent = "Open Matrimonial Control Center";
+  link.title = "Edit profiles, control privacy and review requirement-based match requests";
+  Object.assign(link.style, {
+    display: "inline-flex",
+    alignItems: "center",
+    marginLeft: "12px",
+    padding: "8px 12px",
+    borderRadius: "8px",
+    background: "#1a4d2e",
+    color: "white",
+    textDecoration: "none",
+    fontSize: "12px",
+    fontWeight: "800",
+    fontFamily: "Lato, sans-serif",
+    boxShadow: "0 2px 8px rgba(26,77,46,.16)",
+  });
+  row.appendChild(link);
+}
+
+function enhanceAdminUi() {
+  enhanceCards();
+  enhanceMatrimonialPanel();
+}
+
 export function AdminDashboardNavigation() {
   useEffect(() => {
-    enhanceCards();
-    const observer = new MutationObserver(() => enhanceCards());
+    enhanceAdminUi();
+    const observer = new MutationObserver(() => enhanceAdminUi());
     observer.observe(document.body, { childList: true, subtree: true });
-    const onPop = () => window.setTimeout(enhanceCards, 0);
+    const onPop = () => window.setTimeout(enhanceAdminUi, 0);
     window.addEventListener("popstate", onPop);
     return () => { observer.disconnect(); window.removeEventListener("popstate", onPop); };
   }, []);
