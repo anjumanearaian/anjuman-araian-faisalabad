@@ -63,6 +63,14 @@ function privateContactProfile(p: any) {
   };
 }
 
+function fullProfile(p: any) {
+  return {
+    ...p,
+    profileCode: profileCode(p.id),
+    additionalPhotos: p.additionalPhotos ? JSON.parse(p.additionalPhotos as string) : [],
+  };
+}
+
 // ─── Get All Matrimonial Profiles — Admin Only ────────────────────────────────
 router.get("/", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -78,13 +86,21 @@ router.get("/", requireAdmin, async (req: Request, res: Response, next: NextFunc
       prisma.matrimonial.count(),
     ]);
 
-    const formatted = profiles.map((p) => ({
-      ...p,
-      profileCode: profileCode(p.id),
-      additionalPhotos: p.additionalPhotos ? JSON.parse(p.additionalPhotos as string) : [],
-    }));
+    res.json({ profiles: profiles.map(fullProfile), pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    res.json({ profiles: formatted, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } });
+// ─── Current Member's Own Matrimonial Profile ────────────────────────────────
+router.get("/mine", requireMember, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = (req as any).user;
+    const profile = await prisma.matrimonial.findFirst({
+      where: { authUserId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ profile: profile ? fullProfile(profile) : null });
   } catch (err) {
     next(err);
   }
@@ -114,7 +130,7 @@ router.get("/published", async (req: Request, res: Response, next: NextFunction)
   }
 });
 
-// ─── Submit New Matrimonial Profile ──────────────────────────────────────────
+// ─── Submit / Re-submit Matrimonial Profile ──────────────────────────────────
 router.post("/submit", requireMember, validate(MatrimonialSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
@@ -128,8 +144,14 @@ router.post("/submit", requireMember, validate(MatrimonialSchema), async (req: R
     const linkedMember = await prisma.member.findFirst({
       where: { OR: [{ authUserId: authUser.id }, { email: { equals: authUser.email, mode: "insensitive" } }], status: "approved" },
     });
-    const applicantType = linkedMember ? "member" : "non_member";
-    const feeAmount = linkedMember ? 3000 : 5000;
+    if (!linkedMember) {
+      return void res.status(403).json({ error: "Approved Anjuman membership is required before a matrimonial application can be submitted." });
+    }
+
+    const existing = await prisma.matrimonial.findFirst({
+      where: { authUserId: authUser.id },
+      orderBy: { createdAt: "desc" },
+    });
 
     const cleanAdditional = (rawAdditional as string[]).filter((s) => s && !s.startsWith("data:"));
     const data = {
@@ -141,23 +163,69 @@ router.post("/submit", requireMember, validate(MatrimonialSchema), async (req: R
       paymentProofUrl: paymentProofUrl || null,
       additionalPhotos: JSON.stringify(cleanAdditional),
       authUserId: authUser.id,
-      applicantType,
-      feeAmount,
+      applicantType: "member",
+      feeAmount: 3000,
       relationToCandidate: relationToCandidate || "Self",
       status: "pending",
-      paymentStatus: "pending",
+      paymentStatus: existing && paymentCleared(existing.paymentStatus) ? existing.paymentStatus : "submitted",
       showOnPortal: false,
+      isFeatured: false,
     };
 
-    const newProfile = await prisma.matrimonial.create({ data });
+    const savedProfile = existing
+      ? await prisma.matrimonial.update({ where: { id: existing.id }, data })
+      : await prisma.matrimonial.create({ data });
+
     await prisma.formDraft.upsert({
       where: { authUserId_formType: { authUserId: authUser.id, formType: "matrimonial" } },
-      update: { status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date() },
+      update: { data: req.body, status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date() },
       create: { authUserId: authUser.id, formType: "matrimonial", data: req.body, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date() },
     });
-    void sendEmail(MASTER_EMAIL, `New matrimonial application: ${name}`, emailFrame("New matrimonial application", `<p>${name} has submitted a ${applicantType.replace("_", "-")} matrimonial application.</p><p>Reference: <strong>${profileCode(newProfile.id)}</strong><br>Fee: <strong>PKR ${feeAmount.toLocaleString()}</strong><br>Contact: ${contact}</p>`)).catch(console.error);
-    res.status(201).json({ ...newProfile, profileCode: profileCode(newProfile.id), additionalPhotos: JSON.parse(newProfile.additionalPhotos || "[]") });
+
+    const actionText = existing ? "updated and re-submitted" : "submitted";
+    void sendEmail(MASTER_EMAIL, `Matrimonial application ${actionText}: ${name}`, emailFrame("Matrimonial application", `<p>${name} has ${actionText} a member matrimonial application.</p><p>Reference: <strong>${profileCode(savedProfile.id)}</strong><br>Fee: <strong>PKR 3,000</strong><br>Contact: ${contact}</p>`)).catch(console.error);
+    res.status(existing ? 200 : 201).json(fullProfile(savedProfile));
   } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Member Self-edit — saved profile returns to committee review ────────────
+router.put("/mine", requireMember, validate(MatrimonialSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = (req as any).user;
+    const current = await prisma.matrimonial.findFirst({ where: { authUserId: user.id }, orderBy: { createdAt: "desc" } });
+    if (!current) return void res.status(404).json({ error: "No matrimonial profile is linked to this member." });
+
+    const {
+      name, gender, age, city, education, profession,
+      familyBackground, requirements, contact,
+      photoUrl, paymentProofUrl,
+      additionalPhotos: rawAdditional,
+      relationToCandidate,
+    } = req.body;
+    const data: any = { status: "pending", showOnPortal: false, isFeatured: false };
+    if (name !== undefined) data.name = name;
+    if (gender !== undefined) data.gender = gender;
+    if (age !== undefined) data.age = age;
+    if (city !== undefined) data.city = city;
+    if (education !== undefined) data.education = education;
+    if (profession !== undefined) data.profession = profession;
+    if (familyBackground !== undefined) data.familyBackground = familyBackground;
+    if (requirements !== undefined) data.requirements = requirements;
+    if (contact !== undefined) data.contact = contact;
+    if (photoUrl !== undefined) data.photoUrl = photoUrl;
+    if (paymentProofUrl !== undefined) data.paymentProofUrl = paymentProofUrl;
+    if (relationToCandidate !== undefined) data.relationToCandidate = relationToCandidate;
+    if (rawAdditional !== undefined) {
+      data.additionalPhotos = JSON.stringify((rawAdditional as string[]).filter((s) => s && !s.startsWith("data:")));
+    }
+    if (!paymentCleared(current.paymentStatus) && paymentProofUrl) data.paymentStatus = "submitted";
+
+    const updated = await prisma.matrimonial.update({ where: { id: current.id }, data });
+    res.json(fullProfile(updated));
+  } catch (err: any) {
+    if (err.code === "P2025") { res.status(404).json({ error: "Matrimonial profile not found" }); return; }
     next(err);
   }
 });
@@ -338,7 +406,7 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, ne
         ...(status === "rejected" ? { showOnPortal: false } : {}),
       },
     });
-    res.json({ ...updated, profileCode: profileCode(updated.id), additionalPhotos: JSON.parse(updated.additionalPhotos || "[]") });
+    res.json(fullProfile(updated));
   } catch (err: any) {
     if (err.code === "P2025") { res.status(404).json({ error: "Matrimonial profile not found" }); return; }
     next(err);
@@ -394,7 +462,7 @@ router.put("/:id", requireAdmin, validate(MatrimonialSchema.partial().passthroug
     }
 
     const updated = await prisma.matrimonial.update({ where: { id }, data });
-    res.json({ ...updated, profileCode: profileCode(updated.id), additionalPhotos: JSON.parse(updated.additionalPhotos || "[]") });
+    res.json(fullProfile(updated));
   } catch (err: any) {
     if (err.code === "P2025") { res.status(404).json({ error: "Matrimonial profile not found" }); return; }
     next(err);
