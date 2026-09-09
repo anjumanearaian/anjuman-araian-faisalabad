@@ -366,8 +366,11 @@ model RevenueRecord {
   itemName         String
   amount           Float
   paymentFrequency String   @default("one_time")
+  reference        String?  @unique
+  receiptNo        String?  @unique
   date             DateTime @default(now())
 
   @@index([itemType])
+  @@index([reference])
   @@index([date])
 }
