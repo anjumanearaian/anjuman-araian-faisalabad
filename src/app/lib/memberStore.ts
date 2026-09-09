@@ -64,6 +64,17 @@ export async function fetchAllMembers(page: number = 1, limit: number = 10) {
   catch (e) { console.error("Failed to fetch members", e); return { data: [], total: 0 }; }
 }
 
+export async function fetchMemberDirectory(limitPerPage = 100) {
+  const first = await fetchAllMembers(1, limitPerPage);
+  const members = [...first.data];
+  const pages = Math.max(1, Math.ceil(first.total / limitPerPage));
+  for (let page = 2; page <= pages; page += 1) {
+    const next = await fetchAllMembers(page, limitPerPage);
+    members.push(...next.data);
+  }
+  return { data: members, total: first.total };
+}
+
 // The approval center and the main Members screen must read from the same
 // authoritative member endpoint. The old /members/admin-center route never
 // existed in the Express router and caused the approval center to show zero
@@ -75,6 +86,13 @@ export async function fetchAdminMembers() {
 
 export async function searchReferralMembers(query: string) { const q = query.trim(); if (q.length < 2) return [] as ReferralCandidate[]; const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`); return data.members || []; }
 export async function createAdminMember(data: Partial<Member> & Record<string, unknown>) { return apiClient<Member>("/members/admin-create", { method: "POST", body: JSON.stringify(data) }); }
+
+export async function requestMemberContact(targetMemberId: string, reason: string) {
+  return apiClient<{ id: string; status: string; message: string }>("/messages/member-contact-request", {
+    method: "POST",
+    body: JSON.stringify({ targetMemberId, reason }),
+  });
+}
 
 export async function updateMemberStatus(id: string, status: MemberStatus, rejectionReason?: string, adminNote?: string) {
   try {
