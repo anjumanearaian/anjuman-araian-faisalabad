@@ -47,18 +47,20 @@ export const statusColors: Record<ContentStatus, { bg: string; text: string; lab
 export async function fetchAllContent(type: "news" | "event", page: number = 1, limit: number = 10, includeDrafts: boolean = false) {
   const endpoint = includeDrafts ? `/content?type=${type}&page=${page}&limit=${limit}` : `/content/published?type=${type}&page=${page}&limit=${limit}`;
   const res = (await apiClient(endpoint)) as any;
-  
-  const mapped = res.content.map((item: any) => ({
+
+  const mapped = (res.content || []).map((item: any) => ({
     ...item,
     desc: item.type === "event" ? item.body : undefined,
   }));
-  
-  return { 
-    data: mapped, 
-    total: res.pagination.total, 
-    totalPages: res.pagination.totalPages, 
-    hasMore: page < res.pagination.totalPages, 
-    page 
+
+  const total = Number(res.pagination?.total || 0);
+  const totalPages = Number(res.pagination?.totalPages || (total ? Math.ceil(total / limit) : 0));
+  return {
+    data: mapped,
+    total,
+    totalPages,
+    hasMore: page < totalPages,
+    page
   };
 }
 
@@ -84,9 +86,23 @@ export async function deleteContent(id: string) {
   return apiClient(`/content/${id}`, { method: "DELETE" });
 }
 
-// Deprecated synchronous fallbacks to prevent immediate crashes before components are fully updated
 export function getNews(): NewsItem[] { return []; }
 export function getEvents(): EventItem[] { return []; }
-export function paginateData<T>(items: T[], page: number = 1, limit: number = 10): PaginatedResult<T> { 
-  return { data: items, total: items.length, hasMore: false, page: 1, totalPages: 1 }; 
+
+// Local pagination is used by the Admin and public News screens after they load
+// a bounded working set from the API. The previous placeholder returned every
+// item and always reported one page, so Prev/Next never actually paged anything.
+export function paginateData<T>(items: T[], page: number = 1, limit: number = 10): PaginatedResult<T> {
+  const safeLimit = Math.max(1, Number(limit) || 10);
+  const total = items.length;
+  const totalPages = total ? Math.ceil(total / safeLimit) : 0;
+  const safePage = totalPages ? Math.min(Math.max(1, Number(page) || 1), totalPages) : 1;
+  const start = (safePage - 1) * safeLimit;
+  return {
+    data: items.slice(start, start + safeLimit),
+    total,
+    hasMore: safePage < totalPages,
+    page: safePage,
+    totalPages,
+  };
 }
