@@ -63,17 +63,25 @@ export async function fetchAllMembers(page: number = 1, limit: number = 10) {
   try { const data = await apiClient<any>(`/members?page=${page}&limit=${limit}`); return { data: data.members || [], total: data.pagination?.total || 0 }; }
   catch (e) { console.error("Failed to fetch members", e); return { data: [], total: 0 }; }
 }
-export async function fetchAdminMembers() { const data = await apiClient<{ members: Member[] }>("/members/admin-center"); return data.members || []; }
+
+// The approval center and the main Members screen must read from the same
+// authoritative member endpoint. The old /members/admin-center route never
+// existed in the Express router and caused the approval center to show zero
+// records / "Route not found" even while the main Admin screen had members.
+export async function fetchAdminMembers() {
+  const data = await apiClient<{ members: Member[] }>("/members?page=1&limit=100");
+  return data.members || [];
+}
+
 export async function searchReferralMembers(query: string) { const q = query.trim(); if (q.length < 2) return [] as ReferralCandidate[]; const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`); return data.members || []; }
 export async function createAdminMember(data: Partial<Member> & Record<string, unknown>) { return apiClient<Member>("/members/admin-create", { method: "POST", body: JSON.stringify(data) }); }
 
 export async function updateMemberStatus(id: string, status: MemberStatus, rejectionReason?: string, adminNote?: string) {
   try {
-    if (status === "approved") {
-      const confirmed = typeof window === "undefined" || window.confirm("Confirm that the relevant membership fee has been received and verified. Approve this member now?");
-      if (!confirmed) return { cancelled: true };
-      await updateMember(id, { paymentStatus: "verified" });
-    }
+    // Confirmation belongs to the screen that initiated the action. Avoid a
+    // second confirm dialog and a separate preliminary PATCH here. The API
+    // approval path records payment verification and creates the authoritative
+    // membership revenue/receipt in one flow.
     return await apiClient(`/members/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, rejectionReason, adminNote }) });
   } catch (error: any) {
     showActionError(error, status === "approved" ? "Member approval failed." : "Member status update failed.");
