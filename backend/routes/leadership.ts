@@ -87,6 +87,50 @@ function publicProfile(item: any) {
   return { ...profile, name: linked.fullName || profile.name, city: linked.city || profile.city, image: linked.photoUrl || profile.image };
 }
 
+// Public community directory. Personal identity lives only in Member; this route
+// exposes a deliberately limited projection and attaches organizational roles by
+// Member ID. Phone, email, CNIC, residential address, company/business and family
+// data are never returned here.
+router.get("/member-directory", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const members = await prisma.member.findMany({
+      where: { status: "approved" },
+      orderBy: [{ memberNo: "asc" }, { fullName: "asc" }],
+      select: {
+        id: true,
+        memberNo: true,
+        fullName: true,
+        city: true,
+        occupation: true,
+        education: true,
+        designation: true,
+        membershipType: true,
+        memberCell: true,
+        photoUrl: true,
+        leadershipProfiles: {
+          orderBy: [{ tier: "asc" }, { role: "asc" }],
+          select: { id: true, role: true, tier: true, category: true, period: true },
+        },
+      },
+    });
+
+    const safeMembers = members.map(({ leadershipProfiles, ...member }) => ({
+      ...member,
+      leadershipRoles: leadershipProfiles
+        .filter((profile) => !["founder", "expresident"].includes(String(profile.category || "").toLowerCase()))
+        .map((profile) => ({
+          id: profile.id,
+          role: profile.role,
+          tier: profile.tier,
+          category: profile.category,
+          period: profile.period,
+        })),
+    }));
+
+    res.json({ members: safeMembers, total: safeMembers.length });
+  } catch (error) { next(error); }
+});
+
 // Admin-only searchable source for assigning an existing master member to a leadership role.
 // Sensitive fields are deliberately excluded from the response.
 router.get("/member-options", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
