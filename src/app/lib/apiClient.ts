@@ -17,6 +17,7 @@ export class ApiError extends Error {
 function getAuthToken(endpoint: string) {
   const memberFirst =
     ["/members/me", "/members/register", "/members/login", "/matrimonial/submit"].includes(endpoint) ||
+    endpoint.startsWith("/matrimonial/published") ||
     (endpoint.startsWith("/forms/") && !endpoint.startsWith("/forms/admin/")) ||
     (endpoint.startsWith("/matrimonial/match-requests") && !endpoint.startsWith("/matrimonial/match-requests/admin"));
 
