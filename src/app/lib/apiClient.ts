@@ -53,6 +53,16 @@ function buildRequestUrl(endpoint: string) {
   return `${API_BASE_URL}/__proxy__${encodedPath}${queryString ? `?${queryString}` : ""}`;
 }
 
+function friendlyStatusMessage(status: number, requestUrl: string) {
+  if (status === 401) return "Your session has expired. Please sign in again.";
+  if (status === 403) return "You do not have permission to perform this action.";
+  if (status === 404) return `The requested service (${requestUrl}) is not available on this deployment.`;
+  if (status === 409) return "This action conflicts with the current record. Refresh the page and try again.";
+  if (status === 429) return "Too many requests were sent. Please wait a moment and try again.";
+  if (status >= 500) return "The server could not complete this request. Please try again shortly.";
+  return `Request failed (HTTP ${status}).`;
+}
+
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken(endpoint);
   const headers: Record<string, string> = {
@@ -72,22 +82,32 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
   }
 
   const requestUrl = buildRequestUrl(endpoint);
-  const response = await fetch(requestUrl, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(requestUrl, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new ApiError(
+      "Unable to reach the server. Check your internet connection and try again.",
+      undefined,
+      0,
+    );
+  }
 
   if (!response.ok) {
-    let errorMessage = `Request failed (HTTP ${response.status}).`;
+    let errorMessage = friendlyStatusMessage(response.status, requestUrl);
     let details: Record<string, string[]> | undefined;
     try {
       const errorData = await response.json();
-      errorMessage = errorData.error || errorMessage;
-      if (errorData.details) details = errorData.details;
+      if (typeof errorData?.error === "string" && errorData.error.trim()) {
+        errorMessage = errorData.error;
+      }
+      if (errorData?.details) details = errorData.details;
     } catch {
-      errorMessage = response.status === 404
-        ? `API route ${requestUrl} was not found (HTTP 404).`
-        : `Server request failed (HTTP ${response.status}). Check deployment logs.`;
+      // Keep the safe, user-facing status message above when the backend did not
+      // return JSON (for example a platform error page or stale deployment).
     }
     throw new ApiError(errorMessage, details, response.status);
   }
