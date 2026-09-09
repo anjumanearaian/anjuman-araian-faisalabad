@@ -41,12 +41,12 @@ async function session(email: string, name?: string) {
     }
   }
 
-  // The applicant identity is required by registration and saved-form routes.
-  // It never grants administrator rights. Service pages inspect the attached
-  // member status to decide whether member benefits/prefill apply.
-  const token = jwt.sign({ id: user.id, email: user.email, role: "applicant" }, secret(), { expiresIn: "7d" });
+  // Keep a verified user signed in for one working day. Drafts live in the
+  // database, so an expired browser session never deletes work already saved.
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const token = jwt.sign({ id: user.id, email: user.email, role: "applicant" }, secret(), { expiresIn: "24h" });
   const safeMember = member ? (({ password, ...rest }) => rest)(member) : null;
-  return { token, user: { id: user.id, email: user.email, name: user.name }, member: safeMember };
+  return { token, expiresAt, user: { id: user.id, email: user.email, name: user.name }, member: safeMember };
 }
 
 router.post("/email/request-otp", loginLimiter, async (req, res, next) => {
@@ -57,7 +57,6 @@ router.post("/email/request-otp", loginLimiter, async (req, res, next) => {
     if (!emailConfigured()) return void res.status(503).json({ error: "Email delivery is not configured. Ask the administrator to configure SMTP credentials." });
     const code = String(randomInt(100000, 1000000));
     const record = await prisma.$transaction(async (tx) => {
-      // A PostgreSQL transaction lock coordinates requests across serverless instances.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${email}))`;
       const recent = await tx.emailOtp.findFirst({ where: { email }, orderBy: { createdAt: "desc" } });
       if (recent && Date.now() - recent.createdAt.getTime() < 60000) return null;
