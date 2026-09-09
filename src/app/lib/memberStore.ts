@@ -75,13 +75,12 @@ export async function fetchMemberDirectory(limitPerPage = 100) {
   return { data: members, total: first.total };
 }
 
-// The approval center and the main Members screen must read from the same
-// authoritative member endpoint. The old /members/admin-center route never
-// existed in the Express router and caused the approval center to show zero
-// records / "Route not found" even while the main Admin screen had members.
+// The approval center and the main Members screen read from the same authoritative
+// endpoint. Load every page so leadership/committee assignment can access the
+// complete registry instead of silently stopping at the first 100 members.
 export async function fetchAdminMembers() {
-  const data = await apiClient<{ members: Member[] }>("/members?page=1&limit=100");
-  return data.members || [];
+  const result = await fetchMemberDirectory(100);
+  return result.data;
 }
 
 export async function searchReferralMembers(query: string) { const q = query.trim(); if (q.length < 2) return [] as ReferralCandidate[]; const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`); return data.members || []; }
