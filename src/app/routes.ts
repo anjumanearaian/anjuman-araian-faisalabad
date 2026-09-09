@@ -21,6 +21,7 @@ import { MatrimonialPage } from "./pages/MatrimonialPage";
 import { MatrimonialRequestsPage } from "./pages/MatrimonialRequestsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
+import { AdminMatrimonialPage } from "./pages/AdminMatrimonialPage";
 import { MemberRegisterPage } from "./pages/MemberRegisterPage";
 import { MemberLoginPage } from "./pages/MemberLoginPage";
 import { MemberPortalPage } from "./pages/MemberPortalPage";
@@ -37,6 +38,10 @@ export const router = createBrowserRouter([
   {
     path: "admin/members",
     Component: AdminMemberCenterPage,
+  },
+  {
+    path: "admin/matrimonial",
+    Component: AdminMatrimonialPage,
   },
   {
     Component: Layout,
