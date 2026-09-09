@@ -46,6 +46,7 @@ model Member {
   whatsapp         String
   whatsappPublic   Boolean   @default(false)
   address          String
+  localArea        String?
   city             String
   district         String
   province         String
@@ -74,16 +75,22 @@ model Member {
   rejectionReason  String?
   isFeatured       Boolean   @default(false)
   isFeaturedPortal Boolean   @default(false)
+  referrerMemberId String?
+  referrerMember   Member?   @relation("MemberReferrals", fields: [referrerMemberId], references: [id], onDelete: SetNull)
+  referrals        Member[]  @relation("MemberReferrals")
+  referralStatus   String    @default("not_provided")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   approvedAt       DateTime?
 
   familyInfo         FamilyInfo?
+  children           MemberChild[]
   leadershipProfiles LeadershipProfile[]
 
   @@index([status])
   @@index([membershipType])
   @@index([createdAt])
+  @@index([referrerMemberId])
 }
 
 model FamilyInfo {
@@ -92,6 +99,8 @@ model FamilyInfo {
   member                 Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
   fatherName             String?
   familyBranch           String?
+  caste                  String?
+  religiousSect          String?
   spouseName             String?
   childrenCount          String?
   childrenDetails        String?
@@ -101,6 +110,19 @@ model FamilyInfo {
   emergencyContactName   String?
   emergencyContactNumber String?
   emergencyRelationship  String?
+}
+
+model MemberChild {
+  id        String   @id @default(uuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  fullName  String
+  dob       String?
+  education String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memberId])
 }
 
 model Business {
@@ -194,16 +216,16 @@ model MatrimonialMatchRequest {
 }
 
 model AuthUser {
-  id          String        @id @default(uuid())
-  email       String        @unique
-  name        String?
-  provider    String        @default("email")
-  verifiedAt  DateTime      @default(now())
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  member      Member?
-  drafts      FormDraft[]
-  matrimonial Matrimonial[]
+  id            String                    @id @default(uuid())
+  email         String                    @unique
+  name          String?
+  provider      String                    @default("email")
+  verifiedAt    DateTime                  @default(now())
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  member        Member?
+  drafts        FormDraft[]
+  matrimonial   Matrimonial[]
   matchRequests MatrimonialMatchRequest[]
 
   @@index([email])
