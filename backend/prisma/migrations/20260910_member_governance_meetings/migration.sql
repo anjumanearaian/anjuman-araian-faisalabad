@@ -3,6 +3,9 @@
 
 ALTER TABLE "Business" ADD COLUMN IF NOT EXISTS "memberId" TEXT;
 ALTER TABLE "Matrimonial" ADD COLUMN IF NOT EXISTS "memberId" TEXT;
+ALTER TABLE "LeadershipProfile" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "LeadershipProfile" ADD COLUMN IF NOT EXISTS "startedAt" TIMESTAMP(3);
+ALTER TABLE "LeadershipProfile" ADD COLUMN IF NOT EXISTS "endedAt" TIMESTAMP(3);
 
 DO $$
 BEGIN
@@ -20,6 +23,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "Business_memberId_idx" ON "Business"("memberId");
 CREATE INDEX IF NOT EXISTS "Matrimonial_memberId_idx" ON "Matrimonial"("memberId");
+CREATE INDEX IF NOT EXISTS "LeadershipProfile_isActive_idx" ON "LeadershipProfile"("isActive");
 
 -- Link existing matrimonial submissions to their already-linked authenticated member.
 UPDATE "Matrimonial" m
@@ -28,6 +32,26 @@ FROM "Member" mem
 WHERE m."memberId" IS NULL
   AND m."authUserId" IS NOT NULL
   AND mem."authUserId" = m."authUserId";
+
+-- Keep future member-authenticated matrimonial submissions connected to the same
+-- master Member row. Member.authUserId is unique, so this link is deterministic.
+CREATE OR REPLACE FUNCTION "sync_matrimonial_member_id"()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW."memberId" IS NULL AND NEW."authUserId" IS NOT NULL THEN
+    SELECT "id" INTO NEW."memberId"
+    FROM "Member"
+    WHERE "authUserId" = NEW."authUserId"
+    LIMIT 1;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "trg_sync_matrimonial_member_id" ON "Matrimonial";
+CREATE TRIGGER "trg_sync_matrimonial_member_id"
+BEFORE INSERT OR UPDATE OF "authUserId", "memberId" ON "Matrimonial"
+FOR EACH ROW EXECUTE FUNCTION "sync_matrimonial_member_id"();
 
 CREATE TABLE IF NOT EXISTS "Meeting" (
   "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
