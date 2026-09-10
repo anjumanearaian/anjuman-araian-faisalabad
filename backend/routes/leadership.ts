@@ -4,6 +4,7 @@ import prisma from "../lib/prisma";
 import { requireAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { deleteManagedFileIfUnreferenced } from "../lib/fileCleanup";
+import governanceRouter from "./governance";
 
 const router = Router();
 const ProfileSchema = z.object({
@@ -250,5 +251,10 @@ router.put("/messages/:type", requireAdmin, validate(MessageSchema), async (req:
     res.json(parseMessage(message));
   } catch (error) { next(error); }
 });
+
+// Governance is mounted here so the existing /api/leadership router remains the
+// single organizational API surface while meetings and attendance stay separate
+// relational records linked back to Member IDs.
+router.use("/governance", governanceRouter);
 
 export default router;
