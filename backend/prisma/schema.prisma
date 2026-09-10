@@ -83,12 +83,12 @@ model Member {
   updatedAt        DateTime  @updatedAt
   approvedAt       DateTime?
 
-  familyInfo          FamilyInfo?
-  children            MemberChild[]
-  leadershipProfiles  LeadershipProfile[]
-  businesses          Business[]
-  matrimonials        Matrimonial[]
-  meetingAttendances  MeetingAttendance[]
+  familyInfo         FamilyInfo?
+  children           MemberChild[]
+  leadershipProfiles LeadershipProfile[]
+  businesses         Business[]
+  matrimonials       Matrimonial[]
+  meetingAttendances MeetingAttendance[]
 
   @@index([status])
   @@index([membershipType])
@@ -321,19 +321,23 @@ model OverseasChapter {
 }
 
 model LeadershipProfile {
-  id          String  @id @default(uuid())
+  id          String    @id @default(uuid())
   memberId    String?
-  member      Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  member      Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
   name        String
   role        String
-  tier        Int     @default(2)
+  tier        Int       @default(2)
   city        String
-  category    String  @default("cabinet")
+  category    String    @default("cabinet")
   image       String?
   period      String?
   description String?
+  isActive    Boolean   @default(true)
+  startedAt   DateTime?
+  endedAt     DateTime?
 
   @@index([memberId])
+  @@index([isActive])
 }
 
 model Meeting {
