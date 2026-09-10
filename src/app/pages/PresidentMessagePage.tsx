@@ -1,69 +1,100 @@
+import { useEffect, useState } from "react";
+import { Quote, UserRound } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { fetchLeadershipMessages, LeadershipMessageData } from "../lib/leadershipStore";
-import { useState, useEffect } from "react";
 
 const GREEN = "#1a4d2e";
+const DARK_GREEN = "#123d28";
 const GOLD = "#c8a04a";
 
 export function PresidentMessagePage() {
-  const [msg, setMsg] = useState<LeadershipMessageData>({ name: "Dr Ahsan-ul-Haq", body: "It is a privilege to serve the Araian community of Faisalabad. Our priorities are unity, welfare, education and transparent community service.", photo: "/images/president.jpg", attributes: [] });
+  const [msg, setMsg] = useState<LeadershipMessageData>({
+    name: "Dr Ahsan-ul-Haq",
+    body: "It is a privilege to serve the Araian community of Faisalabad. Our priorities are unity, welfare, education and transparent community service.",
+    photo: "/images/president.jpg",
+    attributes: [],
+  });
 
   useEffect(() => {
-    fetchLeadershipMessages().then(msgs => {
-      const pMsg = msgs.find(m => m.type === "president");
-      if (pMsg) setMsg(pMsg);
-    }).catch(() => {});
+    fetchLeadershipMessages()
+      .then((messages) => {
+        const presidentMessage = messages.find((item) => item.type === "president");
+        if (presidentMessage) setMsg(presidentMessage);
+      })
+      .catch(() => {});
   }, []);
 
   return (
-    <div>
-      <PageHeader title="President's Message" subtitle="A message from the Central President of Anjuman-e-Araian Pakistan" breadcrumb={["Home", "Leadership", "President's Message"]} />
+    <div style={{ background: "#f7faf8" }}>
+      <PageHeader
+        title="President's Message"
+        subtitle="A message from the President of Anjuman-e-Araian Faisalabad"
+        breadcrumb={["Home", "Leadership", "President's Message"]}
+      />
 
-      <section style={{ maxWidth: 1000, margin: "0 auto", padding: "64px 24px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 48, alignItems: "start" }} className="pres-grid">
-          {/* Portrait */}
-          <div style={{ textAlign: "center" }}>
-            <div style={{ position: "relative", display: "inline-block" }}>
-              <img
-                src={msg.photo || "https://images.unsplash.com/photo-1723051963745-d10d43248655?w=240&h=290&fit=crop"}
-                alt="Central President"
-                style={{ width: 240, height: 290, objectFit: "cover", objectPosition: "top", borderRadius: 12, border: `4px solid ${GOLD}`, display: "block", margin: "0 auto" }}
-              />
-              <div style={{ position: "absolute", bottom: -1, left: 0, right: 0, backgroundColor: GREEN, borderRadius: "0 0 10px 10px", padding: "10px 0" }}>
-                <p style={{ color: GOLD, fontSize: 13, fontWeight: 700, margin: 0 }}>Central President</p>
+      <section style={{ maxWidth: 1120, margin: "0 auto", padding: "56px 24px 72px" }}>
+        <div className="leadership-message-grid" style={{ display: "grid", gridTemplateColumns: "300px minmax(0, 1fr)", gap: 34, alignItems: "start" }}>
+          <aside style={{ background: "white", borderRadius: 18, overflow: "hidden", border: "1px solid #e7eee9", boxShadow: "0 12px 34px rgba(18,61,40,0.08)" }}>
+            <div style={{ height: 8, background: `linear-gradient(90deg, ${GREEN}, ${GOLD})` }} />
+            <div style={{ padding: "26px 24px 24px", textAlign: "center" }}>
+              <div style={{ width: 230, height: 285, maxWidth: "100%", margin: "0 auto", borderRadius: 14, overflow: "hidden", background: "#eef5f0", border: `3px solid ${GOLD}`, display: "grid", placeItems: "center" }}>
+                {msg.photo ? (
+                  <img src={msg.photo} alt={`${msg.name || "President"}, President`} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
+                ) : (
+                  <UserRound size={72} color={GREEN} strokeWidth={1.4} />
+                )}
               </div>
-            </div>
-            <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginTop: 20, marginBottom: 4 }}>{msg.name || "Central President"}</h2>
-            <p style={{ color: "#888", fontSize: 13 }}>Anjuman-e-Araian Pakistan</p>
-            {msg.attributes && msg.attributes.length > 0 && (
-              <div style={{ marginTop: 20, backgroundColor: "#f8f5ef", borderRadius: 10, padding: 20, textAlign: "left", border: `1px solid rgba(200,160,74,0.2)` }}>
-                {msg.attributes.map((attr, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(0,0,0,0.06)", fontSize: 13 }}>
-                    <span style={{ color: "#888" }}>{attr.label}</span>
-                    <span style={{ color: GREEN, fontWeight: 600 }}>{attr.value}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
-          {/* Message */}
-          <div>
-            <div style={{ borderBottom: `2px solid ${GOLD}`, paddingBottom: 16, marginBottom: 24 }}>
-              <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, margin: 0 }}>{msg.name}</p>
-              <p style={{ color: "#888", fontSize: 14, margin: "4px 0 0 0" }}>Central President, Anjuman-e-Araian Pakistan</p>
+              <p style={{ color: GOLD, fontSize: 11, fontWeight: 800, letterSpacing: "0.11em", textTransform: "uppercase", margin: "20px 0 8px" }}>President</p>
+              <h2 style={{ color: DARK_GREEN, fontFamily: "'Playfair Display', serif", fontSize: 23, lineHeight: 1.25, fontWeight: 700, margin: 0 }}>{msg.name || "President"}</h2>
+              <p style={{ color: "#728078", fontSize: 12, lineHeight: 1.6, margin: "7px 0 0" }}>Anjuman-e-Araian Faisalabad</p>
+
+              {msg.attributes && msg.attributes.length > 0 && (
+                <div style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid #edf1ee", textAlign: "left" }}>
+                  {msg.attributes.map((attr, index) => (
+                    <div key={`${attr.label}-${index}`} style={{ padding: "9px 0", borderBottom: index === msg.attributes!.length - 1 ? "none" : "1px solid #f0f3f1" }}>
+                      <div style={{ color: "#8a938e", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>{attr.label}</div>
+                      <div style={{ color: DARK_GREEN, fontSize: 13, fontWeight: 600, lineHeight: 1.5 }}>{attr.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: 64, color: GOLD, lineHeight: 1, fontFamily: "Georgia, serif", marginBottom: -10, opacity: 0.4 }}>"</div>
-            <div dir="auto"
-              style={{ color: "#444", lineHeight: 1.95, fontSize: 15, marginBottom: 24 }}
-              dangerouslySetInnerHTML={{ __html: msg.body }}
-            />
-          </div>
+          </aside>
+
+          <article style={{ background: "white", borderRadius: 18, border: "1px solid #e7eee9", boxShadow: "0 12px 34px rgba(18,61,40,0.07)", overflow: "hidden" }}>
+            <div style={{ padding: "34px 38px 14px", borderBottom: "1px solid #edf1ee" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                <div style={{ width: 42, height: 42, borderRadius: "50%", display: "grid", placeItems: "center", background: "#f4efe4", color: GOLD }}>
+                  <Quote size={21} fill="currentColor" />
+                </div>
+                <div>
+                  <p style={{ color: GOLD, fontSize: 11, fontWeight: 800, letterSpacing: "0.11em", textTransform: "uppercase", margin: 0 }}>Leadership Message</p>
+                  <p style={{ color: "#7d8882", fontSize: 12, margin: "4px 0 0" }}>From the office of the President</p>
+                </div>
+              </div>
+              <h2 style={{ color: DARK_GREEN, fontFamily: "'Playfair Display', serif", fontSize: "clamp(25px, 3vw, 34px)", lineHeight: 1.25, margin: "0 0 8px" }}>{msg.name}</h2>
+              <p style={{ color: "#728078", fontSize: 13, margin: 0 }}>President, Anjuman-e-Araian Faisalabad</p>
+            </div>
+
+            <div className="leadership-message-body" dir="auto" style={{ padding: "30px 38px 38px", color: "#39453f", fontSize: 16, lineHeight: 2 }} dangerouslySetInnerHTML={{ __html: msg.body }} />
+          </article>
         </div>
       </section>
 
       <style>{`
-        @media (max-width: 768px) { .pres-grid { grid-template-columns: 1fr !important; } }
+        .leadership-message-body p { margin: 0 0 18px; }
+        .leadership-message-body p:last-child { margin-bottom: 0; }
+        .leadership-message-body ul, .leadership-message-body ol { padding-inline-start: 24px; margin: 0 0 18px; }
+        .leadership-message-body blockquote { margin: 22px 0; padding: 14px 20px; border-inline-start: 3px solid ${GOLD}; background: #faf8f3; border-radius: 0 10px 10px 0; }
+        @media (max-width: 820px) {
+          .leadership-message-grid { grid-template-columns: 1fr !important; }
+          .leadership-message-grid aside { max-width: 420px; width: 100%; margin: 0 auto; }
+        }
+        @media (max-width: 560px) {
+          .leadership-message-body { padding: 24px !important; font-size: 15px !important; }
+          .leadership-message-grid article > div:first-child { padding: 26px 24px 14px !important; }
+        }
       `}</style>
     </div>
   );
