@@ -42,18 +42,13 @@ const meetingInclude = {
         select: { id: true, fullName: true, photoUrl: true, city: true, designation: true },
       },
     },
-    orderBy: { member: { fullName: "asc" as const } },
   },
 };
-
-function serializeMeeting(meeting: any) {
-  return meeting;
-}
 
 router.get("/groups", requireAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const profiles = await prisma.leadershipProfile.findMany({
-      where: { memberId: { not: null }, category: { notIn: ["founder", "expresident"] } },
+      where: { isActive: true, memberId: { not: null }, category: { notIn: ["founder", "expresident"] } },
       select: { category: true, memberId: true },
     });
     const counts = new Map<string, Set<string>>();
@@ -63,8 +58,7 @@ router.get("/groups", requireAdmin, async (_req: Request, res: Response, next: N
       if (!counts.has(key)) counts.set(key, new Set());
       counts.get(key)!.add(p.memberId);
     }
-    const standardKeys = Object.keys(groupLabels);
-    const allKeys = Array.from(new Set([...standardKeys, ...counts.keys()]));
+    const allKeys = Array.from(new Set([...Object.keys(groupLabels), ...counts.keys()]));
     const groups = allKeys.map((key) => ({ key, label: groupLabels[key] || key, members: counts.get(key)?.size || 0 }))
       .sort((a, b) => a.label.localeCompare(b.label, "en", { sensitivity: "base" }));
     res.json({ groups });
@@ -73,11 +67,8 @@ router.get("/groups", requireAdmin, async (_req: Request, res: Response, next: N
 
 router.get("/meetings", requireAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const meetings = await prisma.meeting.findMany({
-      include: meetingInclude,
-      orderBy: { scheduledAt: "desc" },
-    });
-    res.json({ meetings: meetings.map(serializeMeeting) });
+    const meetings = await prisma.meeting.findMany({ include: meetingInclude, orderBy: { scheduledAt: "desc" } });
+    res.json({ meetings });
   } catch (error) { next(error); }
 });
 
@@ -88,10 +79,7 @@ router.post("/meetings", requireAdmin, async (req: Request, res: Response, next:
     const scheduledAt = new Date(parsed.data.scheduledAt);
     if (Number.isNaN(scheduledAt.getTime())) return void res.status(400).json({ error: "A valid meeting date and time is required." });
     const { scheduledAt: _raw, ...rest } = parsed.data;
-    const meeting = await prisma.meeting.create({
-      data: { ...rest, scheduledAt },
-      include: meetingInclude,
-    });
+    const meeting = await prisma.meeting.create({ data: { ...rest, scheduledAt }, include: meetingInclude });
     res.status(201).json(meeting);
   } catch (error) { next(error); }
 });
@@ -108,6 +96,21 @@ router.put("/meetings/:id", requireAdmin, async (req: Request, res: Response, ne
       data.scheduledAt = scheduledAt;
     }
     const meeting = await prisma.meeting.update({ where: { id }, data, include: meetingInclude });
+    res.json(meeting);
+  } catch (error: any) {
+    if (error?.code === "P2025") return void res.status(404).json({ error: "Meeting not found" });
+    next(error);
+  }
+});
+
+router.patch("/meetings/:id/announce", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const meeting = await prisma.meeting.update({
+      where: { id },
+      data: { status: "announced", noticePublishedAt: new Date() },
+      include: meetingInclude,
+    });
     res.json(meeting);
   } catch (error: any) {
     if (error?.code === "P2025") return void res.status(404).json({ error: "Meeting not found" });
@@ -132,8 +135,8 @@ router.post("/meetings/:id/roster", requireAdmin, async (req: Request, res: Resp
     if (!meeting) return void res.status(404).json({ error: "Meeting not found" });
 
     const assignments = await prisma.leadershipProfile.findMany({
-      where: { category: meeting.groupKey, memberId: { not: null }, member: { status: "approved" } },
-      orderBy: [{ tier: "asc" }, { member: { fullName: "asc" } }],
+      where: { category: meeting.groupKey, isActive: true, memberId: { not: null }, member: { status: "approved" } },
+      orderBy: [{ tier: "asc" }, { name: "asc" }],
       select: { memberId: true, role: true, member: { select: { id: true, fullName: true } } },
     });
 
@@ -170,11 +173,7 @@ router.put("/meetings/:id/attendance", requireAdmin, async (req: Request, res: R
       create: { meetingId: id, memberId: row.memberId, status: row.status, notes: row.notes || null, roleSnapshot: row.roleSnapshot || null },
     })));
 
-    const refreshed = await prisma.meeting.update({
-      where: { id },
-      data: { status: "held" },
-      include: meetingInclude,
-    });
+    const refreshed = await prisma.meeting.update({ where: { id }, data: { status: "held" }, include: meetingInclude });
     res.json({ meeting: refreshed });
   } catch (error) { next(error); }
 });
@@ -199,13 +198,11 @@ router.patch("/meetings/:id/publish-minutes", requireAdmin, async (req: Request,
 router.get("/member-minutes", requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = (req as any).user;
-    const member = await prisma.member.findFirst({
-      where: { status: "approved", OR: [
-        ...(user?.id ? [{ authUserId: String(user.id) }] : []),
-        ...(user?.email ? [{ email: { equals: String(user.email), mode: "insensitive" as const } }] : []),
-      ] },
-      select: { id: true },
-    });
+    const orFilters: any[] = [];
+    if (user?.id) orFilters.push({ authUserId: String(user.id) });
+    if (user?.email) orFilters.push({ email: { equals: String(user.email), mode: "insensitive" } });
+    if (!orFilters.length) return void res.status(401).json({ error: "Member login is required." });
+    const member = await prisma.member.findFirst({ where: { status: "approved", OR: orFilters }, select: { id: true } });
     if (!member) return void res.status(403).json({ error: "Approved membership is required." });
 
     const meetings = await prisma.meeting.findMany({
@@ -224,13 +221,14 @@ router.get("/member-history/:memberId", requireAdmin, async (req: Request, res: 
       where: { id: memberId },
       select: {
         id: true, formNo: true, memberNo: true, fullName: true, createdAt: true, approvedAt: true, membershipType: true, status: true,
-        leadershipProfiles: { orderBy: [{ category: "asc" }, { tier: "asc" }], select: { id: true, role: true, category: true, period: true, description: true } },
-        meetingAttendances: { include: { meeting: { select: { id: true, title: true, groupKey: true, scheduledAt: true, status: true } } }, orderBy: { meeting: { scheduledAt: "desc" } } },
+        leadershipProfiles: { orderBy: [{ isActive: "desc" }, { category: "asc" }, { tier: "asc" }], select: { id: true, role: true, category: true, period: true, description: true, isActive: true, startedAt: true, endedAt: true } },
+        meetingAttendances: { include: { meeting: { select: { id: true, title: true, groupKey: true, scheduledAt: true, status: true } } } },
         businesses: { select: { id: true, businessName: true, category: true, status: true, createdAt: true } },
         matrimonials: { select: { id: true, status: true, applicantType: true, createdAt: true } },
       },
     });
     if (!member) return void res.status(404).json({ error: "Member not found" });
+    member.meetingAttendances.sort((a, b) => b.meeting.scheduledAt.getTime() - a.meeting.scheduledAt.getTime());
     res.json({ member });
   } catch (error) { next(error); }
 });
