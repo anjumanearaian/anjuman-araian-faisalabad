@@ -68,6 +68,10 @@ export async function updateMeeting(id: string, data: Partial<GovernanceMeeting>
   });
 }
 
+export async function announceMeeting(id: string) {
+  return apiClient<GovernanceMeeting>(`/leadership/governance/meetings/${id}/announce`, { method: "PATCH" });
+}
+
 export async function deleteMeeting(id: string) {
   return apiClient(`/leadership/governance/meetings/${id}`, { method: "DELETE" });
 }
