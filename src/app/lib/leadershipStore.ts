@@ -39,8 +39,8 @@ export interface LeadershipMessageData {
   attributes?: MessageAttribute[];
 }
 
-export async function fetchLeadershipProfiles(): Promise<LeadershipProfile[]> {
-  return apiClient("/leadership/profiles") as Promise<LeadershipProfile[]>;
+export async function fetchLeadershipProfiles(includeInactive = false): Promise<LeadershipProfile[]> {
+  return apiClient(includeInactive ? "/leadership/profiles/admin/all" : "/leadership/profiles") as Promise<LeadershipProfile[]>;
 }
 
 export async function searchLeadershipMembers(query: string): Promise<LeadershipMemberOption[]> {
