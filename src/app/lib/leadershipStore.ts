@@ -11,6 +11,9 @@ export interface LeadershipProfile {
   image?: string;
   period?: string;
   description?: string;
+  isActive?: boolean;
+  startedAt?: string | null;
+  endedAt?: string | null;
 }
 
 export interface LeadershipMemberOption {
