@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, XCircle } from "lucide-react";
 import type { Member } from "../../lib/memberStore";
 import {
   createLeadershipProfile,
-  deleteLeadershipProfile,
   fetchLeadershipProfiles,
+  updateLeadershipProfile,
   type LeadershipProfile,
 } from "../../lib/leadershipStore";
 
@@ -83,7 +83,10 @@ export function MemberRolesPanel({ member }: { member: Member | null }) {
   const assignments = useMemo(
     () => profiles
       .filter((p) => p.memberId === member?.id && !["founder", "expresident"].includes(String(p.category || "").toLowerCase()))
-      .sort((a, b) => `${a.category} ${a.role}`.localeCompare(`${b.category} ${b.role}`, "en", { sensitivity: "base" })),
+      .sort((a, b) => {
+        const activeOrder = Number(b.isActive !== false) - Number(a.isActive !== false);
+        return activeOrder || `${a.category} ${a.role}`.localeCompare(`${b.category} ${b.role}`, "en", { sensitivity: "base" });
+      }),
     [profiles, member?.id],
   );
 
@@ -110,6 +113,8 @@ export function MemberRolesPanel({ member }: { member: Member | null }) {
         category: finalGroup,
         period: period.trim() || undefined,
         tier: Number(tier) || 2,
+        isActive: true,
+        startedAt: new Date().toISOString(),
       });
       setRole("");
       setCustomGroup("");
@@ -123,13 +128,14 @@ export function MemberRolesPanel({ member }: { member: Member | null }) {
     }
   };
 
-  const remove = async (profile: LeadershipProfile) => {
-    if (!confirm(`Remove ${profile.role} from ${member?.fullName}? The master member record will remain unchanged.`)) return;
+  const endRole = async (profile: LeadershipProfile) => {
+    if (profile.isActive === false) return;
+    if (!confirm(`End ${profile.role} for ${member?.fullName}? The assignment will remain permanently in role history.`)) return;
     try {
-      await deleteLeadershipProfile(profile.id);
+      await updateLeadershipProfile(profile.id, { isActive: false, endedAt: new Date().toISOString() });
       await load();
     } catch (e: any) {
-      setError(e?.message || "Could not remove role.");
+      setError(e?.message || "Could not end role.");
     }
   };
 
@@ -147,7 +153,7 @@ export function MemberRolesPanel({ member }: { member: Member | null }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, borderBottom: "1px solid #eee", paddingBottom: 7, marginBottom: 12 }}>
         <div>
           <h3 style={{ ...sectionTitle, borderBottom: 0, paddingBottom: 0, marginBottom: 2 }}>Organizational Roles & Committees</h3>
-          <p style={{ margin: 0, fontSize: 11, color: "#777", fontWeight: 400 }}>One member can hold several roles at the same time. Each role stays linked to this Member ID.</p>
+          <p style={{ margin: 0, fontSize: 11, color: "#777", fontWeight: 400 }}>One member can hold several roles at the same time. Ended roles remain in lifetime history and are never deleted from the member record.</p>
         </div>
         <button type="button" onClick={() => void load()} style={secondaryButton}><RefreshCw size={13} /> Refresh</button>
       </div>
@@ -155,14 +161,18 @@ export function MemberRolesPanel({ member }: { member: Member | null }) {
       {error && <div style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 7, padding: "8px 10px", fontSize: 11, marginBottom: 10 }}>{error}</div>}
 
       <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-        {loading ? <div style={infoBox}>Loading assignments...</div> : assignments.length === 0 ? <div style={infoBox}>No organizational role is linked to this member yet.</div> : assignments.map((item) => (
-          <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1.3fr 1.6fr .8fr auto", gap: 8, alignItems: "center", border: "1px solid #e5e7eb", borderRadius: 8, padding: "9px 10px", background: "#fcfdfc" }}>
-            <strong style={{ color: GREEN, fontSize: 12 }}>{item.role}</strong>
-            <span style={{ color: "#555", fontSize: 11 }}>{groupLabel(item.category)}</span>
-            <span style={{ color: "#777", fontSize: 11 }}>{item.period || "Current"}</span>
-            <button type="button" onClick={() => void remove(item)} title="Remove this role only" style={{ border: "1px solid #fecaca", background: "#fff", color: "#b91c1c", borderRadius: 6, padding: "5px 7px", cursor: "pointer" }}><Trash2 size={12} /></button>
-          </div>
-        ))}
+        {loading ? <div style={infoBox}>Loading assignments...</div> : assignments.length === 0 ? <div style={infoBox}>No organizational role is linked to this member yet.</div> : assignments.map((item) => {
+          const active = item.isActive !== false;
+          return (
+            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.55fr .8fr .65fr auto", gap: 8, alignItems: "center", border: "1px solid #e5e7eb", borderRadius: 8, padding: "9px 10px", background: active ? "#fcfdfc" : "#f7f7f7", opacity: active ? 1 : .78 }}>
+              <strong style={{ color: GREEN, fontSize: 12 }}>{item.role}</strong>
+              <span style={{ color: "#555", fontSize: 11 }}>{groupLabel(item.category)}</span>
+              <span style={{ color: "#777", fontSize: 11 }}>{item.period || "Current"}</span>
+              <span style={{ background: active ? "#dcfce7" : "#e5e7eb", color: active ? "#166534" : "#4b5563", borderRadius: 20, padding: "3px 7px", fontSize: 10, fontWeight: 800, textAlign: "center" }}>{active ? "Active" : "History"}</span>
+              {active ? <button type="button" onClick={() => void endRole(item)} title="End role and preserve in history" style={{ border: "1px solid #f5d0a7", background: "#fff", color: "#9a3412", borderRadius: 6, padding: "5px 7px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}><XCircle size={12} /> End</button> : <span style={{ color: "#888", fontSize: 10 }}>{item.endedAt ? new Date(item.endedAt).toLocaleDateString("en-PK") : "Ended"}</span>}
+            </div>
+          );
+        })}
       </div>
 
       <div style={{ border: `1px solid ${GOLD}55`, background: "#fffdf7", borderRadius: 10, padding: 12 }}>
