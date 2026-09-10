@@ -48,7 +48,7 @@ export default function Footer() {
             <Link className="footer-link" to="/members-directory">Members Directory</Link>
             <Link className="footer-link" to="/president-message">President&apos;s Message</Link>
             <Link className="footer-link" to="/secretary-message">General Secretary&apos;s Message</Link>
-            <Link className="footer-link" to="/projects">Projects</Link>
+            <Link className="footer-link" to="/matrimonial">Matrimonial Project</Link>
             <Link className="footer-link" to="/contact">Contact Us</Link>
           </div>
         </div>
