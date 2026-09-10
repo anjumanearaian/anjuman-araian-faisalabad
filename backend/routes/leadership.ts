@@ -17,6 +17,9 @@ const ProfileSchema = z.object({
   image: z.string().max(3000).optional().nullable(),
   period: z.string().max(100).optional().nullable(),
   description: z.string().max(3000).optional().nullable(),
+  isActive: z.boolean().optional().default(true),
+  startedAt: z.coerce.date().optional().nullable(),
+  endedAt: z.coerce.date().optional().nullable(),
 });
 const MessageSchema = z.object({
   name: z.string().min(2).max(150).optional(), body: z.string().min(1).max(20000).optional(),
@@ -33,9 +36,6 @@ async function normalizeLinkedProfile(data: any) {
   let linkedMemberId = data.memberId ? String(data.memberId) : "";
   const historicalManualCategory = ["founder", "expresident"].includes(String(data.category || "").toLowerCase());
 
-  // Current organizational positions must point back to the master Member row.
-  // For compatibility with the older Admin Leadership form, an exact approved
-  // member name is auto-linked. Typos/new duplicate person records are rejected.
   if (!linkedMemberId && !historicalManualCategory) {
     const exactMatches = await prisma.member.findMany({
       where: {
@@ -88,15 +88,11 @@ function publicProfile(item: any) {
   return { ...profile, name: linked.fullName || profile.name, city: linked.city || profile.city, image: linked.photoUrl || profile.image };
 }
 
-// Public community directory. Personal identity lives only in Member; this route
-// exposes a deliberately limited projection and attaches organizational roles by
-// Member ID. Phone, email, CNIC, residential address, company/business and family
-// data are never returned here.
 router.get("/member-directory", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const members = await prisma.member.findMany({
       where: { status: "approved" },
-      orderBy: [{ memberNo: "asc" }, { fullName: "asc" }],
+      orderBy: [{ fullName: "asc" }],
       select: {
         id: true,
         memberNo: true,
@@ -109,8 +105,9 @@ router.get("/member-directory", async (_req: Request, res: Response, next: NextF
         memberCell: true,
         photoUrl: true,
         leadershipProfiles: {
+          where: { isActive: true },
           orderBy: [{ tier: "asc" }, { role: "asc" }],
-          select: { id: true, role: true, tier: true, category: true, period: true },
+          select: { id: true, role: true, tier: true, category: true, period: true, startedAt: true },
         },
       },
     });
@@ -125,6 +122,7 @@ router.get("/member-directory", async (_req: Request, res: Response, next: NextF
           tier: profile.tier,
           category: profile.category,
           period: profile.period,
+          startedAt: profile.startedAt,
         })),
     }));
 
@@ -132,8 +130,6 @@ router.get("/member-directory", async (_req: Request, res: Response, next: NextF
   } catch (error) { next(error); }
 });
 
-// Admin-only searchable source for assigning an existing master member to a leadership role.
-// Sensitive fields are deliberately excluded from the response.
 router.get("/member-options", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const q = String(req.query.q || "").trim();
@@ -172,11 +168,18 @@ router.get("/profiles", async (_req, res, next) => {
   try {
     if (await prisma.leadershipProfile.count() === 0) {
       await prisma.leadershipProfile.createMany({ data: [
-        { name: "Dr Ahsan-ul-Haq", role: "President", city: "Faisalabad", tier: 0, category: "cabinet", image: "/images/president.jpg" },
-        { name: "Dr Mian Saqib Rahman", role: "General Secretary", city: "Faisalabad", tier: 1, category: "cabinet" },
+        { name: "Dr Ahsan-ul-Haq", role: "President", city: "Faisalabad", tier: 0, category: "cabinet", image: "/images/president.jpg", isActive: true },
+        { name: "Dr Mian Saqib Rahman", role: "General Secretary", city: "Faisalabad", tier: 1, category: "cabinet", isActive: true },
       ] });
     }
-    const rows = await prisma.leadershipProfile.findMany({ include: { member: { select: { id: true, fullName: true, city: true, photoUrl: true, status: true } } }, orderBy: [{ category: "asc" }, { tier: "asc" }, { name: "asc" }] });
+    const rows = await prisma.leadershipProfile.findMany({ where: { isActive: true }, include: { member: { select: { id: true, fullName: true, city: true, photoUrl: true, status: true } } }, orderBy: [{ category: "asc" }, { tier: "asc" }, { name: "asc" }] });
+    res.json(rows.map(publicProfile));
+  } catch (error) { next(error); }
+});
+
+router.get("/profiles/admin/all", requireAdmin, async (_req, res, next) => {
+  try {
+    const rows = await prisma.leadershipProfile.findMany({ include: { member: { select: { id: true, fullName: true, city: true, photoUrl: true, status: true } } }, orderBy: [{ isActive: "desc" }, { category: "asc" }, { tier: "asc" }, { name: "asc" }] });
     res.json(rows.map(publicProfile));
   } catch (error) { next(error); }
 });
@@ -188,7 +191,7 @@ router.post("/profiles", requireAdmin, async (req: Request, res: Response, next:
     if (!parsed.success) { res.status(400).json({ error: "Invalid leadership data", details: parsed.error.flatten().fieldErrors }); return; }
     const normalized = [];
     for (const row of parsed.data) normalized.push(await normalizeLinkedProfile(row));
-    const created = await prisma.$transaction(normalized.map((data) => prisma.leadershipProfile.create({ data })));
+    const created = await prisma.$transaction(normalized.map((data) => prisma.leadershipProfile.create({ data: { ...data, startedAt: data.startedAt || new Date() } })));
     res.status(201).json(Array.isArray(req.body) ? created : created[0]);
   } catch (error: any) {
     if (error?.statusCode) { res.status(error.statusCode).json({ error: error.message }); return; }
@@ -252,9 +255,6 @@ router.put("/messages/:type", requireAdmin, validate(MessageSchema), async (req:
   } catch (error) { next(error); }
 });
 
-// Governance is mounted here so the existing /api/leadership router remains the
-// single organizational API surface while meetings and attendance stay separate
-// relational records linked back to Member IDs.
 router.use("/governance", governanceRouter);
 
 export default router;
