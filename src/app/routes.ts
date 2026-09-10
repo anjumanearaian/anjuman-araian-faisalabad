@@ -24,9 +24,11 @@ import { AdminPage } from "./pages/AdminPage";
 import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
 import { AdminLeadershipCenterPage } from "./pages/AdminLeadershipCenterPage";
 import { AdminMatrimonialPage } from "./pages/AdminMatrimonialPage";
+import { AdminGovernancePage } from "./pages/AdminGovernancePage";
 import { MemberRegisterPage } from "./pages/MemberRegisterPage";
 import { MemberLoginPage } from "./pages/MemberLoginPage";
 import { MemberPortalPage } from "./pages/MemberPortalPage";
+import { MemberMeetingMinutesPage } from "./pages/MemberMeetingMinutesPage";
 import { MemberForgotPasswordPage } from "./pages/MemberForgotPasswordPage";
 import { BusinessPage } from "./pages/BusinessPage";
 import { BusinessSubmitPage } from "./pages/BusinessSubmitPage";
@@ -48,6 +50,10 @@ export const router = createBrowserRouter([
   {
     path: "admin/matrimonial",
     Component: AdminMatrimonialPage,
+  },
+  {
+    path: "admin/governance",
+    Component: AdminGovernancePage,
   },
   {
     Component: Layout,
@@ -78,6 +84,7 @@ export const router = createBrowserRouter([
       { path: "member/login", Component: MemberLoginPage },
       { path: "member/forgot-password", Component: MemberForgotPasswordPage },
       { path: "member/portal", Component: MemberPortalPage },
+      { path: "member/meeting-minutes", Component: MemberMeetingMinutesPage },
       { path: "*", Component: NotFoundPage },
     ],
   },
