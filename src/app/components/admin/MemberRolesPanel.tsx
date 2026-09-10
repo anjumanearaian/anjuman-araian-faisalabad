@@ -70,7 +70,7 @@ export function MemberRolesPanel({ member }: { member: Member | null }) {
     setLoading(true);
     setError("");
     try {
-      setProfiles(await fetchLeadershipProfiles());
+      setProfiles(await fetchLeadershipProfiles(true));
     } catch (e: any) {
       setError(e?.message || "Could not load organizational roles.");
     } finally {
