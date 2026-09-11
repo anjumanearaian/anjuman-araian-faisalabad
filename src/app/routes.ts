@@ -12,6 +12,7 @@ import { ExPresidentsPage } from "./pages/ExPresidentsPage";
 import { CabinetPage } from "./pages/CabinetPage";
 import { ExecutiveMembersPage } from "./pages/ExecutiveMembersPage";
 import { AdvisoryBoardPage } from "./pages/AdvisoryBoardPage";
+import { MembersDirectoryPage } from "./pages/MembersDirectoryPage";
 import { EventsPage } from "./pages/EventsPage";
 import { MediaPage } from "./pages/MediaPage";
 import { NewsPage } from "./pages/NewsPage";
@@ -21,10 +22,13 @@ import { MatrimonialMemberOnlyPage } from "./pages/MatrimonialMemberOnlyPage";
 import { MatrimonialRequestsPage } from "./pages/MatrimonialRequestsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
+import { AdminLeadershipCenterPage } from "./pages/AdminLeadershipCenterPage";
 import { AdminMatrimonialPage } from "./pages/AdminMatrimonialPage";
+import { AdminGovernancePage } from "./pages/AdminGovernancePage";
 import { MemberRegisterPage } from "./pages/MemberRegisterPage";
 import { MemberLoginPage } from "./pages/MemberLoginPage";
 import { MemberPortalPage } from "./pages/MemberPortalPage";
+import { MemberMeetingMinutesPage } from "./pages/MemberMeetingMinutesPage";
 import { MemberForgotPasswordPage } from "./pages/MemberForgotPasswordPage";
 import { BusinessPage } from "./pages/BusinessPage";
 import { BusinessSubmitPage } from "./pages/BusinessSubmitPage";
@@ -40,8 +44,16 @@ export const router = createBrowserRouter([
     Component: AdminMemberCenterPage,
   },
   {
+    path: "admin/leadership",
+    Component: AdminLeadershipCenterPage,
+  },
+  {
     path: "admin/matrimonial",
     Component: AdminMatrimonialPage,
+  },
+  {
+    path: "admin/governance",
+    Component: AdminGovernancePage,
   },
   {
     Component: Layout,
@@ -55,6 +67,7 @@ export const router = createBrowserRouter([
       { path: "secretary-message", Component: SecretaryMessagePage },
       { path: "founders", Component: FoundersPage },
       { path: "ex-presidents", Component: ExPresidentsPage },
+      { path: "members-directory", Component: MembersDirectoryPage },
       { path: "cabinet", Component: CabinetPage },
       { path: "executive-members", Component: ExecutiveMembersPage },
       { path: "advisory-board", Component: AdvisoryBoardPage },
@@ -71,6 +84,7 @@ export const router = createBrowserRouter([
       { path: "member/login", Component: MemberLoginPage },
       { path: "member/forgot-password", Component: MemberForgotPasswordPage },
       { path: "member/portal", Component: MemberPortalPage },
+      { path: "member/meeting-minutes", Component: MemberMeetingMinutesPage },
       { path: "*", Component: NotFoundPage },
     ],
   },

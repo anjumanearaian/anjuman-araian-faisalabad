@@ -86,6 +86,9 @@ model Member {
   familyInfo         FamilyInfo?
   children           MemberChild[]
   leadershipProfiles LeadershipProfile[]
+  businesses         Business[]
+  matrimonials       Matrimonial[]
+  meetingAttendances MeetingAttendance[]
 
   @@index([status])
   @@index([membershipType])
@@ -127,12 +130,14 @@ model MemberChild {
 
 model Business {
   id                 String   @id @default(uuid())
+  memberId           String?
+  member             Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
   businessName       String
   ownerName          String
   category           String
   city               String
   address            String
-  phone              String
+  phone               String
   whatsapp           String
   email              String
   website            String
@@ -150,6 +155,7 @@ model Business {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  @@index([memberId])
   @@index([status])
   @@index([paymentStatus])
   @@index([createdAt])
@@ -157,6 +163,8 @@ model Business {
 
 model Matrimonial {
   id                  String    @id @default(uuid())
+  memberId            String?
+  member              Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
   name                String
   gender              String
   age                 String
@@ -185,6 +193,7 @@ model Matrimonial {
   requestedMatches MatrimonialMatchRequest[] @relation("RequesterProfile")
   receivedMatches  MatrimonialMatchRequest[] @relation("TargetProfile")
 
+  @@index([memberId])
   @@index([status])
   @@index([paymentStatus])
   @@index([isFeatured])
@@ -312,19 +321,64 @@ model OverseasChapter {
 }
 
 model LeadershipProfile {
-  id          String  @id @default(uuid())
+  id          String    @id @default(uuid())
   memberId    String?
-  member      Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  member      Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
   name        String
   role        String
-  tier        Int     @default(2)
+  tier        Int       @default(2)
   city        String
-  category    String  @default("cabinet")
+  category    String    @default("cabinet")
   image       String?
   period      String?
   description String?
+  isActive    Boolean   @default(true)
+  startedAt   DateTime?
+  endedAt     DateTime?
 
   @@index([memberId])
+  @@index([isActive])
+}
+
+model Meeting {
+  id                 String              @id @default(uuid())
+  title              String
+  groupKey           String
+  meetingType        String              @default("Monthly Meeting")
+  meetingNo          String?
+  scheduledAt        DateTime
+  venue              String?
+  agenda             String?
+  noticeBody         String?
+  noticePublishedAt  DateTime?
+  status             String              @default("draft")
+  minutesBody        String?
+  minutesPublishedAt DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  attendances        MeetingAttendance[]
+
+  @@index([groupKey])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+model MeetingAttendance {
+  id           String   @id @default(uuid())
+  meetingId    String
+  meeting      Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  memberId     String
+  member       Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  status       String   @default("invited")
+  notes        String?
+  roleSnapshot String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([meetingId, memberId])
+  @@index([meetingId])
+  @@index([memberId])
+  @@index([status])
 }
 
 model LeadershipMessage {
