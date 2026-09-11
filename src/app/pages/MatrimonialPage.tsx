@@ -4,6 +4,7 @@ import { CheckCircle, DollarSign, Heart, Loader2, LockKeyhole, Send, ShieldCheck
 import { PageHeader } from "../components/PageHeader";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import { apiClient } from "../lib/apiClient";
+import { uploadFile } from "../lib/upload";
 import { createMatrimonial } from "../lib/matrimonialStore";
 import { getSiteSettings } from "../lib/settingsStore";
 import { citiesForProvince, pakistanCitiesByProvince, suggestLocation } from "../lib/pakistanLocations";
@@ -22,7 +23,6 @@ import {
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
-const API_BASE = "/api";
 
 const PROVINCES = Object.keys(pakistanCitiesByProvince);
 
@@ -174,18 +174,14 @@ export function MatrimonialPage() {
   const handleFileUpload = (key: "photoUrl" | "paymentProofUrl") => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) {
-      setErrors((prev) => ({ ...prev, [key]: "File must be 4MB or smaller." }));
+    if (file.size > 12 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, [key]: "Image source must be 12 MB or smaller." }));
       return;
     }
     setUploading((prev) => ({ ...prev, [key]: true }));
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const response = await fetch(`${API_BASE}/upload`, { method: "POST", body: fd });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Upload failed.");
-      set(key, payload.url);
+      const url = await uploadFile(file, key === "photoUrl" ? "matrimonial-photo" : "payment-proof");
+      set(key, url);
     } catch (e: any) {
       setErrors((prev) => ({ ...prev, [key]: e?.message || "Upload failed." }));
     } finally {

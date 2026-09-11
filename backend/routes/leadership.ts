@@ -4,7 +4,6 @@ import prisma from "../lib/prisma";
 import { requireAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { deleteManagedFileIfUnreferenced } from "../lib/fileCleanup";
-import governanceRouter from "./governance";
 
 const router = Router();
 const ProfileSchema = z.object({
@@ -13,13 +12,10 @@ const ProfileSchema = z.object({
   role: z.string().min(2).max(150),
   city: z.string().max(100).default("Faisalabad"),
   tier: z.number().int().min(0).max(10).default(2),
-  category: z.string().trim().min(2).max(100).default("cabinet"),
+  category: z.enum(["cabinet", "executive", "advisory", "founder", "expresident"]),
   image: z.string().max(3000).optional().nullable(),
   period: z.string().max(100).optional().nullable(),
   description: z.string().max(3000).optional().nullable(),
-  isActive: z.boolean().optional().default(true),
-  startedAt: z.coerce.date().optional().nullable(),
-  endedAt: z.coerce.date().optional().nullable(),
 });
 const MessageSchema = z.object({
   name: z.string().min(2).max(150).optional(), body: z.string().min(1).max(20000).optional(),
@@ -33,33 +29,9 @@ const parseMessage = (item: any) => {
 };
 
 async function normalizeLinkedProfile(data: any) {
-  let linkedMemberId = data.memberId ? String(data.memberId) : "";
-  const historicalManualCategory = ["founder", "expresident"].includes(String(data.category || "").toLowerCase());
-
-  if (!linkedMemberId && !historicalManualCategory) {
-    const exactMatches = await prisma.member.findMany({
-      where: {
-        status: "approved",
-        fullName: { equals: String(data.name || "").trim(), mode: "insensitive" },
-      },
-      select: { id: true },
-      take: 2,
-    });
-    if (exactMatches.length === 1) linkedMemberId = exactMatches[0].id;
-    else {
-      const error: any = new Error(
-        exactMatches.length > 1
-          ? "More than one approved member has this name. Assign the role from Member & Approval Center so the correct Member ID is used."
-          : "Current leadership and committee roles must be assigned to an existing approved member from Member & Approval Center."
-      );
-      error.statusCode = 409;
-      throw error;
-    }
-  }
-
-  if (!linkedMemberId) return data;
+  if (!data.memberId) return data;
   const member = await prisma.member.findUnique({
-    where: { id: linkedMemberId },
+    where: { id: String(data.memberId) },
     select: { id: true, status: true, fullName: true, city: true, photoUrl: true },
   });
   if (!member) {
@@ -88,98 +60,15 @@ function publicProfile(item: any) {
   return { ...profile, name: linked.fullName || profile.name, city: linked.city || profile.city, image: linked.photoUrl || profile.image };
 }
 
-router.get("/member-directory", async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const members = await prisma.member.findMany({
-      where: { status: "approved" },
-      orderBy: [{ fullName: "asc" }],
-      select: {
-        id: true,
-        memberNo: true,
-        fullName: true,
-        city: true,
-        occupation: true,
-        education: true,
-        designation: true,
-        membershipType: true,
-        memberCell: true,
-        photoUrl: true,
-        leadershipProfiles: {
-          where: { isActive: true },
-          orderBy: [{ tier: "asc" }, { role: "asc" }],
-          select: { id: true, role: true, tier: true, category: true, period: true, startedAt: true },
-        },
-      },
-    });
-
-    const safeMembers = members.map(({ leadershipProfiles, ...member }) => ({
-      ...member,
-      leadershipRoles: leadershipProfiles
-        .filter((profile) => !["founder", "expresident"].includes(String(profile.category || "").toLowerCase()))
-        .map((profile) => ({
-          id: profile.id,
-          role: profile.role,
-          tier: profile.tier,
-          category: profile.category,
-          period: profile.period,
-          startedAt: profile.startedAt,
-        })),
-    }));
-
-    res.json({ members: safeMembers, total: safeMembers.length });
-  } catch (error) { next(error); }
-});
-
-router.get("/member-options", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const q = String(req.query.q || "").trim();
-    if (q.length < 1) return void res.json({ members: [] });
-
-    const members = await prisma.member.findMany({
-      where: {
-        status: "approved",
-        OR: [
-          { fullName: { contains: q, mode: "insensitive" } },
-          { memberNo: { contains: q, mode: "insensitive" } },
-          { cnic: { contains: q, mode: "insensitive" } },
-          { phone: { contains: q, mode: "insensitive" } },
-          { whatsapp: { contains: q, mode: "insensitive" } },
-        ],
-      },
-      orderBy: { fullName: "asc" },
-      take: 20,
-      select: {
-        id: true,
-        memberNo: true,
-        fullName: true,
-        city: true,
-        photoUrl: true,
-        occupation: true,
-        designation: true,
-        membershipType: true,
-      },
-    });
-
-    res.json({ members });
-  } catch (error) { next(error); }
-});
-
 router.get("/profiles", async (_req, res, next) => {
   try {
     if (await prisma.leadershipProfile.count() === 0) {
       await prisma.leadershipProfile.createMany({ data: [
-        { name: "Dr Ahsan-ul-Haq", role: "President", city: "Faisalabad", tier: 0, category: "cabinet", image: "/images/president.jpg", isActive: true },
-        { name: "Dr Mian Saqib Rahman", role: "General Secretary", city: "Faisalabad", tier: 1, category: "cabinet", isActive: true },
+        { name: "Dr Ahsan-ul-Haq", role: "President", city: "Faisalabad", tier: 0, category: "cabinet", image: "/images/president.jpg" },
+        { name: "Dr Mian Saqib Rahman", role: "General Secretary", city: "Faisalabad", tier: 1, category: "cabinet" },
       ] });
     }
-    const rows = await prisma.leadershipProfile.findMany({ where: { isActive: true }, include: { member: { select: { id: true, fullName: true, city: true, photoUrl: true, status: true } } }, orderBy: [{ category: "asc" }, { tier: "asc" }, { name: "asc" }] });
-    res.json(rows.map(publicProfile));
-  } catch (error) { next(error); }
-});
-
-router.get("/profiles/admin/all", requireAdmin, async (_req, res, next) => {
-  try {
-    const rows = await prisma.leadershipProfile.findMany({ include: { member: { select: { id: true, fullName: true, city: true, photoUrl: true, status: true } } }, orderBy: [{ isActive: "desc" }, { category: "asc" }, { tier: "asc" }, { name: "asc" }] });
+    const rows = await prisma.leadershipProfile.findMany({ include: { member: { select: { id: true, fullName: true, city: true, photoUrl: true, status: true } } }, orderBy: [{ category: "asc" }, { tier: "asc" }, { name: "asc" }] });
     res.json(rows.map(publicProfile));
   } catch (error) { next(error); }
 });
@@ -191,7 +80,7 @@ router.post("/profiles", requireAdmin, async (req: Request, res: Response, next:
     if (!parsed.success) { res.status(400).json({ error: "Invalid leadership data", details: parsed.error.flatten().fieldErrors }); return; }
     const normalized = [];
     for (const row of parsed.data) normalized.push(await normalizeLinkedProfile(row));
-    const created = await prisma.$transaction(normalized.map((data) => prisma.leadershipProfile.create({ data: { ...data, startedAt: data.startedAt || new Date() } })));
+    const created = await prisma.$transaction(normalized.map((data) => prisma.leadershipProfile.create({ data })));
     res.status(201).json(Array.isArray(req.body) ? created : created[0]);
   } catch (error: any) {
     if (error?.statusCode) { res.status(error.statusCode).json({ error: error.message }); return; }
@@ -202,14 +91,8 @@ router.post("/profiles", requireAdmin, async (req: Request, res: Response, next:
 router.put("/profiles/:id", requireAdmin, validate(ProfileSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
-    const previous = await prisma.leadershipProfile.findUnique({ where: { id }, select: { image: true, memberId: true, name: true, category: true, city: true } });
-    const data = await normalizeLinkedProfile({
-      name: previous?.name || "",
-      city: previous?.city || "Faisalabad",
-      category: previous?.category || "cabinet",
-      memberId: previous?.memberId || null,
-      ...req.body,
-    });
+    const previous = await prisma.leadershipProfile.findUnique({ where: { id }, select: { image: true } });
+    const data = await normalizeLinkedProfile({ ...req.body });
     const updated = await prisma.leadershipProfile.update({ where: { id }, data });
     if (previous?.image && previous.image !== updated.image) await deleteManagedFileIfUnreferenced(previous.image);
     res.json(updated);
@@ -254,7 +137,5 @@ router.put("/messages/:type", requireAdmin, validate(MessageSchema), async (req:
     res.json(parseMessage(message));
   } catch (error) { next(error); }
 });
-
-router.use("/governance", governanceRouter);
 
 export default router;

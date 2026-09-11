@@ -46,14 +46,14 @@ export function BusinessSubmitPage() {
   const handleFileUpload = (key: string) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) {
-      setErrors((err) => ({ ...err, [key]: "File size must be less than 4MB" }));
+    if (file.size > 12 * 1024 * 1024) {
+      setErrors((err) => ({ ...err, [key]: "Image source must be 12 MB or smaller." }));
       return;
     }
     setUploading((u) => ({ ...u, [key]: true }));
     setErrors((err) => ({ ...err, [key]: "" }));
     try {
-      const url = await uploadFile(file);
+      const url = await uploadFile(file, key === "logoUrl" ? "business-logo" : "business-document");
       set(key, url);
     } catch (err: any) {
       setErrors((prev) => ({ ...prev, [key]: err?.message || "Upload failed. Please try again." }));

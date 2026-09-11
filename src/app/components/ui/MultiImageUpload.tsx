@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Upload, X, Loader2, Image as ImageIcon } from "lucide-react";
+import { optimizeImageFile } from "../../lib/imageOptimization";
 
 interface MultiImageUploadProps {
   images: string[];
@@ -20,7 +21,7 @@ function guidanceFor(label = "") {
   if (/logo/.test(text)) return "Recommended: 1000 × 1000 px, square PNG/WebP with clear margins. Transparent background preferred for logos.";
   if (/gallery|media|photo/.test(text)) return "Recommended: 1600 × 1200 px, 4:3 landscape. Use sharp, well-lit originals without text baked into the image.";
   if (/thumbnail/.test(text)) return "Recommended: 1280 × 720 px, 16:9 landscape.";
-  return "Recommended: high-resolution JPG, PNG or WebP, under 4 MB. Use the natural aspect ratio and avoid stretched images.";
+  return "Recommended: high-resolution JPG, PNG or WebP. Source images up to 12 MB are optimized automatically before upload.";
 }
 
 export function MultiImageUpload({ images = [], onChange, label, guidance, maxFiles }: MultiImageUploadProps) {
@@ -37,9 +38,9 @@ export function MultiImageUpload({ images = [], onChange, label, guidance, maxFi
       return;
     }
 
-    const oversized = files.find(f => f.size > 4 * 1024 * 1024);
+    const oversized = files.find(f => f.size > 12 * 1024 * 1024);
     if (oversized) {
-      setError("Each file must be 4 MB or smaller.");
+      setError("Please use source images 12 MB or smaller. Images are automatically optimized before upload.");
       e.target.value = "";
       return;
     }
@@ -57,8 +58,11 @@ export function MultiImageUpload({ images = [], onChange, label, guidance, maxFi
     try {
       const uploadedUrls: string[] = [];
       for (const file of files) {
+        const prepared = file.type === "image/gif" ? file : await optimizeImageFile(file, { maxWidth: 1920, maxHeight: 1080, quality: 0.86 });
+        if (prepared.size > 4 * 1024 * 1024) throw new Error("This image is still larger than 4 MB after optimization. Please use a smaller source image.");
         const fd = new FormData();
-        fd.append("file", file);
+        fd.append("file", prepared);
+        fd.append("category", "content-image");
         const res = await fetch("/api/upload", { method: "POST", body: fd });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));

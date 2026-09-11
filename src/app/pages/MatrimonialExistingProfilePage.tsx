@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { CheckCircle, Edit2, Eye, EyeOff, Loader2, Save, ShieldCheck, Upload, X } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { apiClient } from "../lib/apiClient";
+import { uploadFile } from "../lib/upload";
 import { MatrimonialProfile } from "../lib/matrimonialStore";
 import { EDUCATION_OPTIONS, PROFESSION_OPTIONS } from "../lib/matrimonialOptions";
 import { citiesForProvince, pakistanCitiesByProvince, suggestLocation } from "../lib/pakistanLocations";
@@ -53,16 +54,12 @@ export function MatrimonialExistingProfilePage({ profile, onSaved }: Props) {
   const upload = (key: "photoUrl" | "paymentProofUrl") => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) { setError("File must be 4MB or smaller."); return; }
+    if (file.size > 12 * 1024 * 1024) { setError("Image source must be 12 MB or smaller."); return; }
     setUploading((prev) => ({ ...prev, [key]: true }));
     setError("");
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const response = await fetch("/api/upload", { method: "POST", body: fd });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "Upload failed.");
-      set(key, body.url);
+      const url = await uploadFile(file, key === "photoUrl" ? "matrimonial-photo" : "payment-proof");
+      set(key, url);
     } catch (e: any) {
       setError(e?.message || "Upload failed.");
     } finally {

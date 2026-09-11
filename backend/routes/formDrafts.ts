@@ -1,11 +1,11 @@
 import { Router, Request, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
-import { requireAdmin, requireMember } from "../middleware/auth";
+import { requireWelfareAdmin, requireMember } from "../middleware/auth";
 
 const router = Router();
 const allowedTypes = new Set(["membership", "matrimonial", "business"]);
 
-router.get("/admin/all", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get("/admin/all", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const status = req.query.status ? String(req.query.status) : undefined;
     const drafts = await prisma.formDraft.findMany({

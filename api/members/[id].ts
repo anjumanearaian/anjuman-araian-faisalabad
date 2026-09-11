@@ -6,6 +6,7 @@ const app = backendModule.default ?? backendModule;
 const prismaModule = require("../../backend/dist/lib/prisma.js");
 const prisma = prismaModule.default ?? prismaModule.prisma;
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
 
 function readBody(req: any) {
   if (!req.body) return {};
@@ -39,7 +40,7 @@ function verifyToken(req: any) {
 }
 
 function requireAdminUser(user: any) {
-  if (!["admin", "super_admin"].includes(String(user?.role || ""))) {
+  if (!["admin", "super_admin", "welfare_manager"].includes(String(user?.role || ""))) {
     const error: any = new Error("Admin access required");
     error.statusCode = 403;
     throw error;
@@ -180,7 +181,7 @@ export default async function handler(req: any, res: any) {
   try {
     const user = verifyToken(req);
     if (!id) return res.status(400).json({ error: "Member id is required" });
-    if (!["admin", "super_admin", "member", "applicant"].includes(user.role)) return res.status(403).json({ error: "Access denied" });
+    if (!["admin", "super_admin", "welfare_manager", "member", "applicant"].includes(user.role)) return res.status(403).json({ error: "Access denied" });
 
     const current = await prisma.member.findUnique({
       where: { id },
@@ -188,7 +189,7 @@ export default async function handler(req: any, res: any) {
     });
     if (!current) return res.status(404).json({ error: "Member not found" });
 
-    const isAdmin = user.role === "admin" || user.role === "super_admin";
+    const isAdmin = ["admin", "super_admin", "welfare_manager"].includes(String(user.role));
     const isApplicant = user.role === "applicant";
     const isMember = user.role === "member";
     if (isMember && String(user.id) !== id) return res.status(403).json({ error: "Access denied. You can only update your own profile." });
@@ -196,6 +197,11 @@ export default async function handler(req: any, res: any) {
 
     const rawBody = readBody(req);
     const rawUpdates = { ...rawBody };
+    let passwordHash: string | undefined;
+    if (isAdmin && typeof rawUpdates.password === "string" && rawUpdates.password.trim()) {
+      if (rawUpdates.password.trim().length < 8) return res.status(400).json({ error: "Temporary password must be at least 8 characters." });
+      passwordHash = await bcrypt.hash(rawUpdates.password.trim(), 12);
+    }
     const familyPayload = rawBody.familyInfo && typeof rawBody.familyInfo === "object" ? rawBody.familyInfo : null;
     const childrenPayload = Array.isArray(rawBody.children) ? rawBody.children.slice(0, 20) : null;
     delete rawUpdates.familyInfo;
@@ -218,6 +224,7 @@ export default async function handler(req: any, res: any) {
     }
 
     delete updates.email; delete updates.authUserId; delete updates.password; delete updates.status; delete updates.approvedAt; delete updates.rejectionReason;
+    if (passwordHash) updates.password = passwordHash;
     if (!isAdmin) {
       delete updates.memberNo; delete updates.formNo; delete updates.adminNote; delete updates.paymentStatus; delete updates.visibility;
       delete updates.showOnWeb; delete updates.showOnPortal; delete updates.isFeatured; delete updates.isFeaturedPortal;

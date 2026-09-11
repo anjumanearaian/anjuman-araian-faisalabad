@@ -201,9 +201,13 @@ export function MemberRegisterPage() {
   const handleFile = (key: keyof typeof form) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) { setErrors((err) => ({ ...err, [key]: "File must be under 4MB." })); return; }
+    const maxSourceBytes = file.type.startsWith("image/") ? 12 * 1024 * 1024 : 4 * 1024 * 1024;
+    if (file.size > maxSourceBytes) {
+      setErrors((err) => ({ ...err, [key]: file.type.startsWith("image/") ? "Image source must be 12 MB or smaller." : "File must be under 4 MB." }));
+      return;
+    }
     setUploading((u) => ({ ...u, [String(key)]: true }));
-    try { set(key, await uploadFile(file)); }
+    try { set(key, await uploadFile(file, `member-${String(key)}`)); }
     catch (err: any) { setErrors((prev) => ({ ...prev, [String(key)]: err?.message || "Upload failed. Please try again." })); }
     finally { setUploading((u) => ({ ...u, [String(key)]: false })); e.target.value = ""; }
   };
@@ -351,7 +355,7 @@ export function MemberRegisterPage() {
             <p style={{ color: GREEN, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", marginTop: 24 }}>Emergency Contact</p><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid"><Field label="Emergency Contact Name"><input style={inputStyle} value={family.emergencyContactName} onChange={(e) => setFam("emergencyContactName", e.target.value)} /></Field><Field label="Emergency Contact Number"><input type="tel" style={inputStyle} value={family.emergencyContactNumber} onChange={(e) => setFam("emergencyContactNumber", e.target.value)} /></Field><Field label="Relationship"><select style={inputStyle} value={family.emergencyRelationship} onChange={(e) => setFam("emergencyRelationship", e.target.value)}><option value="">Select relationship…</option>{relationships.map((x) => <option key={x}>{x}</option>)}</select></Field></div>
           </div>}
 
-          {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Maximum 4MB each. Accepted: JPG, PNG, WebP or PDF." /><div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }} className="doc-grid">{[
+          {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Images are optimized automatically. PDFs must be 4 MB or smaller. Accepted: JPG, PNG, WebP or PDF." /><div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }} className="doc-grid">{[
             { key: "photoUrl", label: "Passport Photo *" }, { key: "cnicFrontUrl", label: "CNIC Front *" }, { key: "cnicBackUrl", label: "CNIC Back *" }, { key: "paymentProofUrl", label: "Payment Proof *" }
           ].map(({ key, label }) => <div key={key}><label style={labelStyle}>{label}</label><label style={{ display: "block", border: `2px dashed ${form[key as keyof typeof form] ? GOLD : "#d9d9d9"}`, borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", background: "#fafaf8" }}>{form[key as keyof typeof form] ? <div style={{ color: GREEN, fontSize: 12, fontWeight: 800, padding: 24 }}>✓ Uploaded</div> : <div style={{ padding: 16 }}><Upload size={22} color="#aaa" /><div style={{ color: "#999", fontSize: 11, marginTop: 5 }}>Click to upload</div></div>}<input type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={handleFile(key as keyof typeof form)} /></label>{errors[key] && <p style={{ color: "#dc2626", fontSize: 11 }}>{errors[key]}</p>}</div>)}</div><div style={{ marginTop: 22 }}><MultiImageUpload label="Additional Photos / Certificates (Optional)" images={form.additionalPhotos} onChange={(imgs) => set("additionalPhotos", imgs)} /></div><div style={{ background: "#f0f7f3", borderRadius: 10, padding: "13px 16px", marginTop: 20, color: "#555", fontSize: 12, lineHeight: 1.7 }}>By submitting, I confirm that the information is accurate and I consent to secure administrative storage of the information supplied in this form.</div></div>}
 

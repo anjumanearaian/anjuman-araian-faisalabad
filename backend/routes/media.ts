@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
-import { requireAdmin } from "../middleware/auth";
+import { requireContentAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 
 const router = Router();
@@ -28,7 +28,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
   } catch (error) { next(error); }
 });
 
-router.post("/", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.post("/", requireContentAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = Array.isArray(req.body) ? req.body : [req.body];
     const parsed = z.array(MediaSchema).min(1).max(50).safeParse(input);
@@ -38,12 +38,12 @@ router.post("/", requireAdmin, async (req: Request, res: Response, next: NextFun
   } catch (error) { next(error); }
 });
 
-router.put("/:id", requireAdmin, validate(MediaSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
+router.put("/:id", requireContentAdmin, validate(MediaSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
   try { res.json(serialize(await prisma.media.update({ where: { id: String(req.params.id) }, data: req.body }))); }
   catch (error: any) { if (error.code === "P2025") { res.status(404).json({ error: "Media item not found" }); return; } next(error); }
 });
 
-router.delete("/:id", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.delete("/:id", requireContentAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try { await prisma.media.delete({ where: { id: String(req.params.id) } }); res.json({ success: true }); }
   catch (error: any) { if (error.code === "P2025") { res.status(404).json({ error: "Media item not found" }); return; } next(error); }
 });

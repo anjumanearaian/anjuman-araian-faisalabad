@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, Navigate } from "react-router";
 import { useAdmin } from "../context/AdminContext";
 import { Shield, Eye, EyeOff, LogOut, Newspaper, FileText, CalendarDays, CheckCircle, XCircle, Clock, Edit2, Trash2, Plus, X, ArrowRight, Users, UserCheck, UserX, AlertCircle, Briefcase, DollarSign, MessageCircle, Heart, Globe, Settings, Image as ImageIcon, Crown, Star, Upload, ChevronLeft, ChevronRight, Phone, Mail, PieChart, BarChart3, Settings2, LayoutDashboard, ShieldAlert } from "lucide-react";
 import { fetchAllContent, createContent, updateContent, deleteContent, NewsItem, EventItem, statusColors, ContentStatus, paginateData } from "../lib/contentStore";
@@ -126,7 +126,11 @@ function Dashboard() {
     try {
       const XLSX = await import("xlsx");
       const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { defval: "" });
+      const firstSheetName = book.SheetNames[0];
+      if (!firstSheetName) throw new Error("The spreadsheet does not contain a worksheet.");
+      const firstSheet = book.Sheets[firstSheetName];
+      if (!firstSheet) throw new Error("The first worksheet could not be read.");
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
       const result = await apiClient<{ imported: number; skipped: number }>("/members/import", { method: "POST", body: JSON.stringify({ rows }) });
       setImportMessage(`${result.imported} members imported${result.skipped ? `, ${result.skipped} skipped` : ""}.`); loadContent();
     } catch (error: any) { setImportMessage(error.message || "Import failed"); }
@@ -188,31 +192,44 @@ function Dashboard() {
   const [eventErr, setEventErr] = useState("");
   const [eventLoading, setEventLoading] = useState(false);
 
-  // API Data Fetching
+  // API Data Fetching. Scoped managers only call the APIs they are authorized
+  // to use, preventing a 403 in one area from cancelling unrelated dashboard data.
   const loadContent = async () => {
-    try {
-      const newsRes = await fetchAllContent("news", 1, 100, true);
-      setNews(newsRes.data as NewsItem[]);
-      const eventsRes = await fetchAllContent("event", 1, 100, true);
-      setEvents(eventsRes.data as EventItem[]);
-      const membersRes = await fetchAllMembers(1, 100);
-      setMembers(membersRes.data);
-      const bizRes = await fetchAllBusinesses(1, 100, true);
-      // @ts-ignore
-      setBusinesses(bizRes.data);
-      const matRes = await fetchAllMatrimonials(1, 100, true);
-      // @ts-ignore
-      setMatrimonials(matRes.data);
-    } catch (e) {
-      console.error("Failed to fetch content", e);
+    const jobs: Promise<void>[] = [];
+
+    if (role !== "welfare_manager") {
+      jobs.push(
+        fetchAllContent("news", 1, 100, true)
+          .then((res) => setNews(res.data as NewsItem[]))
+          .catch((error) => console.error("Failed to fetch news", error)),
+        fetchAllContent("event", 1, 100, true)
+          .then((res) => setEvents(res.data as EventItem[]))
+          .catch((error) => console.error("Failed to fetch events", error)),
+      );
     }
+
+    if (role !== "content_manager") {
+      jobs.push(
+        fetchAllMembers(1, 100)
+          .then((res) => setMembers(res.data))
+          .catch((error) => console.error("Failed to fetch members", error)),
+        fetchAllBusinesses(1, 100, true)
+          .then((res: any) => setBusinesses(res.data))
+          .catch((error) => console.error("Failed to fetch businesses", error)),
+        fetchAllMatrimonials(1, 100, true)
+          .then((res: any) => setMatrimonials(res.data))
+          .catch((error) => console.error("Failed to fetch matrimonial profiles", error)),
+      );
+    }
+
+    await Promise.all(jobs);
   };
 
   useEffect(() => {
-    if (tab === "news" || tab === "events" || tab === "members" || tab === "businesses" || tab === "matrimonial") {
-      loadContent();
+    if (["dashboard", "news", "events", "members", "businesses", "matrimonial"].includes(tab)) {
+      void loadContent();
     }
-  }, [tab]);
+  }, [tab, role]);
 
   const openAddNews = () => { setEditingNews(null); setNewsForm(blankNews()); setNewsErr(""); setShowNewsForm(true); };
   const openEditNews = (item: NewsItem) => { setEditingNews(item); setNewsForm({ type: "news", title: item.title, date: item.date, category: item.category, body: item.body, status: item.status, images: item.images || [] }); setNewsErr(""); setShowNewsForm(true); };
@@ -246,6 +263,8 @@ function Dashboard() {
   const openEditEvent = (item: EventItem) => { setEditingEvent(item); setEventForm({ type: "event", title: item.title, date: item.date, time: item.time || "", location: item.location || "", category: item.category, desc: item.desc, status: item.status, images: item.images || [] }); setEventErr(""); setShowEventForm(true); };
   const submitEvent = async () => {
     if (!eventForm.title || !eventForm.date || !eventForm.location) { setEventErr("Title, Date and Location are required."); return; }
+    const plainDescription = String(eventForm.desc || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    if (plainDescription.length < 10) { setEventErr("Please add an event description of at least 10 characters before saving."); return; }
     setEventLoading(true);
     try {
       if (editingEvent) {
@@ -595,26 +614,27 @@ return (
       {/* Navigation Links */}
       <nav style={{ flex: 1, padding: "24px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, paddingLeft: 12 }}>Menu</div>
+        {(role === "admin" || role === "super_admin") && (
+          <button onClick={() => navigate("/admin/operations")} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", marginBottom: 6, borderRadius: 8, border: `1px solid rgba(200,160,74,.45)`, cursor: "pointer", backgroundColor: "#fffaf0", color: GREEN, fontWeight: 800, fontSize: 14, fontFamily: "'Lato', sans-serif", textAlign: "left" }}>
+            <Shield size={18} color={GOLD} /> Governance & Operations
+          </button>
+        )}
         {(() => {
           const all = [
             ["dashboard", "Dashboard", <LayoutDashboard size={18} />],
-            ["news", "News & Updates", <Newspaper size={18} />],
-            ["events", "Events", <CalendarDays size={18} />],
+            ["news", "Content Hub", <Newspaper size={18} />],
             ["members", `Members ${members.filter((m) => m.status === "pending").length > 0 ? `(${members.filter((m) => m.status === "pending").length})` : ""}`, <Users size={18} />],
             ["forms", `Saved Forms ${formDrafts.filter((d) => d.status === "incomplete").length ? `(${formDrafts.filter((d) => d.status === "incomplete").length})` : ""}`, <FileText size={18} />],
             ["businesses", `Businesses ${businesses.filter((b) => b.status === "pending").length > 0 ? `(${businesses.filter((b) => b.status === "pending").length})` : ""}`, <Briefcase size={18} />],
             ["matrimonial", `Matrimonial ${matrimonials.filter((m) => m.status === "pending").length > 0 ? `(${matrimonials.filter((m) => m.status === "pending").length})` : ""}`, <Heart size={18} />],
-            ["leadership", "Leadership", <Crown size={18} />],
             ["media", "Media Gallery", <ImageIcon size={18} />],
-            ["overseas", "Overseas Chapters", <Globe size={18} />],
             ["settings", "Site Settings", <Settings size={18} />],
-            ["analytics", "Revenue Analytics", <BarChart3 size={18} />],
             ["messages", `Messages ${messages.filter((m) => m.status === "unread").length > 0 ? `(${messages.filter((m) => m.status === "unread").length})` : ""}`, <MessageCircle size={18} />],
             ["admins", "Admin Users", <ShieldAlert size={18} />],
           ] as const;
 
           const allowed = role === "content_manager"
-            ? all.filter(([t]) => t === "dashboard" || t === "news" || t === "events" || t === "media")
+            ? all.filter(([t]) => t === "dashboard" || t === "news" || t === "media")
             : role === "welfare_manager"
               ? all.filter(([t]) => t === "dashboard" || t === "members" || t === "forms" || t === "businesses" || t === "matrimonial")
               : all;
@@ -704,7 +724,7 @@ return (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, margin: 0 }}>
-              News and Announcements <span style={{ color: "#aaa", fontSize: 16, fontWeight: 400 }}>({news.length})</span>
+              Announcements, News & Activities <span style={{ color: "#aaa", fontSize: 16, fontWeight: 400 }}>({news.length})</span>
             </h2>
             <button onClick={openAddNews} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GREEN, color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
               <Plus size={16} /> Add Article
@@ -761,14 +781,14 @@ return (
       )}
 
       {/* ── EVENTS TAB ── */}
-      {tab === "events" && (
-        <div>
+      {tab === "news" && (
+        <div style={{ marginTop: 34 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, margin: 0 }}>
-              Events <span style={{ color: "#aaa", fontSize: 16, fontWeight: 400 }}>({events.length})</span>
+              Meetings & Events <span style={{ color: "#aaa", fontSize: 16, fontWeight: 400 }}>({events.length})</span>
             </h2>
             <button onClick={openAddEvent} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GREEN, color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-              <Plus size={16} /> Add Event
+              <Plus size={16} /> Add Meeting / Event
             </button>
           </div>
 
@@ -1616,7 +1636,7 @@ return (
             <div>
               <label style={{ display: "block", color: GREEN, fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Category</label>
               <select value={newsForm.category} onChange={(e) => setNewsForm((f) => ({ ...f, category: e.target.value }))} style={selectStyle}>
-                {["Announcement", "Education", "Welfare", "Organisation", "Overseas"].map((c) => <option key={c}>{c}</option>)}
+                {["Announcement", "News", "Press Release", "Activity", "Minutes", "Education", "Welfare", "Organisation", "Overseas"].map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -1665,8 +1685,8 @@ return (
 
       {/* ── Event form modal ── */}
       {showEventForm && (
-        <FormModal title={editingEvent ? "Edit Event" : "Add Event"} onClose={() => setShowEventForm(false)} onSubmit={submitEvent} err={eventErr} maxWidth={800} loading={eventLoading}>
-          <FormField label="Event Title *" type="text" value={eventForm.title} onChange={(v) => setEventForm((f) => ({ ...f, title: v }))} placeholder="Event name..." />
+        <FormModal title={editingEvent ? "Edit Meeting / Event" : "Add Meeting / Event"} onClose={() => setShowEventForm(false)} onSubmit={submitEvent} err={eventErr} maxWidth={800} loading={eventLoading}>
+          <FormField label="Meeting / Event Title *" type="text" value={eventForm.title} onChange={(v) => setEventForm((f) => ({ ...f, title: v }))} placeholder="Event name..." />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <FormField label="Date *" type="date" value={eventForm.date} onChange={(v) => setEventForm((f) => ({ ...f, date: v }))} />
             <FormField label="Time" type="text" value={eventForm.time || ""} onChange={(v) => setEventForm((f) => ({ ...f, time: v }))} placeholder="e.g. 10:00 AM" />
@@ -1702,7 +1722,7 @@ return (
 
           {/* Live Preview Panel */}
           <div style={{ marginTop: 24, padding: 20, backgroundColor: "#fdfbf7", border: `1px solid rgba(200, 160, 74, 0.3)`, borderRadius: 10 }}>
-            <p style={{ color: GOLD, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px 0" }}>Live Event Preview</p>
+            <p style={{ color: GOLD, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px 0" }}>Live Meeting / Event Preview</p>
             <div style={{ backgroundColor: "white", padding: 24, borderRadius: 8, border: "1px solid #eee" }}>
               <span style={{ backgroundColor: "#f0f7f3", color: GREEN, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8 }}>{eventForm.category}</span>
               <h2 dir="auto" style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, marginTop: 10, marginBottom: 8 }}>{eventForm.title || "Untitled Event"}</h2>
@@ -3023,6 +3043,8 @@ function AdminsTab() {
   const [loading, setLoading] = useState(true);
   const [resetId, setResetId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({ username: "", password: "", role: "admin" });
   const [error, setError] = useState("");
 
   const fetchAdmins = async () => {
@@ -3035,6 +3057,36 @@ function AdminsTab() {
   };
 
   useEffect(() => { fetchAdmins(); }, []);
+
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault(); setError("");
+    if (!newAdmin.username.includes("@")) { setError("Enter a valid email/username"); return; }
+    if (newAdmin.password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    try {
+      const res = await fetch("/api/auth/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${sessionStorage.getItem("araian_admin_token")}` },
+        body: JSON.stringify(newAdmin),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error || "Could not create admin account"); return; }
+      setShowCreate(false); setNewAdmin({ username: "", password: "", role: "admin" }); await fetchAdmins();
+    } catch { setError("Could not create admin account"); }
+  };
+
+  const handleRoleChange = async (id: string, role: string) => {
+    setError("");
+    try {
+      const res = await fetch(`/api/auth/admin/${id}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${sessionStorage.getItem("araian_admin_token")}` },
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error || "Could not update admin role"); await fetchAdmins(); return; }
+      await fetchAdmins();
+    } catch { setError("Could not update admin role"); }
+  };
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3065,7 +3117,8 @@ function AdminsTab() {
 
   return (
     <div>
-      <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, margin: "0 0 24px 0" }}>Admin Users</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 24 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, margin: 0 }}>Admin Users</h2><p style={{ color: "#777", fontSize: 12, margin: "5px 0 0" }}>Create limited-access operational accounts without sharing the Super Admin login.</p></div><button onClick={() => { setError(""); setShowCreate(true); }} style={actionBtn(GREEN)}><Plus size={14} /> Add Admin User</button></div>
+      {error && !resetId && !showCreate && <div style={{ background: "#fee2e2", color: "#b91c1c", padding: "10px 12px", borderRadius: 8, marginBottom: 12, fontSize: 12 }}>{error}</div>}
       <div style={{ backgroundColor: "white", borderRadius: 12, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'Lato', sans-serif" }}>
           <thead>
@@ -3080,9 +3133,9 @@ function AdminsTab() {
               <tr key={a.id} style={{ borderTop: "1px solid #f5f5f5", backgroundColor: i % 2 === 0 ? "white" : "#fafafa" }}>
                 <td style={{ padding: "14px 16px", color: GREEN, fontWeight: 600, fontSize: 14 }}>{a.username}</td>
                 <td style={{ padding: "14px 16px" }}>
-                  <span style={{ backgroundColor: "#f0f7f3", color: GREEN, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8, textTransform: "capitalize" }}>
-                    {a.role.replace("_", " ")}
-                  </span>
+                  <select value={a.role} onChange={(e) => void handleRoleChange(a.id, e.target.value)} style={{ border: "1px solid #d9e3dc", borderRadius: 7, padding: "6px 8px", color: GREEN, background: "#f8fbf9", fontSize: 11, fontWeight: 700, textTransform: "capitalize" }}>
+                    <option value="super_admin">Super Admin</option><option value="admin">Admin</option><option value="content_manager">Content Manager</option><option value="welfare_manager">Welfare Manager</option><option value="finance_secretary">Finance Secretary</option><option value="assistant_finance_secretary">Assistant Finance Secretary</option>
+                  </select>
                 </td>
                 <td style={{ padding: "14px 16px" }}>
                   <button onClick={() => setResetId(a.id)} style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
@@ -3094,6 +3147,14 @@ function AdminsTab() {
           </tbody>
         </table>
       </div>
+
+      {showCreate && (
+        <FormModal title="Add Admin User" onClose={() => { setShowCreate(false); setError(""); }} onSubmit={handleCreateAdmin as any} err={error}>
+          <FormField label="Email / Username" type="text" value={newAdmin.username} onChange={(v) => setNewAdmin({ ...newAdmin, username: v })} />
+          <FormField label="Temporary Password" type="password" value={newAdmin.password} onChange={(v) => setNewAdmin({ ...newAdmin, password: v })} />
+          <div style={{ marginBottom: 16 }}><label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 6 }}>Access Role</label><select value={newAdmin.role} onChange={(e) => setNewAdmin({ ...newAdmin, role: e.target.value })} style={{ width: "100%", border: "1px solid #ddd", borderRadius: 7, padding: "10px 12px", background: "white" }}><option value="admin">Admin</option><option value="content_manager">Content Manager</option><option value="welfare_manager">Welfare Manager</option><option value="finance_secretary">Finance Secretary</option><option value="assistant_finance_secretary">Assistant Finance Secretary</option><option value="super_admin">Super Admin</option></select></div>
+        </FormModal>
+      )}
 
       {resetId && (
         <FormModal title="Reset Admin Password" onClose={() => { setResetId(null); setError(""); }} onSubmit={handleReset as any} err={error}>
@@ -3107,6 +3168,8 @@ function AdminsTab() {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 export function AdminPage() {
-  const { isAdmin } = useAdmin();
-  return isAdmin ? <Dashboard /> : <LoginScreen />;
+  const { isAdmin, role } = useAdmin();
+  if (!isAdmin) return <LoginScreen />;
+  if (role === "finance_secretary" || role === "assistant_finance_secretary") return <Navigate to="/admin/operations" replace />;
+  return <Dashboard />;
 }

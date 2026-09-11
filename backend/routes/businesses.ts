@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 
 import prisma from "../lib/prisma";
-import { requireAdmin } from "../middleware/auth";
+import { requireWelfareAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { cleanupRemovedFiles } from "../lib/fileCleanup";
 
@@ -37,7 +37,7 @@ function parsePhotos(value?: string | null) {
   try { return value ? JSON.parse(value) as string[] : []; } catch { return []; }
 }
 
-router.get("/", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get("/", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page || "1")) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "20")) || 20));
@@ -73,7 +73,7 @@ router.post("/submit", validate(BusinessSchema), async (req: Request, res: Respo
   } catch (err) { next(err); }
 });
 
-router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const { status, paymentStatus, adminNote } = req.body;
@@ -97,7 +97,7 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, ne
   }
 });
 
-router.put("/:id", requireAdmin, validate(BusinessSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
+router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const previous = await prisma.business.findUnique({ where: { id }, select: { logoUrl: true, paymentProofUrl: true, additionalPhotos: true } });
@@ -115,7 +115,7 @@ router.put("/:id", requireAdmin, validate(BusinessSchema.partial()), async (req:
   }
 });
 
-router.delete("/:id", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.delete("/:id", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const removed = await prisma.business.delete({ where: { id } });

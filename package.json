@@ -1,7 +1,7 @@
 {
   "name": "anjumanearaian",
   "private": true,
-  "version": "5.0.0",
+  "version": "5.1.0",
   "type": "module",
   "scripts": {
     "postinstall": "prisma generate --schema=backend/prisma/schema.prisma",
@@ -12,7 +12,9 @@
     "prisma:generate": "cd backend && prisma generate",
     "prisma:push": "prisma db push --schema=backend/prisma/schema.prisma",
     "db:setup": "prisma db push --schema=backend/prisma/schema.prisma && prisma generate --schema=backend/prisma/schema.prisma",
-    "check": "tsc --noEmit && tsc -p backend/tsconfig.json --noEmit && vite build"
+    "check": "tsc --noEmit && tsc -p backend/tsconfig.json --noEmit && vite build",
+    "db:migrate:deploy": "prisma migrate deploy --schema=backend/prisma/schema.prisma",
+    "db:migrate:status": "prisma migrate status --schema=backend/prisma/schema.prisma"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

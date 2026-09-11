@@ -13,6 +13,7 @@ import {
 } from "../lib/memberStore";
 import { getSiteSettings } from "../lib/settingsStore";
 import { apiClient } from "../lib/apiClient";
+import { uploadFile } from "../lib/upload";
 import { Edit2, LogOut, Upload, CheckCircle, Clock, Shield, Users, MessageCircle, FileText } from "lucide-react";
 import { MemberDirectory } from "../components/MemberDirectory";
 import { MatrimonialPortalDirectory } from "../components/MatrimonialPortalDirectory";
@@ -177,13 +178,8 @@ export function MemberPortalPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
     try {
-      const { url } = await apiClient<{ url: string }>("/upload", {
-        method: "POST",
-        body: formData,
-      });
+      const url = await uploadFile(file, `member-${key}`);
       await patchOwnProfile({ [key]: url });
       await refresh();
     } catch (err: any) {

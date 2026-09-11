@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 
 import prisma from "../lib/prisma";
-import { requireAdmin } from "../middleware/auth";
+import { requireContentAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 
 const router = Router();
@@ -23,7 +23,7 @@ const ContentSchema = z.object({
 const ContentUpdateSchema = ContentSchema.partial(); // All fields optional for update
 
 // ─── Get All Content — Admin Only ─────────────────────────────────────────────
-router.get("/", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get("/", requireContentAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page || "1")) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "20")) || 20));
@@ -86,7 +86,7 @@ router.get("/published", async (req: Request, res: Response, next: NextFunction)
 });
 
 // ─── Create New Content — Admin Only ─────────────────────────────────────────
-router.post("/", requireAdmin, validate(ContentSchema), async (req: Request, res: Response, next: NextFunction) => {
+router.post("/", requireContentAdmin, validate(ContentSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = { ...req.body };
     if (data.images) data.images = JSON.stringify(data.images);
@@ -99,7 +99,7 @@ router.post("/", requireAdmin, validate(ContentSchema), async (req: Request, res
 });
 
 // ─── Update Content — Admin Only ─────────────────────────────────────────────
-router.put("/:id", requireAdmin, validate(ContentUpdateSchema), async (req: Request, res: Response, next: NextFunction) => {
+router.put("/:id", requireContentAdmin, validate(ContentUpdateSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const data = { ...req.body };
@@ -120,7 +120,7 @@ router.put("/:id", requireAdmin, validate(ContentUpdateSchema), async (req: Requ
 });
 
 // ─── Delete Content — Admin Only ─────────────────────────────────────────────
-router.delete("/:id", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.delete("/:id", requireContentAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     await prisma.content.delete({ where: { id } });

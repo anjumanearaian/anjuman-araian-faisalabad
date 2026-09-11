@@ -86,9 +86,9 @@ model Member {
   familyInfo         FamilyInfo?
   children           MemberChild[]
   leadershipProfiles LeadershipProfile[]
-  businesses         Business[]
-  matrimonials       Matrimonial[]
-  meetingAttendances MeetingAttendance[]
+  organizationAssignments OrganizationAssignment[]
+  meetingAttendance       MeetingAttendance[]
+  financeTransactions     FinanceTransaction[]
 
   @@index([status])
   @@index([membershipType])
@@ -130,14 +130,12 @@ model MemberChild {
 
 model Business {
   id                 String   @id @default(uuid())
-  memberId           String?
-  member             Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
   businessName       String
   ownerName          String
   category           String
   city               String
   address            String
-  phone               String
+  phone              String
   whatsapp           String
   email              String
   website            String
@@ -155,7 +153,6 @@ model Business {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  @@index([memberId])
   @@index([status])
   @@index([paymentStatus])
   @@index([createdAt])
@@ -163,8 +160,6 @@ model Business {
 
 model Matrimonial {
   id                  String    @id @default(uuid())
-  memberId            String?
-  member              Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
   name                String
   gender              String
   age                 String
@@ -193,7 +188,6 @@ model Matrimonial {
   requestedMatches MatrimonialMatchRequest[] @relation("RequesterProfile")
   receivedMatches  MatrimonialMatchRequest[] @relation("TargetProfile")
 
-  @@index([memberId])
   @@index([status])
   @@index([paymentStatus])
   @@index([isFeatured])
@@ -321,64 +315,19 @@ model OverseasChapter {
 }
 
 model LeadershipProfile {
-  id          String    @id @default(uuid())
+  id          String  @id @default(uuid())
   memberId    String?
-  member      Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  member      Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
   name        String
   role        String
-  tier        Int       @default(2)
+  tier        Int     @default(2)
   city        String
-  category    String    @default("cabinet")
+  category    String  @default("cabinet")
   image       String?
   period      String?
   description String?
-  isActive    Boolean   @default(true)
-  startedAt   DateTime?
-  endedAt     DateTime?
 
   @@index([memberId])
-  @@index([isActive])
-}
-
-model Meeting {
-  id                 String              @id @default(uuid())
-  title              String
-  groupKey           String
-  meetingType        String              @default("Monthly Meeting")
-  meetingNo          String?
-  scheduledAt        DateTime
-  venue              String?
-  agenda             String?
-  noticeBody         String?
-  noticePublishedAt  DateTime?
-  status             String              @default("draft")
-  minutesBody        String?
-  minutesPublishedAt DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  attendances        MeetingAttendance[]
-
-  @@index([groupKey])
-  @@index([scheduledAt])
-  @@index([status])
-}
-
-model MeetingAttendance {
-  id           String   @id @default(uuid())
-  meetingId    String
-  meeting      Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  memberId     String
-  member       Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  status       String   @default("invited")
-  notes        String?
-  roleSnapshot String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@unique([meetingId, memberId])
-  @@index([meetingId])
-  @@index([memberId])
-  @@index([status])
 }
 
 model LeadershipMessage {
@@ -428,3 +377,146 @@ model RevenueRecord {
   @@index([reference])
   @@index([date])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Governance & Operations Center
+// Additive models only. Existing Member, Content, LeadershipProfile,
+// OverseasChapter and RevenueRecord data remains untouched and usable.
+// ─────────────────────────────────────────────────────────────────────────────
+model OrganizationUnit {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  type        String   @default("committee") // cabinet | committee | zone | area | working_group | chapter | other
+  parentId    String?
+  parent      OrganizationUnit?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    OrganizationUnit[] @relation("OrganizationHierarchy")
+  description String?
+  areaName    String?
+  displayOrder Int     @default(0)
+  isActive    Boolean  @default(true)
+  tenureStart String?
+  tenureEnd   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments OrganizationAssignment[]
+  meetings    GovernanceMeeting[]
+
+  @@index([type])
+  @@index([parentId])
+  @@index([isActive, displayOrder])
+}
+
+model OrganizationAssignment {
+  id             String           @id @default(uuid())
+  memberId       String
+  member         Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   OrganizationUnit @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           String
+  rank           Int              @default(10)
+  period         String?
+  notes          String?
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([memberId, organizationId, role, period])
+  @@index([memberId])
+  @@index([organizationId, isActive, rank])
+}
+
+model GovernanceMeeting {
+  id             String            @id @default(uuid())
+  organizationId String?
+  organization   OrganizationUnit? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  title          String
+  meetingType    String            @default("meeting") // meeting | agm | committee | emergency | other
+  date           String
+  time           String?
+  venue          String?
+  status         String            @default("announced") // announced | held | postponed | cancelled
+  notice         String?
+  agenda         String?
+  minutes        String?
+  images         String?
+  published      Boolean           @default(false)
+  contentId       String?           @unique
+  createdByAdminId String?
+  createdByName  String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  attendance MeetingAttendance[]
+
+  @@index([date])
+  @@index([status])
+  @@index([organizationId])
+}
+
+model MeetingAttendance {
+  id        String            @id @default(uuid())
+  meetingId String
+  meeting   GovernanceMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  status    String            @default("present") // present | absent | excused
+  remarks   String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([meetingId, memberId])
+  @@index([meetingId])
+  @@index([memberId])
+}
+
+model FinanceTransaction {
+  id               String   @id @default(uuid())
+  serialNo         Int      @unique @default(autoincrement())
+  transactionNo    String   @unique
+  type             String   // revenue | expense | adjustment
+  direction        String   @default("credit") // credit | debit
+  memberId         String?
+  member           Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  partyName        String
+  category         String
+  amount           Float
+  paymentMethod    String?
+  cashBookNo       String?
+  receiptNo        String?  @unique
+  voucherNo        String?  @unique
+  externalReference String?
+  description      String?
+  issuedByAdminId  String?
+  issuedByName     String?
+  issuedByRole     String?
+  status           String   @default("posted") // posted | void
+  transactionDate  DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  auditLogs FinanceAuditLog[]
+
+  @@index([type, direction])
+  @@index([memberId])
+  @@index([transactionDate])
+  @@index([cashBookNo])
+  @@index([status])
+}
+
+model FinanceAuditLog {
+  id            String              @id @default(uuid())
+  transactionId String?
+  transaction   FinanceTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  action        String
+  actorAdminId  String?
+  actorName     String?
+  beforeData    Json?
+  afterData     Json?
+  createdAt     DateTime            @default(now())
+
+  @@index([transactionId])
+  @@index([createdAt])
+}
+

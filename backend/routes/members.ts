@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 
 import prisma from "../lib/prisma";
-import { requireAdmin, requireMember } from "../middleware/auth";
+import { requireWelfareAdmin, requireMember } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { loginLimiter, registerLimiter } from "../middleware/rateLimiter";
 import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
@@ -213,7 +213,7 @@ router.post("/register", registerLimiter, requireMember, validate(RegisterSchema
   }
 });
 
-router.post("/import", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.post("/import", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 2000) : [];
     if (!rows.length) return void res.status(400).json({ error: "The spreadsheet has no data rows" });
@@ -263,7 +263,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     if (authHeader?.startsWith("Bearer ")) {
       try {
         const decoded = jwt.verify(authHeader.split(" ")[1], getJwtSecret()) as { role: string };
-        isAdmin = decoded.role === "admin" || decoded.role === "super_admin"; isMember = decoded.role === "member";
+        isAdmin = ["admin", "super_admin", "welfare_manager"].includes(decoded.role); isMember = decoded.role === "member";
       } catch { /* public request */ }
     }
     const page = Math.max(1, parseInt(String(req.query.page || "1")) || 1);
@@ -294,7 +294,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
   } catch (err) { next(err); }
 });
 
-router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const { status, adminNote, rejectionReason } = req.body;
@@ -350,7 +350,7 @@ router.get("/:id/receipt", requireMember, async (req: Request, res: Response, ne
     const user = (req as any).user;
     const member = await prisma.member.findUnique({ where: { id }, select: { id: true, authUserId: true, memberNo: true, fullName: true, membershipType: true } });
     if (!member) return void res.status(404).json({ error: "Member not found" });
-    const isAdmin = ["admin", "super_admin"].includes(String(user.role));
+    const isAdmin = ["admin", "super_admin", "welfare_manager"].includes(String(user.role));
     const ownsLegacy = user.role === "member" && user.id === member.id;
     const ownsVerified = user.role === "applicant" && user.id === member.authUserId;
     if (!isAdmin && !ownsLegacy && !ownsVerified) return void res.status(403).json({ error: "You cannot access this receipt" });
@@ -369,20 +369,27 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
     const id = String(req.params.id);
     const user = (req as any).user;
     if (user.role === "member" && user.id !== id) return void res.status(403).json({ error: "Access denied. You can only update your own profile." });
-    if (!["admin", "super_admin", "member", "applicant"].includes(user.role)) return void res.status(403).json({ error: "Access denied" });
+    if (!["admin", "super_admin", "welfare_manager", "member", "applicant"].includes(user.role)) return void res.status(403).json({ error: "Access denied" });
 
     const current = await prisma.member.findUnique({ where: { id }, select: { authUserId: true, status: true, photoUrl: true, cnicFrontUrl: true, cnicBackUrl: true, paymentProofUrl: true, additionalPhotos: true } });
     if (!current) return void res.status(404).json({ error: "Member not found" });
     if (user.role === "applicant" && current.authUserId !== user.id) return void res.status(403).json({ error: "This application does not belong to your account" });
 
     const rawUpdates = { ...req.body };
+    const adminLike = ["admin", "super_admin", "welfare_manager"].includes(String(user.role));
+    let passwordHash: string | undefined;
+    if (adminLike && typeof rawUpdates.password === "string" && rawUpdates.password.trim()) {
+      if (rawUpdates.password.trim().length < 8) return void res.status(400).json({ error: "Temporary password must be at least 8 characters." });
+      passwordHash = await bcrypt.hash(rawUpdates.password.trim(), 12);
+    }
     const memberEditableFields = new Set(["fullName", "fatherName", "dob", "gender", "bloodGroup", "phone", "whatsapp", "whatsappPublic", "address", "localArea", "city", "district", "province", "occupation", "education", "designation", "institutionName", "businessName", "familyInfoPublic", "photoUrl", "cnicFrontUrl", "cnicBackUrl", "paymentProofUrl", "additionalPhotos"]);
     let updates: any = rawUpdates;
     if (user.role === "member" || user.role === "applicant") updates = Object.fromEntries(Object.entries(rawUpdates).filter(([key]) => memberEditableFields.has(key)));
     else { delete updates.id; delete updates.createdAt; delete updates.updatedAt; }
     delete updates.email; delete updates.authUserId; delete updates.familyInfo; delete updates.children; delete updates.password;
+    if (passwordHash) updates.password = passwordHash;
     delete updates.status; delete updates.approvedAt; delete updates.adminNote; delete updates.rejectionReason;
-    if (user.role !== "admin" && user.role !== "super_admin") {
+    if (!adminLike) {
       delete updates.memberNo; delete updates.formNo; delete updates.paymentStatus; delete updates.referrerMemberId; delete updates.referralStatus; delete updates.showOnWeb; delete updates.showOnPortal; delete updates.visibility;
     }
     if (typeof updates.city === "string") updates.city = canonicalLocation(updates.city);
@@ -420,7 +427,7 @@ router.post("/:id/change-password", requireMember, async (req: Request, res: Res
   } catch (err) { next(err); }
 });
 
-router.delete("/:id", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.delete("/:id", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const removed = await prisma.member.delete({ where: { id: String(req.params.id) } });
     await cleanupRemovedFiles([removed.photoUrl, removed.cnicFrontUrl, removed.cnicBackUrl, removed.paymentProofUrl, ...parsePhotos(removed.additionalPhotos)], []);

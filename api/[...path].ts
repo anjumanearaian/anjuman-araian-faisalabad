@@ -64,9 +64,17 @@ function tokenUser(req: any) {
   } catch { return null; }
 }
 
-function adminUser(req: any) {
+function roleUser(req: any, allowedRoles: string[]) {
   const user = tokenUser(req);
-  return user && ["admin", "super_admin"].includes(String(user?.role || "")) ? user : null;
+  return user && allowedRoles.includes(String(user?.role || "")) ? user : null;
+}
+
+function adminUser(req: any) {
+  return roleUser(req, ["admin", "super_admin"]);
+}
+
+function welfareAdminUser(req: any) {
+  return roleUser(req, ["admin", "super_admin", "welfare_manager"]);
 }
 
 function text(value: any, fallback = "") { return String(value ?? fallback).trim(); }
@@ -168,7 +176,7 @@ async function secureMatrimonialPublished(req: any, res: any) {
 }
 
 async function createAdminMember(req: any, res: any) {
-  const user = adminUser(req);
+  const user = welfareAdminUser(req);
   if (!user) return res.status(401).json({ error: "Admin authorization required" });
   const b = bodyOf(req);
   const fullName = text(b.fullName);
@@ -247,7 +255,7 @@ async function createAdminMember(req: any, res: any) {
 }
 
 async function saveAdminRelations(req: any, res: any, memberId: string) {
-  const user = adminUser(req);
+  const user = welfareAdminUser(req);
   if (!user) return false;
   const original = bodyOf(req);
   const hasFamily = Object.prototype.hasOwnProperty.call(original, "familyInfo");
@@ -332,7 +340,7 @@ export default async function handler(req: any, res: any) {
   // which creates/updates the revenue record and official receipt reference.
   if (statusMatch && method === "PATCH" && String(bodyOf(req)?.status || "") === "approved") {
     try {
-      const user = adminUser(req);
+      const user = welfareAdminUser(req);
       if (user) await prisma.member.update({ where: { id: decodeURIComponent(statusMatch[1]) }, data: { paymentStatus: "verified" } });
     } catch {
       // The normal backend middleware will return the authoritative error.

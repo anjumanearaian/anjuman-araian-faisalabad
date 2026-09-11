@@ -64,6 +64,24 @@ export async function fetchAllContent(type: "news" | "event", page: number = 1, 
   };
 }
 
+
+export type PublicContentType = "news" | "event";
+
+export async function fetchPublishedContentAll(type: PublicContentType, maxPages: number = 20): Promise<(NewsItem | EventItem)[]> {
+  const results: (NewsItem | EventItem)[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const res = await fetchAllContent(type, page, 50, false);
+    results.push(...(res.data as (NewsItem | EventItem)[]));
+    if (!res.hasMore) break;
+  }
+  return results;
+}
+
+export async function fetchPublishedContentHub(): Promise<(NewsItem | EventItem)[]> {
+  const [news, events] = await Promise.all([fetchPublishedContentAll("news"), fetchPublishedContentAll("event")]);
+  return [...news, ...events].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
 export async function createContent(data: any) {
   const payload = { ...data };
   if (data.type === "event" && data.desc) {

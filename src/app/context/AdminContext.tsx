@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from "react";
 
-export type AdminRole = "super_admin" | "content_manager" | "welfare_manager";
+export type AdminRole = "admin" | "super_admin" | "content_manager" | "welfare_manager" | "finance_secretary" | "assistant_finance_secretary";
 
 interface AdminContextType {
   isAdmin: boolean;

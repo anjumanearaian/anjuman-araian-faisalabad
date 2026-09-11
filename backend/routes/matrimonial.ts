@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 
 import prisma from "../lib/prisma";
-import { requireAdmin, requireMember } from "../middleware/auth";
+import { requireWelfareAdmin, requireMember } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
 
@@ -72,7 +72,7 @@ function fullProfile(p: any) {
 }
 
 // ─── Get All Matrimonial Profiles — Admin Only ────────────────────────────────
-router.get("/", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get("/", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page || "1")) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "20")) || 20));
@@ -330,7 +330,7 @@ router.patch("/match-requests/:id/respond", requireMember, async (req: Request, 
   } catch (err) { next(err); }
 });
 
-router.get("/match-requests/admin/all", requireAdmin, async (_req: Request, res: Response, next: NextFunction) => {
+router.get("/match-requests/admin/all", requireWelfareAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const rows = await prisma.matrimonialMatchRequest.findMany({
       include: { requesterProfile: true, targetProfile: true, requesterAuthUser: { select: { email: true, name: true } } },
@@ -349,7 +349,7 @@ router.get("/match-requests/admin/all", requireAdmin, async (_req: Request, res:
   } catch (err) { next(err); }
 });
 
-router.patch("/match-requests/:id/admin", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch("/match-requests/:id/admin", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const action = String(req.body?.action || "").toLowerCase();
     if (!["forward", "reject", "close"].includes(action)) return void res.status(400).json({ error: "Action must be forward, reject or close." });
@@ -380,7 +380,7 @@ router.patch("/match-requests/:id/admin", requireAdmin, async (req: Request, res
 });
 
 // ─── Update Matrimonial Status — Admin Only ──────────────────────────────────
-router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const { status, paymentStatus, adminNote } = req.body;
@@ -414,7 +414,7 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response, ne
 });
 
 // ─── Update Matrimonial — Admin Only ─────────────────────────────────────────
-router.put("/:id", requireAdmin, validate(MatrimonialSchema.partial().passthrough()), async (req: Request, res: Response, next: NextFunction) => {
+router.put("/:id", requireWelfareAdmin, validate(MatrimonialSchema.partial().passthrough()), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const current = await prisma.matrimonial.findUnique({ where: { id } });
@@ -469,7 +469,7 @@ router.put("/:id", requireAdmin, validate(MatrimonialSchema.partial().passthroug
   }
 });
 
-router.delete("/:id", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.delete("/:id", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     await prisma.matrimonial.delete({ where: { id } });

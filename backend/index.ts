@@ -22,6 +22,8 @@ import { requireSuperAdmin, requireAdmin } from "./middleware/auth";
 
 
 const app = express();
+// Reduce passive fingerprinting and trust the single Vercel/reverse-proxy hop.
+app.disable("x-powered-by");
 // Vercel/edge proxies provide the real client IP via X-Forwarded-For.
 app.set("trust proxy", 1);
 
@@ -37,15 +39,17 @@ const configuredOrigins = (process.env.ALLOWED_ORIGINS || "")
   .map((o) => o.trim())
   .filter(Boolean);
 
-const allowedOrigins = new Set([...defaultOrigins, ...configuredOrigins]);
+const vercelOrigins = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
+  .filter(Boolean)
+  .map((host) => `https://${String(host).replace(/^https?:\/\//, "")}`);
+const allowedOrigins = new Set([...defaultOrigins, ...configuredOrigins, ...vercelOrigins]);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Requests without Origin are server-to-server. Vercel preview domains are
-      // allowed so every preview deployment works before the custom domain is linked.
-      const isVercelPreview = Boolean(origin && /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin));
-      if (!origin || allowedOrigins.has(origin) || isVercelPreview) {
+      // Requests without Origin are server-to-server. Preview access is limited
+      // to the Vercel URLs injected for this deployment instead of every vercel.app site.
+      if (!origin || allowedOrigins.has(origin)) {
         callback(null, true);
       } else {
         callback(new Error(`CORS blocked for origin: ${origin}`));
@@ -87,6 +91,17 @@ const upload = multer({
   },
 });
 
+function hasValidFileSignature(file: Express.Multer.File) {
+  const b = file.buffer;
+  if (!b?.length) return false;
+  if (file.mimetype === "image/jpeg") return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  if (file.mimetype === "image/png") return b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
+  if (file.mimetype === "image/webp") return b.length >= 12 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP";
+  if (file.mimetype === "image/gif") return b.length >= 6 && ["GIF87a", "GIF89a"].includes(b.toString("ascii", 0, 6));
+  if (file.mimetype === "application/pdf") return b.length >= 5 && b.toString("ascii", 0, 5) === "%PDF-";
+  return false;
+}
+
 // Local-development fallback for existing /uploads URLs only.
 if (!process.env.VERCEL) {
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -98,6 +113,8 @@ import overseasRouter from "./routes/overseas";
 import leadershipRouter from "./routes/leadership";
 import messagesRouter from "./routes/messages";
 import revenueRouter from "./routes/revenue";
+import governanceRouter from "./routes/governance";
+import financeRouter from "./routes/finance";
 import activitiesRouter from "./routes/activities";
 import eventsRouter from "./routes/events";
 import homepageRouter from "./routes/homepage";
@@ -114,6 +131,8 @@ app.use("/api/overseas", overseasRouter);
 app.use("/api/leadership", leadershipRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/revenue", revenueRouter);
+app.use("/api/governance", governanceRouter);
+app.use("/api/finance", financeRouter);
 app.use("/api/activities", activitiesRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/homepage", homepageRouter);
@@ -205,6 +224,45 @@ app.post("/api/auth/admin/login", loginLimiter, async (req: Request, res: Respon
 
     res.json({ token, user: { id: admin.id, username: admin.username, role: admin.role } });
   } catch (err) {
+    next(err);
+  }
+});
+
+const ADMIN_ROLE_OPTIONS = ["super_admin", "admin", "content_manager", "welfare_manager", "finance_secretary", "assistant_finance_secretary"] as const;
+
+// ─── Create Admin User (Super Admin Only) ─────────────────────────────────────
+app.post("/api/auth/admin", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const username = String(req.body?.username || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
+    const role = String(req.body?.role || "admin");
+    if (!username || !username.includes("@")) return void res.status(400).json({ error: "A valid admin email/username is required" });
+    if (password.length < 8) return void res.status(400).json({ error: "Password must be at least 8 characters" });
+    if (!ADMIN_ROLE_OPTIONS.includes(role as any)) return void res.status(400).json({ error: "Invalid admin role" });
+    const exists = await prisma.admin.findUnique({ where: { username } });
+    if (exists) return void res.status(409).json({ error: "An admin account with this email already exists" });
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const created = await prisma.admin.create({ data: { username, password: hashedPassword, role }, select: { id: true, username: true, role: true, createdAt: true } });
+    res.status(201).json(created);
+  } catch (err) { next(err); }
+});
+
+// ─── Change Admin Role (Super Admin Only) ─────────────────────────────────────
+app.patch("/api/auth/admin/:id/role", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const role = String(req.body?.role || "");
+    if (!ADMIN_ROLE_OPTIONS.includes(role as any)) return void res.status(400).json({ error: "Invalid admin role" });
+    const current = await prisma.admin.findUnique({ where: { id }, select: { id: true, role: true } });
+    if (!current) return void res.status(404).json({ error: "Admin account not found" });
+    if (current.role === "super_admin" && role !== "super_admin") {
+      const superCount = await prisma.admin.count({ where: { role: "super_admin" } });
+      if (superCount <= 1) return void res.status(400).json({ error: "The last super admin cannot be demoted" });
+    }
+    const updated = await prisma.admin.update({ where: { id }, data: { role }, select: { id: true, username: true, role: true, createdAt: true } });
+    res.json(updated);
+  } catch (err: any) {
+    if (err?.code === "P2025") return void res.status(404).json({ error: "Admin account not found" });
     next(err);
   }
 });
@@ -352,8 +410,16 @@ app.post(
         res.status(400).json({ error: "No file uploaded" });
         return;
       }
+      if (!hasValidFileSignature(req.file)) {
+        res.status(400).json({ error: "The uploaded file content does not match its declared file type." });
+        return;
+      }
 
-      const ext = path.extname(req.file.originalname || "").toLowerCase();
+      const extByMime: Record<string, string> = {
+        "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+        "image/gif": ".gif", "application/pdf": ".pdf",
+      };
+      const ext = extByMime[req.file.mimetype] || path.extname(req.file.originalname || "").toLowerCase();
       const safeBase = path
         .basename(req.file.originalname || "file", ext)
         .replace(/[^a-zA-Z0-9_-]+/g, "-")

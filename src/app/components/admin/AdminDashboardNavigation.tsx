@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 
 const KPI_TARGETS: Record<string, { sidebar: string; filter?: string }> = {
-  "Total News": { sidebar: "News & Updates" },
-  "Total Events": { sidebar: "Events" },
+  "Total News": { sidebar: "Content Hub" },
+  "Total Events": { sidebar: "Content Hub" },
   "Total Members": { sidebar: "Members" },
   "Total Businesses": { sidebar: "Businesses" },
   "Total Messages": { sidebar: "Messages" },
