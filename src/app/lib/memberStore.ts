@@ -18,6 +18,12 @@ export interface Member {
   referrerMemberId?: string | null; referrerMember?: ReferralCandidate | null; referralStatus?: string; status: MemberStatus; visibility: MemberVisibility;
   showOnWeb: boolean; showOnPortal: boolean; isFeatured?: boolean; isFeaturedPortal?: boolean; photoUrl: string; cnicFrontUrl: string; cnicBackUrl: string;
   paymentProofUrl?: string; additionalPhotos?: string[]; createdAt: string; updatedAt: string; approvedAt: string; rejectionReason: string; adminNote: string;
+  isArchived?: boolean; archivedAt?: string | null; archivedByName?: string | null; archiveReason?: string | null;
+}
+
+export interface MemberAuditRow {
+  id: string; memberId?: string | null; action: string; actorAdminId?: string | null; actorName?: string | null; actorRole?: string | null;
+  reason?: string | null; beforeData?: Record<string, unknown> | null; afterData?: Record<string, unknown> | null; createdAt: string;
 }
 
 export const blankFamily = (): FamilyInfo => ({ fatherName: "", familyBranch: "", caste: "", religiousSect: "", spouseName: "", childrenCount: "0", childrenDetails: "", familyContactName: "", familyContactNumber: "", familyCity: "", emergencyContactName: "", emergencyContactNumber: "", emergencyRelationship: "" });
@@ -59,20 +65,20 @@ function showActionError(error: any, fallback: string) {
   return error;
 }
 
-async function fetchMembersPage(page: number, limit: number) {
-  return apiClient<any>(`/members?page=${page}&limit=${limit}`);
+async function fetchMembersPage(page: number, limit: number, archived: "active" | "only" | "all" = "active") {
+  return apiClient<any>(`/members?page=${page}&limit=${limit}&archived=${archived}`);
 }
 
-async function fetchEveryAdminMember() {
+async function fetchEveryAdminMember(archived: "active" | "only" | "all" = "active") {
   const perPage = 100;
-  const first = await fetchMembersPage(1, perPage);
+  const first = await fetchMembersPage(1, perPage, archived);
   const firstRows: Member[] = first.members || [];
   const total = Number(first.pagination?.total || firstRows.length || 0);
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   if (totalPages === 1) return { data: firstRows, total };
 
   const remaining = await Promise.all(
-    Array.from({ length: totalPages - 1 }, (_, index) => fetchMembersPage(index + 2, perPage))
+    Array.from({ length: totalPages - 1 }, (_, index) => fetchMembersPage(index + 2, perPage, archived))
   );
   const data = [firstRows, ...remaining.map((result) => (result.members || []) as Member[])].flat();
   return { data, total };
@@ -80,22 +86,19 @@ async function fetchEveryAdminMember() {
 
 export async function fetchAllMembers(page: number = 1, limit: number = 10) {
   try {
-    // The API deliberately caps each response at 100 rows. Admin dashboard and
-    // registry callers commonly request 100, so a first-page request at that
-    // ceiling means they need the complete registry, not a silently truncated
-    // first page. Public/small paginated calls remain unchanged.
-    if (limit >= 100 && page === 1) return await fetchEveryAdminMember();
-    const data = await fetchMembersPage(page, Math.min(100, Math.max(1, limit)));
+    if (limit >= 100 && page === 1) return await fetchEveryAdminMember("active");
+    const data = await fetchMembersPage(page, Math.min(100, Math.max(1, limit)), "active");
     return { data: data.members || [], total: data.pagination?.total || 0 };
   }
   catch (e) { console.error("Failed to fetch members", e); return { data: [], total: 0 }; }
 }
 
-// The approval center and Governance Center both use the same authoritative
-// member endpoint and page through all records. This prevents a 100-member cap
-// from making approved members disappear from admin workflows.
 export async function fetchAdminMembers() {
-  return (await fetchEveryAdminMember()).data;
+  return (await fetchEveryAdminMember("active")).data;
+}
+
+export async function fetchArchivedMembers() {
+  return (await fetchEveryAdminMember("only")).data;
 }
 
 export async function searchReferralMembers(query: string) { const q = query.trim(); if (q.length < 2) return [] as ReferralCandidate[]; const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`); return data.members || []; }
@@ -103,10 +106,6 @@ export async function createAdminMember(data: Partial<Member> & Record<string, u
 
 export async function updateMemberStatus(id: string, status: MemberStatus, rejectionReason?: string, adminNote?: string) {
   try {
-    // Confirmation belongs to the screen that initiated the action. Avoid a
-    // second confirm dialog and a separate preliminary PATCH here. The API
-    // approval path records payment verification and creates the authoritative
-    // membership revenue/receipt in one flow.
     return await apiClient(`/members/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, rejectionReason, adminNote }) });
   } catch (error: any) {
     showActionError(error, status === "approved" ? "Member approval failed." : "Member status update failed.");
@@ -124,4 +123,17 @@ export async function updateMember(id: string, partial: Partial<Member> & Record
     throw error;
   }
 }
-export async function deleteMember(id: string) { await apiClient(`/members/${id}`, { method: "DELETE" }); }
+
+// Kept under the historical function name so older admin screens cannot hard-delete.
+// The backend implements DELETE as a reversible Super Admin archive operation.
+export async function deleteMember(id: string, reason = "Archived from Member Center") {
+  return apiClient(`/members/${id}`, { method: "DELETE", body: JSON.stringify({ reason }) });
+}
+
+export async function restoreMember(id: string, reason = "Restored after Super Admin review") {
+  return apiClient(`/members/${id}/restore`, { method: "PATCH", body: JSON.stringify({ reason }) });
+}
+
+export async function fetchMemberAudit(id: string) {
+  return apiClient<MemberAuditRow[]>(`/members/${id}/audit`);
+}
