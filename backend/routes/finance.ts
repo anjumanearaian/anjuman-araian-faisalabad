@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import prisma from "../lib/prisma";
-import { requireFinanceAdmin } from "../middleware/auth";
+import { requireFinanceAdmin, requireSuperAdmin } from "../middleware/auth";
 import { createFinanceDocumentPdf } from "../lib/financeDocumentPdf";
 
 const router = Router();
@@ -36,7 +36,7 @@ const HeadSchema = z.object({
 async function actor(req: Request) {
   const user: any = (req as any).user || {};
   let username = "Admin";
-  let resolvedRole = String(user.role || "admin");
+  const resolvedRole = String(user.role || "admin");
   if (user.id) {
     try {
       const admin = await prisma.admin.findUnique({ where: { id: String(user.id) }, select: { username: true } });
@@ -76,7 +76,8 @@ function distanceWithin(a: string, b: string, max: number) {
     let rowMin = cur[0];
     for (let j = 1; j <= b.length; j++) {
       const value = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-      cur[j] = value; rowMin = Math.min(rowMin, value);
+      cur[j] = value;
+      rowMin = Math.min(rowMin, value);
     }
     if (rowMin > max) return false;
     prev = cur;
@@ -108,15 +109,21 @@ async function validateLinkedMember(memberId?: string | null) {
   if (!member || member.status !== "approved") throw new Error("Linked member must be an approved member.");
 }
 
-async function financeRows() {
+type LedgerView = "active" | "archived" | "all";
+
+async function financeRows(view: LedgerView = "active") {
   const [transactions, legacy] = await Promise.all([
     prisma.financeTransaction.findMany({
       include: { member: { select: { id: true, memberNo: true, fullName: true } } },
       orderBy: [{ transactionDate: "desc" }, { serialNo: "desc" }],
     }),
-    prisma.revenueRecord.findMany({ orderBy: { date: "desc" } }),
+    view === "archived" ? Promise.resolve([] as any[]) : prisma.revenueRecord.findMany({ orderBy: { date: "desc" } }),
   ]);
-  const current = transactions.map((x) => ({ ...x, source: "ledger" as const }));
+
+  const current = transactions
+    .filter((x) => view === "all" ? true : view === "archived" ? x.status === "void" : x.status !== "void")
+    .map((x) => ({ ...x, source: "ledger" as const }));
+
   const old = legacy.map((x) => ({
     id: `legacy:${x.id}`,
     source: "legacy" as const,
@@ -146,6 +153,7 @@ async function financeRows() {
     createdAt: x.date,
     updatedAt: x.date,
   }));
+
   return [...current, ...old].sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
 }
 
@@ -205,17 +213,18 @@ router.patch("/heads/:id", requireFinanceAdmin, async (req, res, next) => {
 
 router.get("/summary", requireFinanceAdmin, async (_req, res, next) => {
   try {
-    const rows = await financeRows();
-    const posted = rows.filter((x: any) => x.status !== "void");
-    const credits = posted.filter((x: any) => x.direction === "credit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
-    const debits = posted.filter((x: any) => x.direction === "debit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
-    res.json({ credits, debits, balance: credits - debits, count: posted.length, legacyCount: posted.filter((x: any) => x.source === "legacy").length });
+    const rows = await financeRows("active");
+    const credits = rows.filter((x: any) => x.direction === "credit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
+    const debits = rows.filter((x: any) => x.direction === "debit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
+    res.json({ credits, debits, balance: credits - debits, count: rows.length, legacyCount: rows.filter((x: any) => x.source === "legacy").length });
   } catch (error) { next(error); }
 });
 
 router.get("/ledger", requireFinanceAdmin, async (req, res, next) => {
   try {
-    const rows = await financeRows();
+    const requestedView = String(req.query.view || "active");
+    const view: LedgerView = requestedView === "archived" || requestedView === "all" ? requestedView : "active";
+    const rows = await financeRows(view);
     const q = String(req.query.q || "").trim();
     const type = String(req.query.type || "all");
     const filtered = rows.filter((x: any) => {
@@ -282,15 +291,17 @@ router.post("/transactions", requireFinanceAdmin, async (req: Request, res: Resp
   }
 });
 
-router.patch("/transactions/:id", requireFinanceAdmin, async (req: Request, res: Response, next: NextFunction) => {
+// Posted financial records are locked. Only Super Admin may correct a posted
+// transaction, and every correction is retained in FinanceAuditLog.
+router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const data = TransactionSchema.parse(req.body);
     const existing = await prisma.financeTransaction.findUnique({ where: { id } });
     if (!existing) return void res.status(404).json({ error: "Transaction not found." });
-    if (existing.status === "void") return void res.status(400).json({ error: "A voided transaction cannot be edited." });
+    if (existing.status === "void") return void res.status(400).json({ error: "An archived transaction cannot be edited. Restore it first." });
     const nextDirection = lineDirection(data.type, data.direction);
-    if (data.type !== existing.type || nextDirection !== existing.direction) return void res.status(400).json({ error: "Transaction type/direction cannot be changed after posting. Void the entry and create a corrected transaction instead." });
+    if (data.type !== existing.type || nextDirection !== existing.direction) return void res.status(400).json({ error: "Transaction type/direction cannot be changed after posting. Archive the entry and create a corrected transaction instead." });
     await validateLinkedMember(data.memberId);
     if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
     const who = await actor(req);
@@ -315,7 +326,7 @@ router.patch("/transactions/:id", requireFinanceAdmin, async (req: Request, res:
           transactionDate: data.transactionDate || existing.transactionDate,
         },
       });
-      await tx.financeAuditLog.create({ data: { transactionId: id, action: "edited", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
+      await tx.financeAuditLog.create({ data: { transactionId: id, action: "edited_by_super_admin", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
       return row;
     });
     res.json(updated);
@@ -325,17 +336,35 @@ router.patch("/transactions/:id", requireFinanceAdmin, async (req: Request, res:
   }
 });
 
-router.patch("/transactions/:id/void", requireFinanceAdmin, async (req: Request, res: Response, next: NextFunction) => {
+// Archive rather than delete. The row and complete audit trail stay in the DB.
+router.patch("/transactions/:id/void", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
-    const reason = z.string().trim().min(3).max(500).parse(req.body?.reason || "Voided by administrator");
+    const reason = z.string().trim().min(3).max(500).parse(req.body?.reason || "Archived by Super Admin");
     const who = await actor(req);
     const existing = await prisma.financeTransaction.findUnique({ where: { id } });
     if (!existing) return void res.status(404).json({ error: "Transaction not found." });
     if (existing.status === "void") return void res.json(existing);
     const updated = await prisma.$transaction(async (tx) => {
-      const row = await tx.financeTransaction.update({ where: { id }, data: { status: "void", description: `${existing.description || ""}\nVoid reason: ${reason}`.trim() } });
-      await tx.financeAuditLog.create({ data: { transactionId: id, action: "voided", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
+      const row = await tx.financeTransaction.update({ where: { id }, data: { status: "void", description: `${existing.description || ""}\nArchive reason: ${reason}`.trim() } });
+      await tx.financeAuditLog.create({ data: { transactionId: id, action: "archived_by_super_admin", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
+      return row;
+    });
+    res.json(updated);
+  } catch (error) { next(error); }
+});
+
+router.patch("/transactions/:id/restore", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const reason = z.string().trim().min(3).max(500).parse(req.body?.reason || "Restored by Super Admin");
+    const who = await actor(req);
+    const existing = await prisma.financeTransaction.findUnique({ where: { id } });
+    if (!existing) return void res.status(404).json({ error: "Transaction not found." });
+    if (existing.status !== "void") return void res.json(existing);
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.financeTransaction.update({ where: { id }, data: { status: "posted", description: `${existing.description || ""}\nRestore note: ${reason}`.trim() } });
+      await tx.financeAuditLog.create({ data: { transactionId: id, action: "restored_by_super_admin", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
       return row;
     });
     res.json(updated);
