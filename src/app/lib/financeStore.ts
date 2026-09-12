@@ -34,6 +34,7 @@ export interface FinanceSummary {
   balance: number;
   count: number;
   legacyCount: number;
+  pendingPayments?: number;
 }
 
 export interface FinanceLedgerRow {
@@ -49,6 +50,9 @@ export interface FinanceLedgerRow {
   category: string;
   amount: number;
   paymentMethod?: string | null;
+  paymentSenderName?: string | null;
+  proofUrl?: string | null;
+  supportingDocuments?: string[];
   cashBookNo?: string | null;
   receiptNo?: string | null;
   voucherNo?: string | null;
@@ -82,6 +86,9 @@ export interface FinanceTransactionInput {
   category: string;
   amount: number;
   paymentMethod?: string | null;
+  paymentSenderName?: string | null;
+  proofUrl?: string | null;
+  supportingDocuments?: string[];
   cashBookNo?: string | null;
   receiptNo?: string | null;
   voucherNo?: string | null;
@@ -91,7 +98,59 @@ export interface FinanceTransactionInput {
   handledByAssignmentId?: string | null;
 }
 
+export interface PaymentSubmission {
+  id: string;
+  sourceType: string;
+  sourceRecordId?: string | null;
+  sourceKey?: string | null;
+  memberId?: string | null;
+  memberNo?: string | null;
+  memberFullName?: string | null;
+  payerName: string;
+  senderName: string;
+  category: string;
+  amount: number;
+  currency: string;
+  paymentMethod?: string | null;
+  transactionReference?: string | null;
+  proofUrl: string;
+  supportingDocuments: string[];
+  description?: string | null;
+  status: "pending" | "approved" | "rejected";
+  submittedByAdminId?: string | null;
+  submittedByName?: string | null;
+  submittedByRole?: string | null;
+  submittedAt: string;
+  reviewedByAdminId?: string | null;
+  reviewedByName?: string | null;
+  reviewedByRole?: string | null;
+  reviewedAt?: string | null;
+  reviewNote?: string | null;
+  cashBookNo?: string | null;
+  financeTransactionId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentSubmissionInput {
+  sourceType?: string;
+  sourceRecordId?: string | null;
+  sourceKey?: string | null;
+  memberId?: string | null;
+  payerName: string;
+  senderName: string;
+  category: string;
+  amount: number;
+  currency?: string;
+  paymentMethod?: string | null;
+  transactionReference?: string | null;
+  proofUrl: string;
+  supportingDocuments?: string[];
+  description?: string | null;
+}
+
 export type FinanceLedgerView = "active" | "archived" | "all";
+export type PaymentSubmissionStatus = "pending" | "approved" | "rejected" | "all";
 
 export const fetchFinanceMembers = () => apiClient<FinanceMember[]>("/finance/members");
 export const fetchFinanceOfficers = () => apiClient<FinanceOfficer[]>("/finance/officers");
@@ -105,6 +164,11 @@ export const updateFinanceTransaction = (id: string, data: FinanceTransactionInp
 export const voidFinanceTransaction = (id: string, reason: string) => apiClient<FinanceLedgerRow>(`/finance/transactions/${id}/void`, { method: "PATCH", body: JSON.stringify({ reason }) });
 export const restoreFinanceTransaction = (id: string, reason: string) => apiClient<FinanceLedgerRow>(`/finance/transactions/${id}/restore`, { method: "PATCH", body: JSON.stringify({ reason }) });
 export const fetchFinanceAudit = (id: string) => apiClient<FinanceAuditRow[]>(`/finance/transactions/${id}/audit`);
+
+export const fetchPaymentSubmissions = (status: PaymentSubmissionStatus = "pending", q = "") => apiClient<PaymentSubmission[]>(`/finance/payment-submissions?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q)}`);
+export const createPaymentSubmission = (data: PaymentSubmissionInput) => apiClient<PaymentSubmission>("/finance/payment-submissions", { method: "POST", body: JSON.stringify(data) });
+export const reviewPaymentSubmission = (id: string, data: { action: "approve" | "reject"; cashBookNo?: string | null; reviewNote?: string | null; ledgerAmount?: number | null }) => apiClient<any>(`/finance/payment-submissions/${id}/review`, { method: "PATCH", body: JSON.stringify(data) });
+export const fetchPaymentSubmissionAudit = (id: string) => apiClient<FinanceAuditRow[]>(`/finance/payment-submissions/${id}/audit`);
 
 export function financeReceiptUrl(id: string) {
   const encodedPath = ["finance", "transactions", id, "receipt.pdf"].map(encodeURIComponent).join("__");
