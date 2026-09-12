@@ -80,10 +80,11 @@ async function fetchEveryAdminMember() {
 
 export async function fetchAllMembers(page: number = 1, limit: number = 10) {
   try {
-    // The API deliberately caps each response at 100 rows. Requests above 100
-    // mean the admin caller needs the complete registry, so page through the
-    // API instead of silently showing only the first 100 members.
-    if (limit > 100 && page === 1) return await fetchEveryAdminMember();
+    // The API deliberately caps each response at 100 rows. Admin dashboard and
+    // registry callers commonly request 100, so a first-page request at that
+    // ceiling means they need the complete registry, not a silently truncated
+    // first page. Public/small paginated calls remain unchanged.
+    if (limit >= 100 && page === 1) return await fetchEveryAdminMember();
     const data = await fetchMembersPage(page, Math.min(100, Math.max(1, limit)));
     return { data: data.members || [], total: data.pagination?.total || 0 };
   }
