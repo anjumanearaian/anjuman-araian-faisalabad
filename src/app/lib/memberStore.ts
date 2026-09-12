@@ -59,18 +59,42 @@ function showActionError(error: any, fallback: string) {
   return error;
 }
 
+async function fetchMembersPage(page: number, limit: number) {
+  return apiClient<any>(`/members?page=${page}&limit=${limit}`);
+}
+
+async function fetchEveryAdminMember() {
+  const perPage = 100;
+  const first = await fetchMembersPage(1, perPage);
+  const firstRows: Member[] = first.members || [];
+  const total = Number(first.pagination?.total || firstRows.length || 0);
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  if (totalPages === 1) return { data: firstRows, total };
+
+  const remaining = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) => fetchMembersPage(index + 2, perPage))
+  );
+  const data = [firstRows, ...remaining.map((result) => (result.members || []) as Member[])].flat();
+  return { data, total };
+}
+
 export async function fetchAllMembers(page: number = 1, limit: number = 10) {
-  try { const data = await apiClient<any>(`/members?page=${page}&limit=${limit}`); return { data: data.members || [], total: data.pagination?.total || 0 }; }
+  try {
+    // The API deliberately caps each response at 100 rows. Requests above 100
+    // mean the admin caller needs the complete registry, so page through the
+    // API instead of silently showing only the first 100 members.
+    if (limit > 100 && page === 1) return await fetchEveryAdminMember();
+    const data = await fetchMembersPage(page, Math.min(100, Math.max(1, limit)));
+    return { data: data.members || [], total: data.pagination?.total || 0 };
+  }
   catch (e) { console.error("Failed to fetch members", e); return { data: [], total: 0 }; }
 }
 
-// The approval center and the main Members screen must read from the same
-// authoritative member endpoint. The old /members/admin-center route never
-// existed in the Express router and caused the approval center to show zero
-// records / "Route not found" even while the main Admin screen had members.
+// The approval center and Governance Center both use the same authoritative
+// member endpoint and page through all records. This prevents a 100-member cap
+// from making approved members disappear from admin workflows.
 export async function fetchAdminMembers() {
-  const data = await apiClient<{ members: Member[] }>("/members?page=1&limit=100");
-  return data.members || [];
+  return (await fetchEveryAdminMember()).data;
 }
 
 export async function searchReferralMembers(query: string) { const q = query.trim(); if (q.length < 2) return [] as ReferralCandidate[]; const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`); return data.members || []; }
