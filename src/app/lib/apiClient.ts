@@ -29,6 +29,13 @@ function getAuthToken(endpoint: string) {
   return sessionStorage.getItem("araian_admin_token") || localStorage.getItem("araian_member_token") || null;
 }
 
+function expireAdminSession() {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem("araian_admin_token");
+  sessionStorage.removeItem("araian_admin_role");
+  window.dispatchEvent(new Event("araian-admin-session-expired"));
+}
+
 function needsNestedProxy(endpoint: string) {
   const pathname = endpoint.split("?")[0];
   // Vercel can resolve the single-segment API handlers directly, but nested
@@ -65,6 +72,7 @@ function friendlyStatusMessage(status: number, requestUrl: string) {
 }
 
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const adminToken = typeof window !== "undefined" ? sessionStorage.getItem("araian_admin_token") : null;
   const token = getAuthToken(endpoint);
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
@@ -98,6 +106,14 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
   }
 
   if (!response.ok) {
+    // Never leave the admin UI in a half-signed-in state. If the token actually
+    // used for this request is the stored admin token and the backend rejects it,
+    // clear both the token and its cached role immediately. AdminContext listens
+    // for this event and returns the user to the login screen.
+    if (response.status === 401 && adminToken && token === adminToken) {
+      expireAdminSession();
+    }
+
     let errorMessage = friendlyStatusMessage(response.status, requestUrl);
     let details: Record<string, string[]> | undefined;
     try {
