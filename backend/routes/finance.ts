@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { requireFinanceAdmin } from "../middleware/auth";
+import { createFinanceDocumentPdf } from "../lib/financeDocumentPdf";
 
 const router = Router();
 
@@ -20,6 +21,16 @@ const TransactionSchema = z.object({
   externalReference: z.string().max(180).nullable().optional(),
   description: z.string().max(4000).nullable().optional(),
   transactionDate: z.coerce.date().optional(),
+  handledByAssignmentId: z.string().uuid().nullable().optional(),
+});
+
+const HeadSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  kind: z.enum(["revenue", "expense", "adjustment"]),
+  defaultAmount: z.coerce.number().positive().max(1000000000).nullable().optional(),
+  notes: z.string().trim().max(500).nullable().optional(),
+  displayOrder: z.coerce.number().int().min(0).max(9999).optional(),
+  isActive: z.boolean().optional(),
 });
 
 async function actor(req: Request) {
@@ -29,37 +40,22 @@ async function actor(req: Request) {
   if (user.id) {
     try {
       const admin = await prisma.admin.findUnique({ where: { id: String(user.id) }, select: { username: true } });
-      if (admin?.username) {
-        username = admin.username;
-        // If the admin login email belongs to an approved member who currently
-        // holds a finance assignment, print the member name and official role
-        // on receipts automatically instead of exposing an email address.
-        const linkedMember = await prisma.member.findFirst({
-          where: { email: { equals: admin.username, mode: "insensitive" }, status: "approved" },
-          select: { id: true, fullName: true },
-        });
-        if (linkedMember) {
-          const financeAssignment = await prisma.organizationAssignment.findFirst({
-            where: {
-              memberId: linkedMember.id,
-              isActive: true,
-              role: { contains: "finance", mode: "insensitive" },
-            },
-            orderBy: { rank: "asc" },
-          });
-          if (financeAssignment) {
-            username = linkedMember.fullName;
-            resolvedRole = financeAssignment.role;
-          }
-        }
-      }
+      if (admin?.username) username = admin.username;
     } catch { /* keep safe fallback */ }
   }
   return { id: user.id ? String(user.id) : null, name: username, role: resolvedRole };
 }
 
-function money(value: number) {
-  return `Rs. ${Number(value || 0).toLocaleString("en-PK", { maximumFractionDigits: 2 })}`;
+async function resolveFinanceHandler(assignmentId?: string | null) {
+  if (!assignmentId) return null;
+  const assignment = await prisma.organizationAssignment.findUnique({
+    where: { id: assignmentId },
+    include: { member: { select: { id: true, fullName: true, status: true } }, organization: { select: { name: true } } },
+  });
+  if (!assignment || !assignment.isActive || assignment.member?.status !== "approved" || !assignment.role.toLowerCase().includes("finance")) {
+    throw new Error("Selected payment receiver is not an active Finance Secretary / Assistant Finance Secretary assignment.");
+  }
+  return { memberId: assignment.member.id, name: assignment.member.fullName, role: assignment.role, unit: assignment.organization?.name || null };
 }
 
 function lineDirection(type: string, direction?: string) {
@@ -68,38 +64,48 @@ function lineDirection(type: string, direction?: string) {
   return direction === "debit" ? "debit" : "credit";
 }
 
-function pdfEscape(value: unknown) {
-  return String(value ?? "")
-    .replace(/[^\x20-\x7E\xA0-\xFF]/g, "?")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
+function normalize(value: unknown) {
+  return String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function simplePdf(lines: string[]) {
-  const contentLines = lines.slice(0, 44).map((line, index) => {
-    const size = index === 0 ? 16 : index === 1 ? 12 : 10;
-    return `/F1 ${size} Tf (${pdfEscape(line).slice(0, 110)}) Tj 0 -${index < 2 ? 22 : 16} Td`;
+function distanceWithin(a: string, b: string, max: number) {
+  if (Math.abs(a.length - b.length) > max) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let rowMin = cur[0];
+    for (let j = 1; j <= b.length; j++) {
+      const value = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      cur[j] = value; rowMin = Math.min(rowMin, value);
+    }
+    if (rowMin > max) return false;
+    prev = cur;
+  }
+  return prev[b.length] <= max;
+}
+
+function fuzzyMatch(values: unknown[], query: string) {
+  const q = normalize(query);
+  if (!q) return true;
+  const hay = normalize(values.filter(Boolean).join(" "));
+  if (hay.includes(q)) return true;
+  const hayTokens = hay.split(" ").filter(Boolean);
+  return q.split(" ").filter(Boolean).every((needle) => {
+    if (hayTokens.some((token) => token.includes(needle))) return true;
+    if (needle.length < 3) return false;
+    const max = needle.length <= 4 ? 1 : needle.length <= 7 ? 2 : 3;
+    return hayTokens.some((token) => distanceWithin(needle, token, max));
   });
-  const stream = `BT 50 790 Td ${contentLines.join(" ")} ET`;
-  const objects = [
-    `<< /Type /Catalog /Pages 2 0 R >>`,
-    `<< /Type /Pages /Kids [3 0 R] /Count 1 >>`,
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>`,
-    `<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`,
-    `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`,
-  ];
-  let pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
-  const offsets: number[] = [0];
-  objects.forEach((obj, idx) => {
-    offsets.push(Buffer.byteLength(pdf, "latin1"));
-    pdf += `${idx + 1} 0 obj\n${obj}\nendobj\n`;
-  });
-  const xref = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i <= objects.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return Buffer.from(pdf, "latin1");
+}
+
+function requiresPurpose(category: string) {
+  return normalize(category) === "contribution";
+}
+
+async function validateLinkedMember(memberId?: string | null) {
+  if (!memberId) return;
+  const member = await prisma.member.findUnique({ where: { id: memberId }, select: { status: true } });
+  if (!member || member.status !== "approved") throw new Error("Linked member must be an approved member.");
 }
 
 async function financeRows() {
@@ -132,6 +138,9 @@ async function financeRows() {
     issuedByAdminId: null,
     issuedByName: "Legacy revenue record",
     issuedByRole: null,
+    handledByMemberId: null,
+    handledByName: null,
+    handledByRole: null,
     status: "posted",
     transactionDate: x.date,
     createdAt: x.date,
@@ -144,11 +153,53 @@ router.get("/members", requireFinanceAdmin, async (_req, res, next) => {
   try {
     const members = await prisma.member.findMany({
       where: { status: "approved" },
-      select: { id: true, memberNo: true, fullName: true, email: true, status: true },
+      select: { id: true, memberNo: true, fullName: true, email: true, status: true, membershipType: true },
       orderBy: { fullName: "asc" },
       take: 2000,
     });
     res.json(members);
+  } catch (error) { next(error); }
+});
+
+router.get("/officers", requireFinanceAdmin, async (_req, res, next) => {
+  try {
+    const assignments = await prisma.organizationAssignment.findMany({
+      where: { isActive: true, role: { contains: "finance", mode: "insensitive" }, member: { status: "approved" } },
+      include: { member: { select: { id: true, memberNo: true, fullName: true } }, organization: { select: { name: true } } },
+      orderBy: [{ rank: "asc" }, { createdAt: "asc" }],
+    });
+    res.json(assignments.map((a) => ({ id: a.id, memberId: a.memberId, name: a.member.fullName, memberNo: a.member.memberNo, role: a.role, unit: a.organization.name })));
+  } catch (error) { next(error); }
+});
+
+router.get("/heads", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const kind = String(req.query.kind || "all");
+    const heads = await prisma.financeHead.findMany({
+      where: { isActive: true, ...(kind !== "all" ? { kind } : {}) },
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    });
+    res.json(heads);
+  } catch (error) { next(error); }
+});
+
+router.post("/heads", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const data = HeadSchema.parse(req.body);
+    const head = await prisma.financeHead.upsert({
+      where: { name_kind: { name: data.name, kind: data.kind } },
+      update: { defaultAmount: data.defaultAmount ?? null, notes: data.notes || null, displayOrder: data.displayOrder ?? 500, isActive: true },
+      create: { name: data.name, kind: data.kind, defaultAmount: data.defaultAmount ?? null, notes: data.notes || null, displayOrder: data.displayOrder ?? 500, isActive: true },
+    });
+    res.status(201).json(head);
+  } catch (error) { next(error); }
+});
+
+router.patch("/heads/:id", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const data = HeadSchema.partial().parse(req.body);
+    const head = await prisma.financeHead.update({ where: { id: String(req.params.id) }, data });
+    res.json(head);
   } catch (error) { next(error); }
 });
 
@@ -165,13 +216,14 @@ router.get("/summary", requireFinanceAdmin, async (_req, res, next) => {
 router.get("/ledger", requireFinanceAdmin, async (req, res, next) => {
   try {
     const rows = await financeRows();
-    const q = String(req.query.q || "").trim().toLowerCase();
+    const q = String(req.query.q || "").trim();
     const type = String(req.query.type || "all");
     const filtered = rows.filter((x: any) => {
       if (type !== "all" && x.type !== type) return false;
-      if (!q) return true;
-      return [x.partyName, x.category, x.receiptNo, x.voucherNo, x.cashBookNo, x.transactionNo, x.externalReference, x.member?.memberNo]
-        .some((value) => String(value || "").toLowerCase().includes(q));
+      return fuzzyMatch([
+        x.partyName, x.category, x.description, x.receiptNo, x.voucherNo, x.cashBookNo, x.transactionNo,
+        x.externalReference, x.member?.memberNo, x.member?.fullName, x.handledByName, x.handledByRole, x.issuedByName,
+      ], q);
     });
     res.json(filtered);
   } catch (error) { next(error); }
@@ -180,11 +232,12 @@ router.get("/ledger", requireFinanceAdmin, async (req, res, next) => {
 router.post("/transactions", requireFinanceAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = TransactionSchema.parse(req.body);
-    if (data.memberId) {
-      const member = await prisma.member.findUnique({ where: { id: data.memberId }, select: { status: true } });
-      if (!member || member.status !== "approved") return void res.status(400).json({ error: "Linked member must be an approved member." });
-    }
+    await validateLinkedMember(data.memberId);
+    if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
     const who = await actor(req);
+    let handler;
+    try { handler = await resolveFinanceHandler(data.handledByAssignmentId); }
+    catch (error: any) { return void res.status(400).json({ error: error.message }); }
     const direction = lineDirection(data.type, data.direction);
     const created = await prisma.$transaction(async (tx) => {
       const row = await tx.financeTransaction.create({
@@ -205,6 +258,9 @@ router.post("/transactions", requireFinanceAdmin, async (req: Request, res: Resp
           issuedByAdminId: who.id,
           issuedByName: who.name,
           issuedByRole: who.role,
+          handledByMemberId: handler?.memberId || null,
+          handledByName: handler?.name || null,
+          handledByRole: handler?.role || null,
           transactionDate: data.transactionDate || new Date(),
         },
       });
@@ -216,12 +272,53 @@ router.post("/transactions", requireFinanceAdmin, async (req: Request, res: Resp
           ? { voucherNo: row.voucherNo || generatedNo }
           : { receiptNo: row.receiptNo || generatedNo },
       });
-      await tx.financeAuditLog.create({
-        data: { transactionId: row.id, action: "created", actorAdminId: who.id, actorName: who.name, afterData: updated as any },
-      });
+      await tx.financeAuditLog.create({ data: { transactionId: row.id, action: "created", actorAdminId: who.id, actorName: who.name, afterData: updated as any } });
       return updated;
     });
     res.status(201).json(created);
+  } catch (error: any) {
+    if (error?.code === "P2002") return void res.status(409).json({ error: "Receipt, voucher or transaction number already exists." });
+    next(error);
+  }
+});
+
+router.patch("/transactions/:id", requireFinanceAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const data = TransactionSchema.parse(req.body);
+    const existing = await prisma.financeTransaction.findUnique({ where: { id } });
+    if (!existing) return void res.status(404).json({ error: "Transaction not found." });
+    if (existing.status === "void") return void res.status(400).json({ error: "A voided transaction cannot be edited." });
+    const nextDirection = lineDirection(data.type, data.direction);
+    if (data.type !== existing.type || nextDirection !== existing.direction) return void res.status(400).json({ error: "Transaction type/direction cannot be changed after posting. Void the entry and create a corrected transaction instead." });
+    await validateLinkedMember(data.memberId);
+    if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
+    const who = await actor(req);
+    let handler;
+    try { handler = await resolveFinanceHandler(data.handledByAssignmentId); }
+    catch (error: any) { return void res.status(400).json({ error: error.message }); }
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.financeTransaction.update({
+        where: { id },
+        data: {
+          memberId: data.memberId || null,
+          partyName: data.partyName,
+          category: data.category,
+          amount: data.amount,
+          paymentMethod: data.paymentMethod || null,
+          cashBookNo: data.cashBookNo || null,
+          externalReference: data.externalReference || null,
+          description: data.description || null,
+          handledByMemberId: handler?.memberId || null,
+          handledByName: handler?.name || null,
+          handledByRole: handler?.role || null,
+          transactionDate: data.transactionDate || existing.transactionDate,
+        },
+      });
+      await tx.financeAuditLog.create({ data: { transactionId: id, action: "edited", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
+      return row;
+    });
+    res.json(updated);
   } catch (error: any) {
     if (error?.code === "P2002") return void res.status(409).json({ error: "Receipt, voucher or transaction number already exists." });
     next(error);
@@ -259,30 +356,8 @@ router.get("/transactions/:id/receipt.pdf", requireFinanceAdmin, async (req, res
       include: { member: { select: { memberNo: true, fullName: true } } },
     });
     if (!row) return void res.status(404).json({ error: "Transaction not found." });
-    const isDebit = row.direction === "debit";
-    const documentNo = isDebit ? row.voucherNo : row.receiptNo;
-    const title = isDebit ? "PAYMENT / EXPENSE VOUCHER" : "OFFICIAL PAYMENT RECEIPT";
-    const lines = [
-      "Anjuman-e-Araian Faisalabad",
-      title,
-      `Document No: ${documentNo || row.transactionNo}`,
-      `Ledger Serial: ${row.serialNo}`,
-      `Transaction No: ${row.transactionNo}`,
-      `Date: ${new Date(row.transactionDate).toLocaleDateString("en-GB")}`,
-      `Name / Party: ${row.partyName}`,
-      row.member ? `Member: ${row.member.fullName} (${row.member.memberNo})` : "",
-      `Category: ${row.category}`,
-      `Amount: ${money(row.amount)}`,
-      `Payment Method: ${row.paymentMethod || "Not specified"}`,
-      `Cash Book No: ${row.cashBookNo || "Not specified"}`,
-      `Reference: ${row.externalReference || "-"}`,
-      `Description: ${row.description || "-"}`,
-      `Issued by: ${row.issuedByName || "Administrator"}${row.issuedByRole ? ` (${row.issuedByRole.replace(/_/g, " ")})` : ""}`,
-      `Status: ${row.status.toUpperCase()}`,
-      "",
-      "This document is generated from the official digital ledger.",
-    ].filter(Boolean);
-    const buffer = simplePdf(lines);
+    const documentNo = row.direction === "debit" ? row.voucherNo : row.receiptNo;
+    const buffer = createFinanceDocumentPdf(row as any);
     const safe = (documentNo || row.transactionNo).replace(/[^a-zA-Z0-9_-]/g, "-");
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=\"${safe}.pdf\"`);
