@@ -48,11 +48,22 @@ export function MemberDataExportPanel({ members }: { members: Member[] }) {
     }
   };
 
+  const exportAllExcel = () => {
+    setError("");
+    try {
+      exportMemberRecords(members, "xlsx");
+    } catch (e: any) {
+      setError(e?.message || "Could not export the complete member database.");
+      setOpen(true);
+    }
+  };
+
   return <>
-    <button onClick={() => setOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "white", color: GREEN, border: "1px solid #cbd8cf", borderRadius: 7, padding: "9px 13px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}><Download size={14} /> Download Data</button>
+    <button onClick={exportAllExcel} disabled={!members.length} title="Download the complete member registry as one Excel file" style={{ ...primaryButton, opacity: members.length ? 1 : .55 }}><FileSpreadsheet size={14} /> Export All Excel</button>
+    <button onClick={() => setOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "white", color: GREEN, border: "1px solid #cbd8cf", borderRadius: 7, padding: "9px 13px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}><Download size={14} /> Select / CSV</button>
     {open && <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,.58)", display: "grid", placeItems: "center", padding: 16 }}>
       <div style={{ width: "min(760px,96vw)", maxHeight: "90vh", background: "white", borderRadius: 14, boxShadow: "0 24px 80px rgba(0,0,0,.28)", overflow: "hidden" }}>
-        <div style={{ padding: "18px 20px", borderBottom: "1px solid #e7ece8", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}><div><h3 style={{ margin: 0, color: GREEN, fontFamily: "'Playfair Display', serif" }}>Download Member Database</h3><p style={{ margin: "4px 0 0", color: "#777", fontSize: 12 }}>Select the records you need. With no manual selection, the current search results will be exported.</p></div><button onClick={() => setOpen(false)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#777" }}><X size={20} /></button></div>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid #e7ece8", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}><div><h3 style={{ margin: 0, color: GREEN, fontFamily: "'Playfair Display', serif" }}>Download Member Database</h3><p style={{ margin: "4px 0 0", color: "#777", fontSize: 12 }}>Search or select specific records. With no manual selection, the current search results will be exported.</p></div><button onClick={() => setOpen(false)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#777" }}><X size={20} /></button></div>
         <div style={{ padding: 20 }}>
           {error && <div style={{ padding: 10, marginBottom: 12, background: "#fee2e2", color: "#b91c1c", borderRadius: 7, fontSize: 12 }}>{error}</div>}
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, registration no., CNIC, phone, city..." style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #d9e2dc", borderRadius: 8, fontSize: 12 }} />
