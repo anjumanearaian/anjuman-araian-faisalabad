@@ -387,7 +387,7 @@ model OrganizationUnit {
   id          String   @id @default(uuid())
   name        String
   slug        String   @unique
-  type        String   @default("committee") // cabinet | committee | zone | area | working_group | chapter | other
+  type        String   @default("committee")
   parentId    String?
   parent      OrganizationUnit?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children    OrganizationUnit[] @relation("OrganizationHierarchy")
@@ -432,11 +432,11 @@ model GovernanceMeeting {
   organizationId String?
   organization   OrganizationUnit? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   title          String
-  meetingType    String            @default("meeting") // meeting | agm | committee | emergency | other
+  meetingType    String            @default("meeting")
   date           String
   time           String?
   venue          String?
-  status         String            @default("announced") // announced | held | postponed | cancelled
+  status         String            @default("announced")
   notice         String?
   agenda         String?
   minutes        String?
@@ -461,7 +461,7 @@ model MeetingAttendance {
   meeting   GovernanceMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   memberId  String
   member    Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  status    String            @default("present") // present | absent | excused
+  status    String            @default("present")
   remarks   String?
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
@@ -472,29 +472,32 @@ model MeetingAttendance {
 }
 
 model FinanceTransaction {
-  id               String   @id @default(uuid())
-  serialNo         Int      @unique @default(autoincrement())
-  transactionNo    String   @unique
-  type             String   // revenue | expense | adjustment
-  direction        String   @default("credit") // credit | debit
-  memberId         String?
-  member           Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
-  partyName        String
-  category         String
-  amount           Float
-  paymentMethod    String?
-  cashBookNo       String?
-  receiptNo        String?  @unique
-  voucherNo        String?  @unique
+  id                String   @id @default(uuid())
+  serialNo          Int      @unique @default(autoincrement())
+  transactionNo     String   @unique
+  type              String
+  direction         String   @default("credit")
+  memberId          String?
+  member            Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  partyName         String
+  category          String
+  amount            Float
+  paymentMethod     String?
+  cashBookNo        String?
+  receiptNo         String?  @unique
+  voucherNo         String?  @unique
   externalReference String?
-  description      String?
-  issuedByAdminId  String?
-  issuedByName     String?
-  issuedByRole     String?
-  status           String   @default("posted") // posted | void
-  transactionDate  DateTime @default(now())
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  description       String?
+  issuedByAdminId   String?
+  issuedByName      String?
+  issuedByRole      String?
+  handledByMemberId String?
+  handledByName     String?
+  handledByRole     String?
+  status            String   @default("posted")
+  transactionDate   DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   auditLogs FinanceAuditLog[]
 
@@ -503,6 +506,21 @@ model FinanceTransaction {
   @@index([transactionDate])
   @@index([cashBookNo])
   @@index([status])
+}
+
+model FinanceHead {
+  id            String   @id @default(uuid())
+  name          String
+  kind          String   @default("revenue")
+  defaultAmount Float?
+  notes         String?
+  displayOrder  Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([name, kind])
+  @@index([kind, isActive, displayOrder])
 }
 
 model FinanceAuditLog {
@@ -519,4 +537,3 @@ model FinanceAuditLog {
   @@index([transactionId])
   @@index([createdAt])
 }
-
