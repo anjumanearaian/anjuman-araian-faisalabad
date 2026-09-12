@@ -19,6 +19,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
 import { AdminMatrimonialPage } from "./pages/AdminMatrimonialPage";
 import { AdminOperationsCenterPage } from "./pages/AdminOperationsCenterPage";
+import { AdminFinancePage } from "./pages/AdminFinancePage";
 import { MemberRegisterPage } from "./pages/MemberRegisterPage";
 import { MemberLoginPage } from "./pages/MemberLoginPage";
 import { MemberPortalPage } from "./pages/MemberPortalPage";
@@ -46,6 +47,10 @@ export const router = createBrowserRouter([
   {
     path: "admin/operations",
     Component: AdminOperationsCenterPage,
+  },
+  {
+    path: "admin/finance",
+    Component: AdminFinancePage,
   },
   {
     Component: Layout,
