@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 
 import prisma from "../lib/prisma";
-import { requireWelfareAdmin, requireMember } from "../middleware/auth";
+import { requireWelfareAdmin, requireMember, requireSuperAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { loginLimiter, registerLimiter } from "../middleware/rateLimiter";
 import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
@@ -133,11 +133,41 @@ const defaultTiers = [
   { type: "overseas", name: "Overseas Member", fee: "$100 / year" },
 ];
 
+type ArchiveRow = { id: string; isArchived: boolean; archivedAt: Date | null; archivedByName: string | null; archiveReason: string | null };
+
+async function archivedIds() {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Member" WHERE "isArchived" = true`;
+  return rows.map((row) => row.id);
+}
+
+async function archiveState(id: string) {
+  const rows = await prisma.$queryRaw<ArchiveRow[]>`SELECT "id", "isArchived", "archivedAt", "archivedByName", "archiveReason" FROM "Member" WHERE "id" = ${id} LIMIT 1`;
+  return rows[0] || null;
+}
+
+async function adminActor(req: Request) {
+  const user: any = (req as any).user || {};
+  let name = "Super Admin";
+  if (user.id) {
+    try {
+      const admin = await prisma.admin.findUnique({ where: { id: String(user.id) }, select: { username: true } });
+      if (admin?.username) name = admin.username;
+    } catch {}
+  }
+  return { id: user.id ? String(user.id) : null, role: String(user.role || "super_admin"), name };
+}
+
+async function appendMemberAudit(memberId: string, action: string, actorInfo: { id: string | null; name: string; role: string }, reason?: string) {
+  await prisma.$executeRaw`INSERT INTO "MemberAuditLog" ("memberId", "action", "actorAdminId", "actorName", "actorRole", "reason") VALUES (${memberId}, ${action}, ${actorInfo.id}, ${actorInfo.name}, ${actorInfo.role}, ${reason || null})`;
+}
+
 router.post("/login", loginLimiter, validate(LoginSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
     const member = await prisma.member.findFirst({ where: { email } });
     if (!member) return void res.status(401).json({ error: "Invalid credentials" });
+    const state = await archiveState(member.id);
+    if (state?.isArchived) return void res.status(403).json({ error: "This membership record is archived. Please contact the administration." });
     const isMatch = member.password ? await bcrypt.compare(password, member.password) : false;
     if (!isMatch) return void res.status(401).json({ error: "Invalid credentials" });
     if (member.status === "pending") return void res.status(403).json({ error: "Your account is pending admin approval. Please wait for an email or contact the administration." });
@@ -151,8 +181,9 @@ router.get("/referral-search", requireMember, async (req: Request, res: Response
   try {
     const q = String(req.query.q || "").trim();
     if (q.length < 2) return void res.json({ members: [] });
+    const excluded = await archivedIds();
     const members = await prisma.member.findMany({
-      where: { status: "approved", OR: [{ fullName: { contains: q, mode: "insensitive" } }, { memberNo: { contains: q, mode: "insensitive" } }] },
+      where: { status: "approved", ...(excluded.length ? { id: { notIn: excluded } } : {}), OR: [{ fullName: { contains: q, mode: "insensitive" } }, { memberNo: { contains: q, mode: "insensitive" } }] },
       take: 12, orderBy: { fullName: "asc" }, select: { id: true, memberNo: true, fullName: true, city: true },
     });
     res.json({ members });
@@ -172,7 +203,8 @@ router.post("/register", registerLimiter, requireMember, validate(RegisterSchema
     const existing = await prisma.member.findFirst({ where: { OR: [{ email: memberData.email }, { cnic: memberData.cnic }] }, select: { email: true, cnic: true } });
     if (existing) return void res.status(409).json({ error: existing.cnic === memberData.cnic ? "A member with this CNIC already exists" : "An account with this email already exists" });
 
-    const referrer = referrerMemberId ? await prisma.member.findFirst({ where: { id: referrerMemberId, status: "approved" }, select: { id: true, fullName: true, memberNo: true, email: true } }) : null;
+    const excluded = await archivedIds();
+    const referrer = referrerMemberId ? await prisma.member.findFirst({ where: { id: referrerMemberId, status: "approved", ...(excluded.length ? { id: { notIn: excluded } } : {}) }, select: { id: true, fullName: true, memberNo: true, email: true } }) : null;
     if (referrerMemberId && !referrer) return void res.status(400).json({ error: "Selected referrer is not an active approved member" });
 
     const additionalPhotosJson = additionalPhotos ? JSON.stringify(additionalPhotos) : null;
@@ -259,16 +291,23 @@ router.post("/import", requireWelfareAdmin, async (req: Request, res: Response, 
 router.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
-    let isAdmin = false; let isMember = false;
+    let isAdmin = false; let isMember = false; let isSuperAdmin = false;
     if (authHeader?.startsWith("Bearer ")) {
       try {
         const decoded = jwt.verify(authHeader.split(" ")[1], getJwtSecret()) as { role: string };
-        isAdmin = ["admin", "super_admin", "welfare_manager"].includes(decoded.role); isMember = decoded.role === "member";
+        isAdmin = ["admin", "super_admin", "welfare_manager"].includes(decoded.role); isMember = decoded.role === "member"; isSuperAdmin = decoded.role === "super_admin";
       } catch { /* public request */ }
     }
     const page = Math.max(1, parseInt(String(req.query.page || "1")) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "20")) || 20));
+    const archiveView = String(req.query.archived || "active");
+    if (archiveView !== "active" && !isSuperAdmin) return void res.status(403).json({ error: "Only Super Admin can view archived member records." });
+    const archived = await archivedIds();
     let where: any = {};
+    if (archiveView === "only") where.id = { in: archived.length ? archived : ["__none__"] };
+    else if (archiveView === "all") { /* super admin all records */ }
+    else if (archived.length) where.id = { notIn: archived };
+
     if (isAdmin) { const status = req.query.status ? String(req.query.status) : undefined; if (status) where.status = status; }
     else if (isMember) { where.status = "approved"; where.OR = [{ showOnPortal: true }, { visibility: "public" }]; }
     else { where.status = "approved"; where.OR = [{ showOnWeb: true }, { visibility: "public" }]; }
@@ -286,8 +325,13 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       }), prisma.member.count({ where }),
     ]);
 
+    const archiveMeta = archiveView !== "active" && members.length
+      ? await prisma.$queryRaw<Array<{ id: string; archivedAt: Date | null; archivedByName: string | null; archiveReason: string | null }>>`SELECT "id", "archivedAt", "archivedByName", "archiveReason" FROM "Member" WHERE "id" = ANY(${members.map((m: any) => m.id)}::text[])`
+      : [];
+    const metaById = new Map(archiveMeta.map((x) => [x.id, x]));
+
     const parsedMembers = members.map((m: any) => {
-      if (isAdmin) return { ...m, additionalPhotos: parsePhotos(m.additionalPhotos) };
+      if (isAdmin) return { ...m, additionalPhotos: parsePhotos(m.additionalPhotos), ...(metaById.get(m.id) || {}) };
       return { id: m.id, memberNo: m.memberNo, fullName: m.fullName, city: m.city, district: m.district, province: m.province, occupation: m.occupation, education: m.education, designation: m.designation, institutionName: m.institutionName, businessName: m.businessName, memberCell: m.memberCell, membershipType: m.membershipType, photoUrl: m.photoUrl, isFeatured: m.isFeatured, isFeaturedPortal: m.isFeaturedPortal, whatsappPublic: m.whatsappPublic, whatsapp: m.whatsappPublic ? m.whatsapp : "", createdAt: m.createdAt, approvedAt: m.approvedAt };
     });
     res.json({ members: parsedMembers, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } });
@@ -297,6 +341,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
 router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
+    if ((await archiveState(id))?.isArchived) return void res.status(409).json({ error: "Archived members are locked. Super Admin must restore the record before changing status." });
     const { status, adminNote, rejectionReason } = req.body;
     const validStatuses = ["pending", "approved", "rejected", "inactive", "suspended", "deceased"];
     if (!validStatuses.includes(status)) return void res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
@@ -348,6 +393,8 @@ router.get("/:id/receipt", requireMember, async (req: Request, res: Response, ne
   try {
     const id = String(req.params.id);
     const user = (req as any).user;
+    const state = await archiveState(id);
+    if (state?.isArchived) return void res.status(404).json({ error: "Membership record is archived." });
     const member = await prisma.member.findUnique({ where: { id }, select: { id: true, authUserId: true, memberNo: true, fullName: true, membershipType: true } });
     if (!member) return void res.status(404).json({ error: "Member not found" });
     const isAdmin = ["admin", "super_admin", "welfare_manager"].includes(String(user.role));
@@ -364,9 +411,32 @@ router.get("/:id/receipt", requireMember, async (req: Request, res: Response, ne
   } catch (err) { next(err); }
 });
 
+router.get("/:id/audit", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rows = await prisma.$queryRaw<any[]>`SELECT "id", "memberId", "action", "actorAdminId", "actorName", "actorRole", "reason", "beforeData", "afterData", "createdAt" FROM "MemberAuditLog" WHERE "memberId" = ${String(req.params.id)} ORDER BY "createdAt" ASC`;
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.patch("/:id/restore", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const reason = String(req.body?.reason || "Restored after Super Admin review").trim();
+    if (reason.length < 3) return void res.status(400).json({ error: "A restore reason is required." });
+    const state = await archiveState(id);
+    if (!state) return void res.status(404).json({ error: "Member not found" });
+    if (!state.isArchived) return void res.json({ success: true, message: "Member is already active." });
+    const who = await adminActor(req);
+    await prisma.$executeRaw`UPDATE "Member" SET "isArchived" = false, "archivedAt" = NULL, "archivedByAdminId" = NULL, "archivedByName" = NULL, "archiveReason" = NULL WHERE "id" = ${id}`;
+    await appendMemberAudit(id, "restored_by_super_admin", who, reason);
+    res.json({ success: true, message: "Member restored to the active registry." });
+  } catch (err) { next(err); }
+});
+
 router.patch("/:id", requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
+    if ((await archiveState(id))?.isArchived) return void res.status(409).json({ error: "Archived members are locked. Super Admin must restore the record before editing." });
     const user = (req as any).user;
     if (user.role === "member" && user.id !== id) return void res.status(403).json({ error: "Access denied. You can only update your own profile." });
     if (!["admin", "super_admin", "welfare_manager", "member", "applicant"].includes(user.role)) return void res.status(403).json({ error: "Access denied" });
@@ -389,6 +459,7 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
     delete updates.email; delete updates.authUserId; delete updates.familyInfo; delete updates.children; delete updates.password;
     if (passwordHash) updates.password = passwordHash;
     delete updates.status; delete updates.approvedAt; delete updates.adminNote; delete updates.rejectionReason;
+    delete updates.isArchived; delete updates.archivedAt; delete updates.archivedByAdminId; delete updates.archivedByName; delete updates.archiveReason;
     if (!adminLike) {
       delete updates.memberNo; delete updates.formNo; delete updates.paymentStatus; delete updates.referrerMemberId; delete updates.referralStatus; delete updates.showOnWeb; delete updates.showOnPortal; delete updates.visibility;
     }
@@ -414,6 +485,7 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
 router.post("/:id/change-password", requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id); const user = (req as any).user;
+    if ((await archiveState(id))?.isArchived) return void res.status(409).json({ error: "Archived member accounts are locked." });
     if (user.role === "member" && user.id !== id) return void res.status(403).json({ error: "Access denied" });
     if (!["admin", "super_admin", "member"].includes(user.role)) return void res.status(403).json({ error: "Use email or Google sign-in for this account" });
     const { currentPassword, newPassword } = req.body || {};
@@ -427,15 +499,21 @@ router.post("/:id/change-password", requireMember, async (req: Request, res: Res
   } catch (err) { next(err); }
 });
 
-router.delete("/:id", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
+// DELETE is deliberately implemented as a reversible archive. Physical deletion
+// is also blocked by a database trigger as a second line of protection.
+router.delete("/:id", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const removed = await prisma.member.delete({ where: { id: String(req.params.id) } });
-    await cleanupRemovedFiles([removed.photoUrl, removed.cnicFrontUrl, removed.cnicBackUrl, removed.paymentProofUrl, ...parsePhotos(removed.additionalPhotos)], []);
-    res.json({ message: "Member deleted successfully" });
-  } catch (err: any) {
-    if (err.code === "P2025") return void res.status(404).json({ error: "Member not found" });
-    next(err);
-  }
+    const id = String(req.params.id);
+    const reason = String(req.body?.reason || req.query.reason || "Archived by Super Admin").trim();
+    if (reason.length < 3) return void res.status(400).json({ error: "An archive reason is required." });
+    const state = await archiveState(id);
+    if (!state) return void res.status(404).json({ error: "Member not found" });
+    if (state.isArchived) return void res.json({ success: true, message: "Member is already archived." });
+    const who = await adminActor(req);
+    await prisma.$executeRaw`UPDATE "Member" SET "isArchived" = true, "archivedAt" = CURRENT_TIMESTAMP, "archivedByAdminId" = ${who.id}, "archivedByName" = ${who.name}, "archiveReason" = ${reason}, "showOnWeb" = false, "showOnPortal" = false WHERE "id" = ${id}`;
+    await appendMemberAudit(id, "archived_by_super_admin", who, reason);
+    res.json({ success: true, message: "Member archived. The record, files and audit history remain preserved and can be restored by Super Admin." });
+  } catch (err) { next(err); }
 });
 
 router.get("/me", async (req: Request, res: Response, next: NextFunction) => {
@@ -446,6 +524,7 @@ router.get("/me", async (req: Request, res: Response, next: NextFunction) => {
     const where = decoded.role === "applicant" ? { OR: [{ authUserId: decoded.id }, { email: { equals: decoded.email, mode: "insensitive" as const } }] } : { id: decoded.id };
     const member = await prisma.member.findFirst({ where, include: { familyInfo: true, children: { orderBy: { createdAt: "asc" } }, referrerMember: { select: { id: true, memberNo: true, fullName: true, city: true } } } });
     if (!member) return void res.status(404).json({ error: "No submitted membership profile yet" });
+    if ((await archiveState(member.id))?.isArchived) return void res.status(404).json({ error: "This membership record is archived." });
     res.json({ ...stripPassword(member), family: member.familyInfo, additionalPhotos: parsePhotos(member.additionalPhotos) });
   } catch (err: any) {
     if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") return void res.status(401).json({ error: "Invalid or expired token" });
