@@ -1,14 +1,15 @@
 import { useState, useMemo, useEffect } from "react";
 import { fetchAllMembers } from "../lib/memberStore";
 import type { Member } from "../lib/memberStore";
+import { smartSearchSort } from "../lib/smartSearch";
 import { Search, MapPin, Briefcase, Star, X } from "lucide-react";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
 
-export function MemberDirectory({ currentMemberId }: { currentMemberId: string }) {
+export function MemberDirectory({ currentMemberId, initialCell = "all", publicHeading = false }: { currentMemberId?: string; initialCell?: "all" | "male" | "women"; publicHeading?: boolean }) {
   const [search, setSearch] = useState("");
-  const [cell, setCell] = useState<"all" | "male" | "women">("all");
+  const [cell, setCell] = useState<"all" | "male" | "women">(initialCell);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [allMembers, setAllMembers] = useState<Member[]>([]);
 
@@ -18,19 +19,34 @@ export function MemberDirectory({ currentMemberId }: { currentMemberId: string }
     });
   }, []);
 
+  useEffect(() => {
+    setCell(initialCell);
+  }, [initialCell]);
+
   const filteredMembers = useMemo(() => {
-    return allMembers.filter(m => {
-      const q = search.toLowerCase();
-      return (cell === "all" || (m.memberCell || (m.gender === "female" ? "women" : "male")) === cell) && (
-        m.fullName.toLowerCase().includes(q) ||
-        m.city.toLowerCase().includes(q) ||
-        m.occupation.toLowerCase().includes(q)
-      );
-    });
+    const byCell = allMembers.filter((m) => (cell === "all" || (m.memberCell || (m.gender === "female" ? "women" : "male")) === cell));
+    return smartSearchSort(
+      byCell,
+      search,
+      (m) => [
+        m.fullName,
+        m.fatherName,
+        m.memberNo,
+        m.city,
+        m.district,
+        m.localArea,
+        m.occupation,
+        m.education,
+        m.designation,
+        m.institutionName,
+        m.businessName,
+      ],
+      (m) => m.fullName || m.memberNo || "",
+    );
   }, [allMembers, search, cell]);
 
   const featured = filteredMembers.filter(m => m.isFeaturedPortal);
-  const regular = filteredMembers.filter(m => !m.isFeaturedPortal).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const regular = filteredMembers.filter(m => !m.isFeaturedPortal);
 
   const renderCard = (m: Member, isFeatured: boolean = false) => (
     <div key={m.id} style={{
@@ -71,16 +87,17 @@ export function MemberDirectory({ currentMemberId }: { currentMemberId: string }
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, paddingBottom: 14, borderBottom: "2px solid #f5f5f5", gap: 12, flexWrap: "wrap" }}>
-        <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, margin: 0 }}>Member Directory</h3>
+        {!publicHeading && <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, margin: 0 }}>Member Directory</h3>}
         
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><select value={cell} onChange={e => setCell(e.target.value as any)} style={{ border: "1px solid #ddd", borderRadius: 20, padding: "8px 12px", color: GREEN }}><option value="all">All Members</option><option value="male">Men's Cell</option><option value="women">Women's Cell</option></select><div style={{ position: "relative" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginLeft: publicHeading ? "auto" : undefined }}><select value={cell} onChange={e => setCell(e.target.value as any)} style={{ border: "1px solid #ddd", borderRadius: 20, padding: "8px 12px", color: GREEN }}><option value="all">All Members</option><option value="male">Men's Cell</option><option value="women">Women's Cell</option></select><div style={{ position: "relative" }}>
           <Search size={16} color="#aaa" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
           <input
             type="text"
-            placeholder="Search name, city, profession..."
+            placeholder="Search name or 3+ letters, city, profession..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ padding: "8px 12px 8px 34px", borderRadius: 20, border: "1px solid #ddd", fontSize: 13, width: 240, outline: "none", fontFamily: "'Lato', sans-serif" }}
+            autoComplete="off"
+            style={{ padding: "8px 12px 8px 34px", borderRadius: 20, border: "1px solid #ddd", fontSize: 13, width: 270, outline: "none", fontFamily: "'Lato', sans-serif" }}
           />
         </div></div>
       </div>
@@ -106,7 +123,6 @@ export function MemberDirectory({ currentMemberId }: { currentMemberId: string }
         )}
       </div>
 
-      {/* Profile Modal */}
       {selectedMember && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ backgroundColor: "white", borderRadius: 16, width: "100%", maxWidth: 600, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.2)" }}>
