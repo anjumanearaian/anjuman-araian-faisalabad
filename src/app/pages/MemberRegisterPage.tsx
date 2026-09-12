@@ -100,6 +100,7 @@ export function MemberRegisterPage() {
     occupation: "Agriculture", occupationDetail: "", education: "Bachelor's", educationDetail: "",
     designation: "", institutionName: "", businessName: "", memberCell: "male" as "male" | "women",
     membershipType: "ordinary" as MembershipType,
+    paymentSenderName: "", paymentMethod: "Bank Transfer", paymentReference: "",
     photoUrl: "", cnicFrontUrl: "", cnicBackUrl: "", paymentProofUrl: "", additionalPhotos: [] as string[]
   });
   const [family, setFamily] = useState<FamilyInfo>(blankFamily());
@@ -140,7 +141,7 @@ export function MemberRegisterPage() {
         body: JSON.stringify({
           data: { form, family, children, selectedReferrer },
           currentStep: step,
-          completion: Math.min(95, Math.round((meaningful / 38) * 100)),
+          completion: Math.min(95, Math.round((meaningful / 41) * 100)),
           status: "incomplete"
         })
       }).then(() => setSaveState("saved")).catch(() => setSaveState("error"));
@@ -236,6 +237,8 @@ export function MemberRegisterPage() {
       if (!form.cnicFrontUrl) errs.cnicFrontUrl = "CNIC Front image is required.";
       if (!form.cnicBackUrl) errs.cnicBackUrl = "CNIC Back image is required.";
       if (!form.paymentProofUrl) errs.paymentProofUrl = "Payment proof is required.";
+      if (form.paymentSenderName.trim().length < 2) errs.paymentSenderName = "Enter the sender/account-holder name shown on the payment slip.";
+      if (!form.paymentMethod.trim()) errs.paymentMethod = "Select the payment method.";
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -276,6 +279,9 @@ export function MemberRegisterPage() {
           membershipType: form.membershipType,
           familyInfoPublic: false,
           referrerMemberId: selectedReferrer?.id || null,
+          paymentSenderName: form.paymentSenderName,
+          paymentMethod: form.paymentMethod,
+          paymentReference: form.paymentReference,
           photoUrl: form.photoUrl,
           cnicFrontUrl: form.cnicFrontUrl,
           cnicBackUrl: form.cnicBackUrl,
@@ -300,7 +306,7 @@ export function MemberRegisterPage() {
   }
 
   if (done) {
-    return <div><PageHeader title="Registration Submitted" breadcrumb={["Home", "Member Portal", "Register"]} /><div style={{ maxWidth: 560, margin: "70px auto", padding: "0 24px", textAlign: "center" }}><div style={{ width: 78, height: 78, borderRadius: "50%", background: "#dcfce7", display: "grid", placeItems: "center", margin: "0 auto 22px" }}><CheckCircle size={38} color="#15803d" /></div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif" }}>Application Received</h2><p style={{ color: "#555", lineHeight: 1.8 }}>Your form is saved and is now pending payment verification and administrative approval. You may sign in with the same verified email to review your status.</p><Link to="/member/login" style={{ display: "inline-block", marginTop: 18, background: GREEN, color: "white", padding: "11px 24px", borderRadius: 8, textDecoration: "none", fontWeight: 700 }}>Member Login</Link></div></div>;
+    return <div><PageHeader title="Registration Submitted" breadcrumb={["Home", "Member Portal", "Register"]} /><div style={{ maxWidth: 560, margin: "70px auto", padding: "0 24px", textAlign: "center" }}><div style={{ width: 78, height: 78, borderRadius: "50%", background: "#dcfce7", display: "grid", placeItems: "center", margin: "0 auto 22px" }}><CheckCircle size={38} color="#15803d" /></div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif" }}>Application Received</h2><p style={{ color: "#555", lineHeight: 1.8 }}>Your form and payment proof have been received. The payment remains pending until Finance/Accounts matches the sender, reference and slip. It is not counted in the ledger before verification. After payment verification, the administration can complete membership approval.</p><Link to="/member/login" style={{ display: "inline-block", marginTop: 18, background: GREEN, color: "white", padding: "11px 24px", borderRadius: 8, textDecoration: "none", fontWeight: 700 }}>Member Login</Link></div></div>;
   }
 
   return (
@@ -355,9 +361,11 @@ export function MemberRegisterPage() {
             <p style={{ color: GREEN, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", marginTop: 24 }}>Emergency Contact</p><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid"><Field label="Emergency Contact Name"><input style={inputStyle} value={family.emergencyContactName} onChange={(e) => setFam("emergencyContactName", e.target.value)} /></Field><Field label="Emergency Contact Number"><input type="tel" style={inputStyle} value={family.emergencyContactNumber} onChange={(e) => setFam("emergencyContactNumber", e.target.value)} /></Field><Field label="Relationship"><select style={inputStyle} value={family.emergencyRelationship} onChange={(e) => setFam("emergencyRelationship", e.target.value)}><option value="">Select relationship…</option>{relationships.map((x) => <option key={x}>{x}</option>)}</select></Field></div>
           </div>}
 
-          {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Images are optimized automatically. PDFs must be 4 MB or smaller. Accepted: JPG, PNG, WebP or PDF." /><div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }} className="doc-grid">{[
-            { key: "photoUrl", label: "Passport Photo *" }, { key: "cnicFrontUrl", label: "CNIC Front *" }, { key: "cnicBackUrl", label: "CNIC Back *" }, { key: "paymentProofUrl", label: "Payment Proof *" }
-          ].map(({ key, label }) => <div key={key}><label style={labelStyle}>{label}</label><label style={{ display: "block", border: `2px dashed ${form[key as keyof typeof form] ? GOLD : "#d9d9d9"}`, borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", background: "#fafaf8" }}>{form[key as keyof typeof form] ? <div style={{ color: GREEN, fontSize: 12, fontWeight: 800, padding: 24 }}>✓ Uploaded</div> : <div style={{ padding: 16 }}><Upload size={22} color="#aaa" /><div style={{ color: "#999", fontSize: 11, marginTop: 5 }}>Click to upload</div></div>}<input type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={handleFile(key as keyof typeof form)} /></label>{errors[key] && <p style={{ color: "#dc2626", fontSize: 11 }}>{errors[key]}</p>}</div>)}</div><div style={{ marginTop: 22 }}><MultiImageUpload label="Additional Photos / Certificates (Optional)" images={form.additionalPhotos} onChange={(imgs) => set("additionalPhotos", imgs)} /></div><div style={{ background: "#f0f7f3", borderRadius: 10, padding: "13px 16px", marginTop: 20, color: "#555", fontSize: 12, lineHeight: 1.7 }}>By submitting, I confirm that the information is accurate and I consent to secure administrative storage of the information supplied in this form.</div></div>}
+          {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Payment stays pending until Finance/Accounts verifies the slip against the sender/reference. Pending payment is not added to the ledger." />
+            <div style={{ background: "#fff9e9", border: "1px solid #ead39a", borderRadius: 10, padding: 14, marginBottom: 18 }}><div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.2fr", gap: 12 }} className="form-grid"><Field label="Sender / Account-Holder Name *" error={errors.paymentSenderName} hint="Enter the name exactly as it appears on the bank, JazzCash, Easypaisa or other payment slip."><input style={inputStyle} value={form.paymentSenderName} onChange={(e) => set("paymentSenderName", e.target.value)} placeholder="Name shown on payment proof" /></Field><Field label="Payment Method *" error={errors.paymentMethod}><select style={inputStyle} value={form.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>Easypaisa</option><option>Cheque</option><option>Cash</option><option>Other</option></select></Field><Field label="Transaction / Reference No." hint="Enter the bank/wallet reference if available. Finance will match it with the slip."><input style={inputStyle} value={form.paymentReference} onChange={(e) => set("paymentReference", e.target.value)} /></Field></div></div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }} className="doc-grid">{[
+              { key: "photoUrl", label: "Passport Photo *" }, { key: "cnicFrontUrl", label: "CNIC Front *" }, { key: "cnicBackUrl", label: "CNIC Back *" }, { key: "paymentProofUrl", label: "Payment Proof *" }
+            ].map(({ key, label }) => <div key={key}><label style={labelStyle}>{label}</label><label style={{ display: "block", border: `2px dashed ${form[key as keyof typeof form] ? GOLD : "#d9d9d9"}`, borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", background: "#fafaf8" }}>{form[key as keyof typeof form] ? <div style={{ color: GREEN, fontSize: 12, fontWeight: 800, padding: 24 }}>✓ Uploaded</div> : <div style={{ padding: 16 }}><Upload size={22} color="#aaa" /><div style={{ color: "#999", fontSize: 11, marginTop: 5 }}>Click to upload</div></div>}<input type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={handleFile(key as keyof typeof form)} /></label>{errors[key] && <p style={{ color: "#dc2626", fontSize: 11 }}>{errors[key]}</p>}</div>)}</div><div style={{ marginTop: 22 }}><MultiImageUpload label="Additional Photos / Certificates / Relevant Documents (Optional)" images={form.additionalPhotos} onChange={(imgs) => set("additionalPhotos", imgs)} /></div><div style={{ background: "#f0f7f3", borderRadius: 10, padding: "13px 16px", marginTop: 20, color: "#555", fontSize: 12, lineHeight: 1.7 }}>By submitting, I confirm that the information is accurate. Payment proof will first enter the Finance Verification Queue. It will not count as paid and will not affect the accounting ledger until an authorized finance reviewer approves it.</div></div>}
 
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 30, paddingTop: 22, borderTop: "1px solid #f0f0f0", alignItems: "center" }}><div>{step > 0 && <button onClick={back} style={{ background: "#f5f5f5", border: 0, borderRadius: 8, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>← Back</button>}</div><div style={{ display: "flex", gap: 12, alignItems: "center" }}><span style={{ color: "#aaa", fontSize: 12 }}>Step {step + 1} of {steps.length}</span>{step < steps.length - 1 ? <button onClick={next} style={{ background: GREEN, color: "white", border: 0, borderRadius: 8, padding: "10px 26px", fontWeight: 800, cursor: "pointer" }}>Next →</button> : <button onClick={submit} disabled={loading} style={{ background: loading ? "#e5e7eb" : GOLD, color: loading ? "#999" : "#1a1a1a", border: 0, borderRadius: 8, padding: "10px 26px", fontWeight: 800, cursor: loading ? "wait" : "pointer" }}>{loading ? "Submitting..." : "Submit Application"}</button>}</div></div>
         </div>
