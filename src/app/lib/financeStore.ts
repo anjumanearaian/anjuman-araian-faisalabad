@@ -63,6 +63,17 @@ export interface FinanceLedgerRow {
   transactionDate: string;
 }
 
+export interface FinanceAuditRow {
+  id: string;
+  transactionId?: string | null;
+  action: string;
+  actorAdminId?: string | null;
+  actorName?: string | null;
+  beforeData?: Record<string, unknown> | null;
+  afterData?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 export interface FinanceTransactionInput {
   type: "revenue" | "expense" | "adjustment";
   direction?: "credit" | "debit";
@@ -80,16 +91,20 @@ export interface FinanceTransactionInput {
   handledByAssignmentId?: string | null;
 }
 
+export type FinanceLedgerView = "active" | "archived" | "all";
+
 export const fetchFinanceMembers = () => apiClient<FinanceMember[]>("/finance/members");
 export const fetchFinanceOfficers = () => apiClient<FinanceOfficer[]>("/finance/officers");
 export const fetchFinanceHeads = (kind = "all") => apiClient<FinanceHead[]>(`/finance/heads?kind=${encodeURIComponent(kind)}`);
 export const createFinanceHead = (data: Pick<FinanceHead, "name" | "kind"> & { defaultAmount?: number | null; notes?: string | null; displayOrder?: number }) => apiClient<FinanceHead>("/finance/heads", { method: "POST", body: JSON.stringify(data) });
 export const updateFinanceHead = (id: string, data: Partial<FinanceHead>) => apiClient<FinanceHead>(`/finance/heads/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const fetchFinanceSummary = () => apiClient<FinanceSummary>("/finance/summary");
-export const fetchFinanceLedger = (q = "", type = "all") => apiClient<FinanceLedgerRow[]>(`/finance/ledger?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`);
+export const fetchFinanceLedger = (q = "", type = "all", view: FinanceLedgerView = "active") => apiClient<FinanceLedgerRow[]>(`/finance/ledger?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&view=${encodeURIComponent(view)}`);
 export const createFinanceTransaction = (data: FinanceTransactionInput) => apiClient<FinanceLedgerRow>("/finance/transactions", { method: "POST", body: JSON.stringify(data) });
 export const updateFinanceTransaction = (id: string, data: FinanceTransactionInput) => apiClient<FinanceLedgerRow>(`/finance/transactions/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const voidFinanceTransaction = (id: string, reason: string) => apiClient<FinanceLedgerRow>(`/finance/transactions/${id}/void`, { method: "PATCH", body: JSON.stringify({ reason }) });
+export const restoreFinanceTransaction = (id: string, reason: string) => apiClient<FinanceLedgerRow>(`/finance/transactions/${id}/restore`, { method: "PATCH", body: JSON.stringify({ reason }) });
+export const fetchFinanceAudit = (id: string) => apiClient<FinanceAuditRow[]>(`/finance/transactions/${id}/audit`);
 
 export function financeReceiptUrl(id: string) {
   const encodedPath = ["finance", "transactions", id, "receipt.pdf"].map(encodeURIComponent).join("__");
