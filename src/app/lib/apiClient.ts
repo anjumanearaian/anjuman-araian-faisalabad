@@ -38,11 +38,17 @@ function expireAdminSession() {
 
 function needsNestedProxy(endpoint: string) {
   const pathname = endpoint.split("?")[0];
+
+  // These routes have dedicated Vercel functions because they perform safe
+  // post-submit synchronization (including payment-proof queue creation) after
+  // the Express handler succeeds. They must not be routed through the generic
+  // catch-all proxy or that finalization step would be skipped.
+  if (["/members/register", "/businesses/submit", "/matrimonial/submit"].includes(pathname)) return false;
+
   // Vercel can resolve the single-segment API handlers directly, but nested
   // Express routes are not reliably matched as filesystem functions. Send every
-  // multi-segment route through the catch-all proxy so forms, business submit,
-  // matrimonial submit, admin form lists and other nested endpoints behave the
-  // same on production, preview deployments and the future custom domain.
+  // other multi-segment route through the catch-all proxy so forms, admin lists
+  // and other nested endpoints behave consistently.
   return pathname.split("/").filter(Boolean).length > 1;
 }
 
