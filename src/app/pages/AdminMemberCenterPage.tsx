@@ -3,10 +3,14 @@ import { Link } from "react-router";
 import { useAdmin } from "../context/AdminContext";
 import {
   Member,
+  MemberAuditRow,
   MemberStatus,
   createAdminMember,
   deleteMember,
   fetchAdminMembers,
+  fetchArchivedMembers,
+  fetchMemberAudit,
+  restoreMember,
   updateMember,
   updateMemberStatus,
   educationLevels,
@@ -20,13 +24,13 @@ import {
   structuredOptionForEdit,
   joinStructuredOption,
 } from "../lib/memberStore";
+import { smartSearchSort } from "../lib/searchUtils";
 import { citiesForProvince, districtForCity } from "../lib/pakistanLocations";
 import { adminReviewMatchRequest, fetchAdminMatchRequests } from "../lib/matrimonialStore";
-import { fetchFinanceLedger, FinanceLedgerRow } from "../lib/financeStore";
 import { printMemberFormV2 } from "../lib/memberPrint";
 import { MemberDataExportPanel } from "../components/admin/MemberDataExportPanel";
 import logo from "../../imports/logo.png";
-import { ArrowLeft, CheckCircle, Heart, MessageCircle, Plus, Printer, RefreshCw, Search, ShieldCheck, Trash2, UserCog, Users, Crown } from "lucide-react";
+import { Archive, ArrowLeft, CheckCircle, Crown, Heart, History, Lock, MessageCircle, Plus, Printer, RefreshCw, RotateCcw, Search, ShieldCheck, UserCog, Users, X } from "lucide-react";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
@@ -45,13 +49,6 @@ function membershipTypeLabel(value?: string | null) {
   return MEMBERSHIP_LABELS[key] || (value ? String(value) : "Not specified");
 }
 
-function membershipStandardFee(value?: string | null) {
-  const key = String(value || "").trim().toLowerCase();
-  if (["ordinary", "annual"].includes(key)) return 1000;
-  if (["life", "lifetime"].includes(key)) return 3000;
-  return null;
-}
-
 const blankMember = () => ({
   formNo: "", memberNo: "", fullName: "", fatherName: "", cnic: "", dob: "", gender: "male", bloodGroup: "",
   email: "", phone: "", whatsapp: "", address: "", localArea: "", city: "Faisalabad", district: "Faisalabad", province: "Punjab",
@@ -61,25 +58,38 @@ const blankMember = () => ({
 });
 
 export function AdminMemberCenterPage() {
-  const { isAdmin } = useAdmin();
+  const { isAdmin, role } = useAdmin();
+  const isSuperAdmin = role === "super_admin";
   const [members, setMembers] = useState<Member[]>([]);
+  const [archivedMembers, setArchivedMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | MemberStatus>("all");
-  const [view, setView] = useState<"members" | "matches">("members");
+  const [view, setView] = useState<"members" | "archived" | "matches">("members");
   const [selected, setSelected] = useState<Member | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Record<string, any>>(blankMember());
   const [saving, setSaving] = useState(false);
   const [matchRequests, setMatchRequests] = useState<any[]>([]);
+  const [auditFor, setAuditFor] = useState<Member | null>(null);
+  const [auditRows, setAuditRows] = useState<MemberAuditRow[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const loadMembers = async () => {
     if (!isAdmin) return;
     setLoading(true); setError("");
     try { setMembers(await fetchAdminMembers()); }
     catch (e: any) { setError(e?.message || "Could not load members."); }
+    finally { setLoading(false); }
+  };
+
+  const loadArchived = async () => {
+    if (!isSuperAdmin) return;
+    setLoading(true); setError("");
+    try { setArchivedMembers(await fetchArchivedMembers()); }
+    catch (e: any) { setError(e?.message || "Could not load archived members."); }
     finally { setLoading(false); }
   };
 
@@ -92,16 +102,24 @@ export function AdminMemberCenterPage() {
   };
 
   useEffect(() => { void loadMembers(); }, [isAdmin]);
-  useEffect(() => { if (view === "matches") void loadMatches(); }, [view, isAdmin]);
+  useEffect(() => { if (view === "matches") void loadMatches(); if (view === "archived") void loadArchived(); }, [view, isAdmin, isSuperAdmin]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return members.filter((m) => {
-      const statusOk = statusFilter === "all" || m.status === statusFilter;
-      const text = [m.formNo, m.memberNo, m.fullName, m.fatherName, m.cnic, m.phone, m.whatsapp, m.email, m.city, m.district, m.localArea].filter(Boolean).join(" ").toLowerCase();
-      return statusOk && (!q || text.includes(q));
-    });
+    const base = members.filter((m) => statusFilter === "all" || m.status === statusFilter);
+    return smartSearchSort(
+      base,
+      search,
+      (m) => [m.formNo, m.memberNo, m.fullName, m.fatherName, m.cnic, m.phone, m.whatsapp, m.email, m.city, m.district, m.localArea, m.occupation, m.designation, m.institutionName],
+      (m) => m.fullName,
+    );
   }, [members, search, statusFilter]);
+
+  const filteredArchived = useMemo(() => smartSearchSort(
+    archivedMembers,
+    search,
+    (m) => [m.formNo, m.memberNo, m.fullName, m.fatherName, m.cnic, m.phone, m.email, m.city, m.archiveReason, m.archivedByName],
+    (m) => m.fullName,
+  ), [archivedMembers, search]);
 
   const startAdd = () => { setSelected(null); setForm(blankMember()); setShowForm(true); setMessage(""); setError(""); };
   const startEdit = (m: Member) => {
@@ -143,7 +161,7 @@ export function AdminMemberCenterPage() {
       if (selected) {
         await updateMember(selected.id, payload as any);
         if (form.status && form.status !== selected.status) await updateMemberStatus(selected.id, form.status, undefined, form.adminNote);
-        setMessage("Member record updated successfully.");
+        setMessage("Member record updated successfully. Changes are retained in the member audit trail.");
       } else {
         await createAdminMember({ ...payload, status: form.status });
         setMessage("Member added successfully. Blank form/registration numbers were generated automatically.");
@@ -154,7 +172,7 @@ export function AdminMemberCenterPage() {
   };
 
   const approve = async (m: Member) => {
-    if (!confirm(`Confirm that the membership fee for ${m.fullName} has been received. The system will mark payment verified and approve this member now.`)) return;
+    if (!confirm(`Approve ${m.fullName}? Payment must already be Received, Verified or Recorded.`)) return;
     try { await updateMemberStatus(m.id, "approved", undefined, m.adminNote); setMessage(`${m.fullName} approved.`); await loadMembers(); }
     catch (e: any) { setError(e?.message || "Approval failed."); }
   };
@@ -173,11 +191,21 @@ export function AdminMemberCenterPage() {
     catch (e: any) { setError(e?.message || "Status update failed."); }
   };
 
-  const removeMember = async (m: Member) => {
-    if (!confirm(`Permanently delete ${m.fullName} (${m.memberNo})? This cannot be undone.`)) return;
-    if (!confirm("Final confirmation: permanently delete this member record and linked family/children data?")) return;
-    try { await deleteMember(m.id); setMessage(`${m.fullName} deleted.`); await loadMembers(); }
-    catch (e: any) { setError(e?.message || "Delete failed."); }
+  const archiveMember = async (m: Member) => {
+    if (!isSuperAdmin) { setError("Only Super Admin can archive a member record."); return; }
+    if (!confirm(`Archive ${m.fullName} (${m.memberNo})? It will disappear from the active registry but no data or files will be deleted.`)) return;
+    const reason = prompt("Archive reason (required):", "Archived after administrative review");
+    if (!reason || reason.trim().length < 3) return;
+    try { await deleteMember(m.id, reason.trim()); setMessage(`${m.fullName} archived. The record is preserved and can be restored.`); await loadMembers(); }
+    catch (e: any) { setError(e?.message || "Archive failed."); }
+  };
+
+  const restoreArchived = async (m: Member) => {
+    if (!isSuperAdmin) return;
+    const reason = prompt(`Restore ${m.fullName} to the active registry?`, "Restored after Super Admin review");
+    if (!reason || reason.trim().length < 3) return;
+    try { await restoreMember(m.id, reason.trim()); setMessage(`${m.fullName} restored to the active registry.`); await Promise.all([loadMembers(), loadArchived()]); }
+    catch (e: any) { setError(e?.message || "Restore failed."); }
   };
 
   const quickUpdate = async (m: Member, partial: Record<string, any>) => {
@@ -191,6 +219,14 @@ export function AdminMemberCenterPage() {
     catch (e: any) { setError(e?.message || "Could not update match request."); }
   };
 
+  const openAudit = async (m: Member) => {
+    if (!isSuperAdmin) return;
+    setAuditFor(m); setAuditRows([]); setAuditLoading(true); setError("");
+    try { setAuditRows(await fetchMemberAudit(m.id)); }
+    catch (e: any) { setError(e?.message || "Member audit history could not be loaded."); }
+    finally { setAuditLoading(false); }
+  };
+
   if (!isAdmin) {
     return <div style={{ minHeight: "100vh", background: "#f8f5ef", display: "grid", placeItems: "center", padding: 24 }}><div style={{ background: "white", maxWidth: 520, padding: 34, borderRadius: 14, boxShadow: "0 8px 35px rgba(0,0,0,.08)", textAlign: "center" }}><ShieldCheck size={38} color={GREEN} /><h2 style={{ color: GREEN }}>Admin authorization required</h2><p style={{ color: "#666", lineHeight: 1.7 }}>Sign in from the main Admin Panel first, then open the Member & Approval Center.</p><Link to="/admin" style={{ display: "inline-block", background: GREEN, color: "white", padding: "10px 18px", borderRadius: 8, textDecoration: "none", fontWeight: 700 }}>Open Admin Panel</Link></div></div>;
   }
@@ -199,14 +235,15 @@ export function AdminMemberCenterPage() {
     <div style={{ minHeight: "100vh", background: "#f8f5ef", fontFamily: "'Lato', sans-serif" }}>
       <header style={{ background: GREEN, color: "white", borderBottom: `4px solid ${GOLD}` }}><div style={{ maxWidth: 1240, margin: "0 auto", padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}><div style={{ display: "flex", alignItems: "center", gap: 14 }}><img src={logo} alt="Anjuman e Araian" style={{ width: 52, height: 52, objectFit: "contain", background: "white", borderRadius: 50, padding: 3 }} /><div><h1 style={{ margin: 0, fontFamily: "'Playfair Display', serif", fontSize: 23 }}>Member & Approval Center</h1><p style={{ margin: "4px 0 0", color: "rgba(255,255,255,.72)", fontSize: 12 }}>Anjuman-e-Araian Faisalabad</p></div></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link to="/admin/operations" style={{ color: "white", textDecoration: "none", border: `1px solid ${GOLD}`, padding: "8px 12px", borderRadius: 7, fontWeight: 700, fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}><Crown size={14} /> Governance & Operations</Link><Link to="/admin" style={{ color: "white", textDecoration: "none", border: "1px solid rgba(255,255,255,.25)", padding: "8px 12px", borderRadius: 7, fontWeight: 700, fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}><ArrowLeft size={14} /> Main Admin Panel</Link></div></div></header>
       <main style={{ maxWidth: 1240, margin: "0 auto", padding: "26px 22px 60px" }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}><button onClick={() => setView("members")} style={tabButton(view === "members")}><Users size={15} /> Members & Approvals</button><button onClick={() => setView("matches")} style={tabButton(view === "matches")}><Heart size={15} /> Matrimonial Match Requests</button></div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}><button onClick={() => { setView("members"); setSearch(""); }} style={tabButton(view === "members")}><Users size={15} /> Members & Approvals</button>{isSuperAdmin&&<button onClick={() => { setView("archived"); setSearch(""); }} style={tabButton(view === "archived")}><Archive size={15} /> Archived Members</button>}<button onClick={() => { setView("matches"); setSearch(""); }} style={tabButton(view === "matches")}><Heart size={15} /> Matrimonial Match Requests</button></div>
         {message && <Notice success text={message} />}{error && <Notice text={error} />}
 
         {view === "members" && <>
-          <section style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 20 }} className="stats-grid"><Stat label="Total" value={members.length} /><Stat label="Pending" value={members.filter((m) => m.status === "pending").length} /><Stat label="Approved" value={members.filter((m) => m.status === "approved").length} /><Stat label="Suspended" value={members.filter((m) => m.status === "suspended").length} /><Stat label="Payment Pending" value={members.filter((m) => !["received", "verified", "recorded"].includes(String(m.paymentStatus || ""))).length} /></section>
+          <div style={{ padding: "10px 13px", border: "1px solid #d7e2da", background: "#f2f8f4", borderRadius: 8, marginBottom: 14, color: "#526059", fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}><Lock size={15} color={GREEN}/><span><b>Record protection:</b> member records are never physically deleted. Only Super Admin can archive them, and every create/update/archive/restore is retained in the permanent audit trail.</span></div>
+          <section style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 20 }} className="stats-grid"><Stat label="Total Active" value={members.length} /><Stat label="Pending" value={members.filter((m) => m.status === "pending").length} /><Stat label="Approved" value={members.filter((m) => m.status === "approved").length} /><Stat label="Suspended" value={members.filter((m) => m.status === "suspended").length} /><Stat label="Payment Pending" value={members.filter((m) => !["received", "verified", "recorded"].includes(String(m.paymentStatus || ""))).length} /></section>
           <section style={panelStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0, fontSize: 20 }}>Member Registry</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Approve, edit, suspend, print, publish or delete from one screen.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button onClick={() => void loadMembers()} style={secondaryButton}><RefreshCw size={14} /> Refresh</button><MemberDataExportPanel members={members} /><button onClick={startAdd} style={primaryButton}><Plus size={14} /> Add Member</button></div></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.5fr .7fr", gap: 10, marginBottom: 16 }} className="filter-grid"><div style={{ position: "relative" }}><Search size={16} color="#999" style={{ position: "absolute", left: 12, top: 11 }} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, CNIC, phone, city, Form No. or Registration No." style={{ ...fieldStyle, paddingLeft: 36 }} /></div><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={fieldStyle}><option value="all">All Statuses</option>{["pending","approved","rejected","inactive","suspended","deceased"].map((x) => <option key={x} value={x}>{x}</option>)}</select></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0, fontSize: 20 }}>Member Registry</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Smart partial/fuzzy search. Approve, edit, suspend, print and publish from one protected registry.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button onClick={() => void loadMembers()} style={secondaryButton}><RefreshCw size={14} /> Refresh</button><MemberDataExportPanel members={members} /><button onClick={startAdd} style={primaryButton}><Plus size={14} /> Add Member</button></div></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1.5fr .7fr", gap: 10, marginBottom: 16 }} className="filter-grid"><div style={{ position: "relative" }}><Search size={16} color="#999" style={{ position: "absolute", left: 12, top: 11 }} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Type Atif, Mun, Khalid, Shouq Khalid, CNIC, phone, member no..." style={{ ...fieldStyle, paddingLeft: 36 }} /></div><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={fieldStyle}><option value="all">All Statuses</option>{["pending","approved","rejected","inactive","suspended","deceased"].map((x) => <option key={x} value={x}>{x}</option>)}</select></div>
             <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1120 }}><thead><tr style={{ background: "#f8f5ef" }}>{["Form / Registration", "Member", "Location", "Status", "Payment", "Publishing", "Actions"].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{filtered.map((m) => <tr key={m.id} style={{ borderBottom: "1px solid #eee" }}>
               <td style={tdStyle}><strong style={{ color: GREEN }}>{m.formNo || "Auto pending"}</strong><br /><span style={{ fontSize: 11, color: "#777" }}>{m.memberNo}</span></td>
               <td style={tdStyle}><div style={{ display: "flex", gap: 9, alignItems: "center" }}>{m.photoUrl ? <img src={m.photoUrl} alt="" style={{ width: 38, height: 38, borderRadius: 50, objectFit: "cover" }} /> : <div style={{ width: 38, height: 38, borderRadius: 50, background: "#f0f7f3", display: "grid", placeItems: "center", color: GREEN, fontWeight: 800 }}>{m.fullName?.[0]}</div>}<div><strong>{m.fullName}</strong><div style={{ fontSize: 11, color: "#888" }}>{m.cnic}</div></div></div></td>
@@ -214,8 +251,8 @@ export function AdminMemberCenterPage() {
               <td style={tdStyle}><StatusBadge status={m.status} /></td>
               <td style={tdStyle}><select value={m.paymentStatus || "pending"} onChange={(e) => void quickUpdate(m, { paymentStatus: e.target.value })} style={{ ...miniSelect, minWidth: 100 }}>{["pending","submitted","received","verified","recorded","rejected"].map((x) => <option key={x} value={x}>{x}</option>)}</select></td>
               <td style={tdStyle}><label style={checkLabel}><input type="checkbox" checked={Boolean(m.showOnPortal)} onChange={(e) => void quickUpdate(m, { showOnPortal: e.target.checked })} /> Portal</label><label style={checkLabel}><input type="checkbox" checked={Boolean(m.showOnWeb)} onChange={(e) => void quickUpdate(m, { showOnWeb: e.target.checked })} /> Web</label></td>
-              <td style={tdStyle}><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button onClick={() => startEdit(m)} style={tinyButton}>Edit</button>{m.status !== "approved" && <button onClick={() => void approve(m)} style={{ ...tinyButton, color: "#166534", borderColor: "#86efac" }}>Approve</button>}{m.status !== "rejected" && <button onClick={() => void reject(m)} style={{ ...tinyButton, color: "#b91c1c", borderColor: "#fecaca" }}>Reject</button>}<button onClick={() => void toggleSuspend(m)} style={tinyButton}>{m.status === "suspended" ? "Reactivate" : "Suspend"}</button><button onClick={() => void printMemberFormV2(m)} style={tinyButton}><Printer size={12} /> A4 Membership + Office Copy</button><button onClick={() => shareWhatsApp(m)} style={tinyButton}><MessageCircle size={12} /> WhatsApp</button><button onClick={() => void removeMember(m)} style={{ ...tinyButton, color: "#b91c1c", borderColor: "#fecaca" }}><Trash2 size={12} /> Delete</button></div></td>
-            </tr>)}</tbody></table>{!loading && filtered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#999" }}>No members match this filter.</div>}{loading && <div style={{ padding: 40, textAlign: "center", color: "#777" }}>Loading member registry...</div>}</div>
+              <td style={tdStyle}><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button onClick={() => startEdit(m)} style={tinyButton}>Edit</button>{m.status !== "approved" && <button onClick={() => void approve(m)} style={{ ...tinyButton, color: "#166534", borderColor: "#86efac" }}>Approve</button>}{m.status !== "rejected" && <button onClick={() => void reject(m)} style={{ ...tinyButton, color: "#b91c1c", borderColor: "#fecaca" }}>Reject</button>}<button onClick={() => void toggleSuspend(m)} style={tinyButton}>{m.status === "suspended" ? "Reactivate" : "Suspend"}</button><button onClick={() => void printMemberFormV2(m)} style={tinyButton}><Printer size={12} /> A4 Form</button><button onClick={() => shareWhatsApp(m)} style={tinyButton}><MessageCircle size={12} /> WhatsApp</button>{isSuperAdmin&&<button onClick={() => void openAudit(m)} style={tinyButton}><History size={12}/> Audit</button>}{isSuperAdmin?<button onClick={() => void archiveMember(m)} style={{ ...tinyButton, color: "#9b2c2c", borderColor: "#e7b8b8" }}><Archive size={12} /> Archive</button>:<span style={{...tinyButton,cursor:"default",color:"#777",background:"#f6f6f6"}}><Lock size={11}/> Locked</span>}</div></td>
+            </tr>)}</tbody></table>{!loading && filtered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#999" }}>No members match this search/filter.</div>}{loading && <div style={{ padding: 40, textAlign: "center", color: "#777" }}>Loading member registry...</div>}</div>
           </section>
           <section style={{ ...panelStyle, marginTop: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}><Crown size={18} color={GOLD} /><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0, fontSize: 19 }}>Governance & Role Assignments</h2></div>
@@ -224,12 +261,23 @@ export function AdminMemberCenterPage() {
           </section>
         </>}
 
+        {view === "archived" && isSuperAdmin && <section style={panelStyle}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0 }}>Archived Member Records</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Hidden from active lists and public/member directories. Nothing is physically deleted. Super Admin can restore at any time.</p></div><button onClick={() => void loadArchived()} style={secondaryButton}><RefreshCw size={14}/> Refresh</button></div>
+          <div style={{ position:"relative", marginBottom:12 }}><Search size={16} color="#999" style={{ position:"absolute",left:12,top:11 }}/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search archived name, member no., CNIC, reason..." style={{...fieldStyle,paddingLeft:36}}/></div>
+          <div style={{ overflowX:"auto" }}><table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}><thead><tr style={{background:"#f8f5ef"}}>{["Member","Registration","Archived On","Archived By / Reason","Action"].map((h)=><th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{filteredArchived.map((m)=><tr key={m.id} style={{borderTop:"1px solid #eee"}}><td style={tdStyle}><strong>{m.fullName}</strong><div style={{fontSize:10,color:"#888"}}>{m.cnic}</div></td><td style={tdStyle}>{m.memberNo}</td><td style={tdStyle}>{m.archivedAt?new Date(m.archivedAt).toLocaleString("en-GB"):"—"}</td><td style={tdStyle}>{m.archivedByName||"Super Admin"}<div style={{fontSize:10,color:"#888",maxWidth:340}}>{m.archiveReason||"—"}</div></td><td style={tdStyle}><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><button onClick={()=>void openAudit(m)} style={tinyButton}><History size={12}/> Audit</button><button onClick={()=>void restoreArchived(m)} style={{...tinyButton,color:"#166534",borderColor:"#86efac"}}><RotateCcw size={12}/> Restore</button></div></td></tr>)}{!loading&&!filteredArchived.length&&<tr><td colSpan={5} style={{padding:35,textAlign:"center",color:"#888"}}>No archived members found.</td></tr>}</tbody></table></div>
+        </section>}
+
         {view === "matches" && <section style={panelStyle}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, margin: 0 }}>Matrimonial Match Requests</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Admin reviews first; target consent is required before contact release.</p></div><button onClick={() => void loadMatches()} style={secondaryButton}><RefreshCw size={14} /> Refresh</button></div><div style={{ display: "grid", gap: 12 }}>{matchRequests.map((r) => <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 16, display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center" }}><div><div style={{ color: GREEN, fontWeight: 800 }}>{r.requester?.profileCode} → {r.target?.profileCode}</div><div style={{ color: "#666", fontSize: 12, marginTop: 4 }}>{r.requester?.gender} · {r.requester?.age} · {r.requester?.city} · {r.requester?.education} · {r.requester?.profession}</div><div style={{ marginTop: 6 }}><StatusBadge status={r.status} /></div></div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{r.status === "pending_admin" && <><button onClick={() => void reviewMatch(r.id, "forward")} style={{ ...tinyButton, color: "#166534", borderColor: "#86efac" }}>Forward for Consent</button><button onClick={() => void reviewMatch(r.id, "reject")} style={{ ...tinyButton, color: "#b91c1c", borderColor: "#fecaca" }}>Reject</button></>}{["accepted","declined","rejected"].includes(r.status) && <button onClick={() => void reviewMatch(r.id, "close")} style={tinyButton}>Close</button>}</div></div>)}</div>{!loading && matchRequests.length === 0 && <div style={{ padding: 42, textAlign: "center", color: "#999" }}>No match requests yet.</div>}</section>}
       </main>
       {showForm && <MemberFormModal form={form} setForm={setForm} selected={selected} allMembers={members} saving={saving} onClose={() => setShowForm(false)} onSave={() => void saveMember()} />}
-      <style>{`@media(max-width:900px){.stats-grid{grid-template-columns:1fr 1fr!important}.filter-grid,.assign-grid,.modal-grid,.child-grid{grid-template-columns:1fr!important}} @media(max-width:560px){.stats-grid{grid-template-columns:1fr!important}}`}</style>
+      {auditFor&&<AuditModal member={auditFor} rows={auditRows} loading={auditLoading} onClose={()=>{setAuditFor(null);setAuditRows([]);}}/>}
+      <style>{`@media(max-width:900px){.stats-grid{grid-template-columns:1fr 1fr!important}.filter-grid,.modal-grid,.child-grid{grid-template-columns:1fr!important}} @media(max-width:560px){.stats-grid{grid-template-columns:1fr!important}}`}</style>
     </div>
   );
+}
+
+function AuditModal({ member, rows, loading, onClose }: { member: Member; rows: MemberAuditRow[]; loading: boolean; onClose: () => void }) {
+  return <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,.55)",display:"grid",placeItems:"center",padding:16}}><div style={{width:"min(760px,96vw)",maxHeight:"88vh",overflow:"auto",background:"white",borderRadius:14,boxShadow:"0 24px 80px rgba(0,0,0,.28)"}}><div style={{padding:"17px 20px",borderBottom:"1px solid #eee",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}><div><h3 style={{margin:0,color:GREEN,fontFamily:"'Playfair Display', serif"}}>Member Audit History</h3><div style={{fontSize:11,color:"#777",marginTop:3}}>{member.fullName} · {member.memberNo}</div></div><button onClick={onClose} style={{border:0,background:"transparent",cursor:"pointer",color:"#777"}}><X size={20}/></button></div><div style={{padding:18}}>{loading?<div style={{padding:25,textAlign:"center",color:"#777"}}>Loading audit history...</div>:rows.length?<div style={{display:"grid",gap:9}}>{rows.map((r)=><div key={r.id} style={{border:"1px solid #e5e7eb",borderRadius:9,padding:"10px 12px"}}><div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><strong style={{color:GREEN,textTransform:"capitalize"}}>{r.action.replace(/_/g," ")}</strong><span style={{fontSize:10,color:"#888"}}>{new Date(r.createdAt).toLocaleString("en-GB")}</span></div><div style={{fontSize:11,color:"#666",marginTop:4}}>{r.actorName?`By: ${r.actorName}${r.actorRole?` · ${r.actorRole.replace(/_/g," ")}`:""}`:"System audit"}{r.reason?` · ${r.reason}`:""}</div></div>)}</div>:<div style={{padding:25,textAlign:"center",color:"#888"}}>No audit events found.</div>}</div></div></div>;
 }
 
 function MemberFormModal({ form, setForm, selected, allMembers, saving, onClose, onSave }: { form: Record<string, any>; setForm: (v: any) => void; selected: Member | null; allMembers: Member[]; saving: boolean; onClose: () => void; onSave: () => void }) {
@@ -247,7 +295,7 @@ function MemberFormModal({ form, setForm, selected, allMembers, saving, onClose,
       <FormSection title="Personal Information"><Grid><Field label="Full Name *" value={form.fullName} onChange={(v) => set("fullName", v)} /><Field label="Father's Name *" value={form.fatherName} onChange={(v) => set("fatherName", v)} /><Field label="CNIC *" value={form.cnic} onChange={(v) => set("cnic", v)} /><Field label="Date of Birth" type="date" value={form.dob} onChange={(v) => set("dob", v)} /><SelectField label="Gender" value={form.gender} onChange={(v) => set("gender", v)} options={["male","female","other"]} /><SelectField label="Blood Group" value={form.bloodGroup} onChange={(v) => set("bloodGroup", v)} options={["", ...bloodGroups]} /></Grid></FormSection>
       <FormSection title="Contact & Location"><Grid><Field label="Email" type="email" value={form.email} onChange={(v) => set("email", v)} /><Field label="Phone *" value={form.phone} onChange={(v) => set("phone", v)} /><Field label="WhatsApp" value={form.whatsapp} onChange={(v) => set("whatsapp", v)} /><SelectField label="Province / Region" value={form.province} onChange={onProvince} options={provinces} /><label style={labelWrap}>City / Town<input list="admin-province-cities" value={form.city || ""} onChange={(e) => onCity(e.target.value)} style={fieldStyle} /><datalist id="admin-province-cities">{provinceCities.map((x) => <option key={x} value={x} />)}</datalist></label><Field label="Local Area / Tehsil / Village" value={form.localArea} onChange={(v) => set("localArea", v)} /><div style={{ gridColumn: "span 2" }}><Field label="Full Address" value={form.address} onChange={(v) => set("address", v)} /></div></Grid></FormSection>
       <FormSection title="Education & Work"><Grid><SelectField label="Education Level" value={form.education} onChange={(v) => set("education", v)} options={educationLevels} /><Field label="Specialization / Degree" value={form.educationDetail} onChange={(v) => set("educationDetail", v)} /><SelectField label="Occupation" value={form.occupation} onChange={(v) => set("occupation", v)} options={occupations} /><Field label="Occupation Field / Specialty" value={form.occupationDetail} onChange={(v) => set("occupationDetail", v)} /><Field label="Designation / Role" value={form.designation} onChange={(v) => set("designation", v)} /><Field label="Institute / Organization" value={form.institutionName} onChange={(v) => set("institutionName", v)} /><div style={{ gridColumn: "span 2" }}><Field label="Business Name" value={form.businessName} onChange={(v) => set("businessName", v)} /></div></Grid></FormSection>
-      <FormSection title="Referral"><Grid><label style={labelWrap}>Existing Member Referrer<select value={form.referrerMemberId || ""} onChange={(e) => set("referrerMemberId", e.target.value)} style={fieldStyle}><option value="">No referrer / optional</option>{allMembers.filter((m) => m.status === "approved" && m.id !== selected?.id).map((m) => <option key={m.id} value={m.id}>{m.fullName} · {m.memberNo}</option>)}</select></label><SelectField label="Referral Status" value={form.referralStatus || "not_provided"} onChange={(v) => set("referralStatus", v)} options={["not_provided","pending","confirmed","rejected"]} /></Grid></FormSection>
+      <FormSection title="Referral"><Grid><label style={labelWrap}>Existing Member Referrer<select value={form.referrerMemberId || ""} onChange={(e) => set("referrerMemberId", e.target.value)} style={fieldStyle}><option value="">No referrer / optional</option>{allMembers.filter((m) => m.status === "approved" && m.id !== selected?.id).sort((a,b)=>a.fullName.localeCompare(b.fullName)).map((m) => <option key={m.id} value={m.id}>{m.fullName} · {m.memberNo}</option>)}</select></label><SelectField label="Referral Status" value={form.referralStatus || "not_provided"} onChange={(v) => set("referralStatus", v)} options={["not_provided","pending","confirmed","rejected"]} /></Grid></FormSection>
       <FormSection title="Family / Biradari (Private)"><Grid><Field label="Spouse Name" value={form.familyInfo?.spouseName || ""} onChange={(v) => setFamily("spouseName", v)} /><label style={labelWrap}>Number of Children<select value={String(form.children?.length || 0)} onChange={(e) => setChildCount(e.target.value)} style={fieldStyle}>{Array.from({ length: 21 }, (_, i) => <option key={i} value={i}>{i}</option>)}</select></label><Field label="Araian Family Branch / Biradari" value={form.familyInfo?.familyBranch || ""} onChange={(v) => setFamily("familyBranch", v)} /><label style={labelWrap}>Caste / Biradari<input list="admin-castes" value={form.familyInfo?.caste || ""} onChange={(e) => setFamily("caste", e.target.value)} style={fieldStyle} /><datalist id="admin-castes">{casteBiradariSuggestions.map((x) => <option key={x} value={x} />)}</datalist></label><label style={labelWrap}>Religious Affiliation / Maslak<input list="admin-sects" value={form.familyInfo?.religiousSect || ""} onChange={(e) => setFamily("religiousSect", e.target.value)} style={fieldStyle} /><datalist id="admin-sects">{religiousSectSuggestions.map((x) => <option key={x} value={x} />)}</datalist></label><Field label="Family City / Area" value={form.familyInfo?.familyCity || ""} onChange={(v) => setFamily("familyCity", v)} /><Field label="Family Contact Person" value={form.familyInfo?.familyContactName || ""} onChange={(v) => setFamily("familyContactName", v)} /><Field label="Family Contact Number" value={form.familyInfo?.familyContactNumber || ""} onChange={(v) => setFamily("familyContactNumber", v)} /><Field label="Emergency Contact Name" value={form.familyInfo?.emergencyContactName || ""} onChange={(v) => setFamily("emergencyContactName", v)} /><Field label="Emergency Contact Number" value={form.familyInfo?.emergencyContactNumber || ""} onChange={(v) => setFamily("emergencyContactNumber", v)} /></Grid>{form.children?.length > 0 && <div style={{ display: "grid", gap: 9, marginTop: 14 }}>{form.children.map((c: any, i: number) => <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 9, border: "1px solid #eee", padding: 10, borderRadius: 8 }} className="child-grid"><Field label={`Child ${i + 1} Name`} value={c.fullName || ""} onChange={(v) => setChild(i,"fullName",v)} /><Field label="Date of Birth" type="date" value={c.dob || ""} onChange={(v) => setChild(i,"dob",v)} /><SelectField label="Education" value={c.education || "Not Started"} onChange={(v) => setChild(i,"education",v)} options={childEducationLevels} /></div>)}</div>}</FormSection>
       <FormSection title="Membership & Publishing"><Grid><MembershipTypeField value={form.membershipType} onChange={(v) => set("membershipType", v)} /><Field label="Photo URL (optional)" value={form.photoUrl} onChange={(v) => set("photoUrl", v)} /><label style={checkBoxCard}><input type="checkbox" checked={Boolean(form.showOnPortal)} onChange={(e) => set("showOnPortal", e.target.checked)} /> Show to approved members in portal</label><label style={checkBoxCard}><input type="checkbox" checked={Boolean(form.showOnWeb)} onChange={(e) => set("showOnWeb", e.target.checked)} /> Show in public web directory</label><div style={{ gridColumn: "span 2" }}><Field label="Admin Note" value={form.adminNote} onChange={(v) => set("adminNote", v)} /></div></Grid></FormSection>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}><button onClick={onClose} style={secondaryButton}>Cancel</button><button disabled={saving} onClick={onSave} style={primaryButton}><CheckCircle size={14} /> {saving ? "Saving..." : selected ? "Save Changes" : "Create Member"}</button></div>
@@ -257,49 +305,6 @@ function MemberFormModal({ form, setForm, selected, allMembers, saving, onClose,
 
 function MembershipTypeField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return <label style={labelWrap}>Membership Type<select value={value || "ordinary"} onChange={(e) => onChange(e.target.value)} style={fieldStyle}><option value="ordinary">Annual Membership</option><option value="life">Lifetime Membership</option><option value="patron">Patron Membership</option><option value="overseas">Overseas Membership</option></select></label>;
-}
-
-async function findMembershipPayment(m: Member): Promise<FinanceLedgerRow | null> {
-  try {
-    const rows = await fetchFinanceLedger(m.memberNo || m.fullName || "", "all");
-    const normalizedName = String(m.fullName || "").trim().toLowerCase();
-    const candidates = rows.filter((row) => {
-      const sameMember = row.memberId === m.id || row.member?.id === m.id || String(row.member?.memberNo || "") === String(m.memberNo || "") || String(row.partyName || "").trim().toLowerCase() === normalizedName;
-      const membershipLike = /membership|member|annual|life|lifetime|subscription/i.test(String(row.category || ""));
-      return sameMember && row.direction === "credit" && row.status !== "void" && membershipLike;
-    });
-    return candidates.sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime())[0] || null;
-  } catch {
-    return null;
-  }
-}
-
-async function printMemberForm(m: Member) {
-  const edu = structuredOptionForEdit(m.education, educationLevels);
-  const occ = structuredOptionForEdit(m.occupation, occupations);
-  const logoUrl = new URL(logo, window.location.origin).href;
-  const photo = m.photoUrl ? `<img src="${escapeHtml(m.photoUrl)}" class="photo" />` : `<div class="photo placeholder">PHOTO</div>`;
-  const payment = await findMembershipPayment(m);
-  const membershipLabel = membershipTypeLabel(m.membershipType);
-  const standardFee = membershipStandardFee(m.membershipType);
-  const money = (value?: number | null) => value == null ? "—" : `Rs. ${Number(value).toLocaleString("en-PK")}`;
-  const row = (label: string, value?: string | null, extraClass = "") => `<div class="field ${extraClass}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "—")}</strong></div>`;
-  const paymentNo = payment?.receiptNo || payment?.transactionNo || "Not linked";
-  const paymentAmount = payment ? money(payment.amount) : (standardFee ? `${money(standardFee)} standard fee` : "See Finance Ledger");
-  const receivedBy = payment ? [payment.handledByName || payment.issuedByName, payment.handledByRole || payment.issuedByRole].filter(Boolean).join(" · ") : "________________________";
-  const paymentDate = payment?.transactionDate ? new Date(payment.transactionDate).toLocaleDateString("en-PK") : "—";
-  const approvedDate = m.approvedAt ? new Date(m.approvedAt).toLocaleDateString("en-PK") : "Pending";
-  const generated = new Date().toLocaleString("en-PK");
-  const developerName = "Muhammad Atif Naseem";
-  const developerPhone = "0300-7600037";
-  const undertaking = `میں اقرار کرتا/کرتی ہوں کہ میں مسلمان ہوں، اللہ تعالیٰ کی وحدانیت اور حضرت محمد ﷺ کو اللہ تعالیٰ کا آخری نبی و رسول مانتا/مانتی ہوں۔ میں انجمنِ آرائیاں فیصل آباد کے دستور، مقاصد، قواعد و ضوابط اور مجاز فیصلوں کی پابندی، برادری کی فلاح، اتحاد، تعلیم، سماجی خدمت اور باہمی احترام کے لیے ذمہ داری سے کام کرنے کا عہد کرتا/کرتی ہوں۔ میں انجمن کے نام، عہدے، ریکارڈ، مالی وسائل، سہولیات یا کسی کمیٹی/ذمہ داری کو ذاتی، کاروباری، گروہی یا سیاسی مقصد کے لیے استعمال نہیں کروں گا/گی، اور میری ذاتی سیاسی وابستگی انجمن کے غیر سیاسی کردار، مالی معاملات، داخلی نظم یا برادری کی خدمت پر اثر انداز نہیں ہوگی۔ میں تسلیم کرتا/کرتی ہوں کہ دستور و قواعد کی خلاف ورزی یا اختیارات کے غلط استعمال کی صورت میں مجاز باڈی مقررہ طریقۂ کار کے مطابق میری ذمہ داری ختم، رکنیت معطل یا منسوخ کر سکتی ہے۔`;
-
-  const documentPage = `<section class="sheet"><div class="copytag">OFFICIAL MEMBERSHIP FORM</div><div class="head"><img class="logo" src="${logoUrl}"><div><div class="title">ANJUMAN-E-ARAIAN FAISALABAD</div><div class="subtitle">Official Membership Form & Undertaking</div><div class="goldline"></div><div class="statusline"><span class="badge">${escapeHtml(String(m.status || "").toUpperCase())}</span></div></div>${photo}</div><div class="idstrip">${row("Registration / Member No.", m.memberNo)}${row("Membership Type", membershipLabel)}${row("Status", String(m.status || "").replace(/_/g, " "))}${row("Approved On", approvedDate)}</div><div class="section"><h3>Member Information</h3><div class="grid4">${row("Full Name", m.fullName)}${row("Father's Name", m.fatherName)}${row("CNIC", m.cnic)}${row("Date of Birth", m.dob)}${row("Mobile", m.phone)}${row("WhatsApp", m.whatsapp)}${row("Email", m.email)}${row("City / Area", [m.city, m.localArea].filter(Boolean).join(" · "))}${row("Profession / Designation", [occ.base, m.designation].filter(Boolean).join(" · "))}${row("Education / Qualification", [edu.base, edu.detail].filter(Boolean).join(" · "))}${row("Institute / Organization", m.institutionName)}${row("Blood Group", m.bloodGroup)}</div><div class="fullrow">${row("Address", m.address)}</div></div><div class="section paymentbox"><h3>Membership & Payment Record</h3><div class="grid4">${row("Payment Receipt / Slip No.", paymentNo)}${row("Amount / Fee", paymentAmount)}${row("Payment Date", paymentDate)}${row("Payment Status", m.paymentStatus)}${row("Payment Received By", receivedBy, "span2")}${row("Payment Head", membershipLabel, "span2")}</div></div><div class="undertaking"><div class="undertitle">اقرار و حلفیہ بیان / DECLARATION & UNDERTAKING</div><div class="urdu" lang="ur">${escapeHtml(undertaking)}</div></div><div class="signatures"><div><div class="sigline"></div><b>Member Signature</b><small>Thumb impression if required</small></div><div><div class="sigline"></div><b>Payment Received By</b><small>${escapeHtml(receivedBy)}</small></div><div><div class="sigline"></div><b>Prepared By / System Developer</b><small>${escapeHtml(developerName)} · ${escapeHtml(developerPhone)}</small></div><div><div class="sigline"></div><b>General Secretary</b><small>Signature & stamp</small></div><div><div class="sigline"></div><b>President / Authorized Signatory</b><small>Signature & stamp</small></div></div><div class="foot"><span>Internal Form Serial: ${escapeHtml(m.formNo || "—")}</span><span>Prepared by ${escapeHtml(developerName)} · System Developer · ${escapeHtml(developerPhone)}</span><span>Generated: ${escapeHtml(generated)}</span></div></section>`;
-
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(m.memberNo || m.formNo)} - Official Membership Form</title><style>@page{size:A4;margin:8mm}*{box-sizing:border-box}body{font-family:Arial,"Segoe UI",sans-serif;color:#1f2937;margin:0;background:#eef2ee}.sheet{position:relative;background:white;border:1.8px solid #164c32;border-top:8px solid #164c32;padding:11mm 10mm 60mm;min-height:281mm;overflow:hidden}.sheet:after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:#c9a34f}.copytag{position:absolute;right:10mm;top:4mm;font-size:8px;letter-spacing:.13em;color:#6b7280;font-weight:800}.head{display:grid;grid-template-columns:68px 1fr 82px;gap:12px;align-items:center;padding-bottom:8px}.logo{width:62px;height:62px;object-fit:contain}.photo{width:76px;height:92px;border:1px solid #cbd5ce;border-radius:5px;object-fit:cover;background:#fafafa}.placeholder{display:grid;place-items:center;color:#a3a3a3;font-size:9px}.title{color:#164c32;font-family:Georgia,"Times New Roman",serif;font-size:18px;font-weight:800;letter-spacing:.02em}.subtitle{font-size:10px;color:#606b65;margin-top:3px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}.goldline{width:92px;height:3px;background:#c9a34f;margin:7px 0}.statusline{display:flex;gap:8px;align-items:center;font-size:9px;color:#315744;font-weight:700}.badge{padding:3px 8px;border-radius:20px;background:#e8f5ec;color:#17663b;font-size:8px}.idstrip{display:grid;grid-template-columns:1.35fr 1.15fr .8fr 1fr;background:#f8f5ec;border:1px solid #eadcae;padding:6px 9px;gap:12px;margin:4px 0 8px}.section{margin-top:7px}.section h3{font-size:9px;color:#164c32;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid #dfe6e1;padding-bottom:4px;margin:0 0 4px}.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:0 12px}.fullrow{margin-top:1px}.field{padding:4px 0;border-bottom:1px dotted #ccd5cf;min-height:26px}.field span{display:block;font-size:6.6px;color:#7b837e;text-transform:uppercase;letter-spacing:.04em}.field strong{display:block;font-size:8.6px;font-weight:700;color:#26332c;margin-top:1px;word-break:break-word}.span2{grid-column:span 2}.paymentbox{background:#fbfcfa;border-radius:4px;padding:5px 7px 2px;border:1px solid #e7ece8}.undertaking{margin-top:9px;border:1px solid #d8e1db;border-left:4px solid #c9a34f;background:#fbfcfa;padding:9px 11px}.undertitle{font-size:8px;color:#164c32;font-weight:800;text-align:center;letter-spacing:.05em;margin-bottom:6px}.urdu{font-family:"Noto Nastaliq Urdu","Jameel Noori Nastaleeq","Noto Naskh Arabic","Segoe UI",Tahoma,Arial,sans-serif;direction:rtl;unicode-bidi:plaintext;text-align:right;font-size:10.2px;line-height:2.05;word-spacing:.08em;color:#24342b}.signatures{position:absolute;left:10mm;right:10mm;bottom:25mm;display:grid;grid-template-columns:repeat(5,1fr);gap:9px;text-align:center}.signatures>div{font-size:7px;color:#4b5563}.signatures b{display:block;color:#213c2d;font-size:7.4px}.signatures small{display:block;font-size:5.8px;color:#7b837e;margin-top:2px;line-height:1.3}.sigline{height:27px;border-bottom:1px solid #53655a;margin-bottom:4px}.foot{position:absolute;left:10mm;right:10mm;bottom:6mm;border-top:1px solid #e4e8e5;padding-top:4px;display:grid;grid-template-columns:1fr 1.7fr 1fr;gap:8px;align-items:center;font-size:6px;color:#7b837e}.foot span:nth-child(2){text-align:center}.foot span:last-child{text-align:right}@media print{body{background:white}.sheet{margin:0}button{display:none}}</style></head><body>${documentPage}<script>window.onload=()=>setTimeout(()=>window.print(),500)</script></body></html>`;
-  const w = window.open("", "_blank", "width=900,height=1100");
-  if (!w) { alert("Please allow pop-ups to print the membership document."); return; }
-  w.document.open(); w.document.write(html); w.document.close();
 }
 
 function normalizeWhatsAppNumber(value: string) {
@@ -317,7 +322,6 @@ function shareWhatsApp(m: Member) {
   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank");
 }
 
-function escapeHtml(value: any) { return String(value || "").replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c] || c)); }
 function Stat({ label, value }: { label: string; value: number }) { return <div style={{ ...panelStyle, padding: 16 }}><div style={{ color: "#777", fontSize: 11, textTransform: "uppercase", fontWeight: 700 }}>{label}</div><div style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: 26, marginTop: 4 }}>{value}</div></div>; }
 function StatusBadge({ status }: { status: string }) { const bad = ["rejected","declined","suspended"].includes(status); const ok = ["approved","accepted","verified","confirmed"].includes(status); return <span style={{ display: "inline-block", background: ok ? "#dcfce7" : bad ? "#fee2e2" : "#fef9c3", color: ok ? "#166534" : bad ? "#b91c1c" : "#854d0e", borderRadius: 20, padding: "4px 8px", fontSize: 10, fontWeight: 800, textTransform: "capitalize" }}>{String(status).replace(/_/g," ")}</span>; }
 function Notice({ text, success = false }: { text: string; success?: boolean }) { return <div style={{ background: success ? "#dcfce7" : "#fee2e2", border: `1px solid ${success ? "#86efac" : "#fecaca"}`, color: success ? "#166534" : "#b91c1c", borderRadius: 8, padding: "11px 14px", marginBottom: 16, fontSize: 13 }}>{text}</div>; }
