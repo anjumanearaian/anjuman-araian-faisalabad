@@ -4,6 +4,7 @@ import { router } from "./routes";
 import { AdminProvider, useAdmin } from "./context/AdminContext";
 import { MemberProvider } from "./context/MemberContext";
 import { AdminDashboardNavigation } from "./components/admin/AdminDashboardNavigation";
+import { OperationsFinanceRedirect } from "./components/admin/OperationsFinanceRedirect";
 
 function AdminMemberCenterShortcut() {
   const { isAdmin } = useAdmin();
@@ -39,6 +40,7 @@ export default function App() {
   return (
     <AdminProvider>
       <AdminDashboardNavigation />
+      <OperationsFinanceRedirect />
       <AdminMemberCenterShortcut />
       <MemberProvider>
         <RouterProvider router={router} />
