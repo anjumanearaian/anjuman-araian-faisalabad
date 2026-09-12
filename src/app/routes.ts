@@ -18,7 +18,7 @@ import { MatrimonialRequestsPage } from "./pages/MatrimonialRequestsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
 import { AdminMatrimonialPage } from "./pages/AdminMatrimonialPage";
-import { AdminOperationsCenterPage } from "./pages/AdminOperationsCenterPage";
+import { AdminOperationsShellPage } from "./pages/AdminOperationsShellPage";
 import { AdminFinancePage } from "./pages/AdminFinancePage";
 import { MemberRegisterPage } from "./pages/MemberRegisterPage";
 import { MemberLoginPage } from "./pages/MemberLoginPage";
@@ -46,7 +46,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "admin/operations",
-    Component: AdminOperationsCenterPage,
+    Component: AdminOperationsShellPage,
   },
   {
     path: "admin/finance",
