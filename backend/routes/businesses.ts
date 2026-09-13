@@ -13,6 +13,11 @@ const storedFileUrl = z.string().refine(
   { message: "Must be a valid uploaded file URL" }
 );
 
+const optionalStoredFileUrl = z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? undefined : value,
+  storedFileUrl.nullable().optional(),
+);
+
 const BusinessSchema = z.object({
   businessName: z.string().min(2).max(150),
   ownerName: z.string().min(2).max(100),
@@ -28,8 +33,8 @@ const BusinessSchema = z.object({
   discountOffer: z.string().max(500).optional().default(""),
   description: z.string().max(2000).optional().default(""),
   sponsorshipPackage: z.enum(["basic", "premium", "vip"]).optional().default("basic"),
-  logoUrl: storedFileUrl.nullable().optional(),
-  paymentProofUrl: storedFileUrl.nullable().optional(),
+  logoUrl: optionalStoredFileUrl,
+  paymentProofUrl: optionalStoredFileUrl,
   additionalPhotos: z.array(storedFileUrl).optional().default([]),
   paymentSenderName: z.string().trim().max(180).optional(),
   paymentMethod: z.string().trim().max(80).optional(),
@@ -50,6 +55,72 @@ function packageAmount(pkg: string) {
   if (pkg === "vip") return 15000;
   if (pkg === "premium") return 5000;
   return 1000;
+}
+
+function financeGuardMessage(error: any) {
+  const message = String(error?.message || "");
+  if (/Finance approval|payment proof/i.test(message) && /payment status|verification/i.test(message)) {
+    return "Final payment verification is completed only from Finance Verification after the payment proof is approved.";
+  }
+  return "";
+}
+
+async function syncBusinessPaymentSubmission(tx: any, business: any, params: {
+  paymentSenderName?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+  supportingDocuments?: string[];
+}) {
+  if (!business.paymentProofUrl) return;
+
+  const sourceKey = `business-registration:${business.id}`;
+  const amount = packageAmount(String(business.sponsorshipPackage || "basic"));
+  const senderName = String(params.paymentSenderName || "").trim() || business.ownerName;
+  const documents = JSON.stringify(params.supportingDocuments || parsePhotos(business.additionalPhotos));
+  const existing = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status" FROM "PaymentSubmission"
+    WHERE "sourceKey" = ${sourceKey}
+    LIMIT 1
+  `;
+
+  if (!existing.length) {
+    await tx.$executeRaw`
+      INSERT INTO "PaymentSubmission" (
+        "sourceType", "sourceRecordId", "sourceKey", "payerName", "senderName", "category", "amount", "currency",
+        "paymentMethod", "transactionReference", "proofUrl", "supportingDocuments", "description", "status"
+      ) VALUES (
+        'business', ${business.id}, ${sourceKey}, ${business.ownerName}, ${senderName},
+        ${`Business Directory ${business.sponsorshipPackage} Listing`}, ${amount}, 'PKR', ${params.paymentMethod || null}, ${params.paymentReference || null},
+        ${business.paymentProofUrl}, ${documents}, 'Business Directory payment proof awaiting Finance Verification.', 'pending'
+      )
+    `;
+    return;
+  }
+
+  const queueStatus = String(existing[0].status || "").toLowerCase();
+  if (queueStatus === "approved") return;
+
+  await tx.$executeRaw`
+    UPDATE "PaymentSubmission"
+    SET "payerName" = ${business.ownerName},
+        "senderName" = ${senderName},
+        "category" = ${`Business Directory ${business.sponsorshipPackage} Listing`},
+        "amount" = ${amount},
+        "paymentMethod" = COALESCE(${params.paymentMethod || null}, "paymentMethod"),
+        "transactionReference" = COALESCE(${params.paymentReference || null}, "transactionReference"),
+        "proofUrl" = ${business.paymentProofUrl},
+        "supportingDocuments" = ${documents},
+        "description" = 'Business Directory payment proof awaiting Finance Verification.',
+        "status" = 'pending',
+        "reviewedByAdminId" = NULL,
+        "reviewedByName" = NULL,
+        "reviewedByRole" = NULL,
+        "reviewedAt" = NULL,
+        "reviewNote" = NULL,
+        "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "sourceKey" = ${sourceKey}
+      AND "status" <> 'approved'
+  `;
 }
 
 router.get("/", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
@@ -99,20 +170,7 @@ router.post("/submit", validate(BusinessSchema), async (req: Request, res: Respo
           paymentStatus: "submitted",
         },
       });
-      const sourceKey = `business-registration:${newBusiness.id}`;
-      const amount = packageAmount(String(newBusiness.sponsorshipPackage || "basic"));
-      const senderName = String(paymentSenderName || "").trim() || newBusiness.ownerName;
-      await tx.$executeRaw`
-        INSERT INTO "PaymentSubmission" (
-          "sourceType", "sourceRecordId", "sourceKey", "payerName", "senderName", "category", "amount", "currency",
-          "paymentMethod", "transactionReference", "proofUrl", "supportingDocuments", "description", "status"
-        ) VALUES (
-          'business', ${newBusiness.id}, ${sourceKey}, ${newBusiness.ownerName}, ${senderName},
-          ${`Business Directory ${newBusiness.sponsorshipPackage} Listing`}, ${amount}, 'PKR', ${paymentMethod || null}, ${paymentReference || null},
-          ${paymentProofUrl}, ${JSON.stringify(additionalPhotos)}, 'Submitted with business registration; uploaded slip requires admin/finance verification before approval.', 'pending'
-        )
-        ON CONFLICT ("sourceKey") DO NOTHING
-      `;
+      await syncBusinessPaymentSubmission(tx, newBusiness, { paymentSenderName, paymentMethod, paymentReference, supportingDocuments: additionalPhotos });
       return newBusiness;
     });
 
@@ -128,12 +186,12 @@ router.post("/admin", requireWelfareAdmin, validate(AdminBusinessSchema), async 
       ...businessFields
     } = req.body;
 
-    // A manually created business cannot become finance-verified merely from the
-    // directory screen. "received" records an admin/accounts visual check; only
-    // the Finance Center may later set the source to "verified" and post a ledger receipt.
     const effectivePaymentStatus = paymentStatus === "verified" ? "received" : paymentStatus;
-    if (status === "approved" && !["received", "verified"].includes(effectivePaymentStatus)) {
-      return void res.status(409).json({ error: "An approved paid listing must have payment marked received first." });
+    if (status === "approved" && effectivePaymentStatus !== "received") {
+      return void res.status(409).json({ error: "For an approved listing, mark payment as Received / Admin Checked. Finance verification remains separate." });
+    }
+    if (status === "approved" && !paymentProofUrl) {
+      return void res.status(409).json({ error: "Upload a payment slip, receipt or cash receipt before approving the listing so Accounts can verify it." });
     }
 
     const created = await prisma.$transaction(async (tx: any) => {
@@ -147,28 +205,16 @@ router.post("/admin", requireWelfareAdmin, validate(AdminBusinessSchema), async 
           adminNote: adminNote || "Created manually by admin.",
         },
       });
-
-      if (paymentProofUrl) {
-        const sourceKey = `business-registration:${newBusiness.id}`;
-        const amount = packageAmount(String(newBusiness.sponsorshipPackage || "basic"));
-        const senderName = String(paymentSenderName || "").trim() || newBusiness.ownerName;
-        await tx.$executeRaw`
-          INSERT INTO "PaymentSubmission" (
-            "sourceType", "sourceRecordId", "sourceKey", "payerName", "senderName", "category", "amount", "currency",
-            "paymentMethod", "transactionReference", "proofUrl", "supportingDocuments", "description", "status"
-          ) VALUES (
-            'business', ${newBusiness.id}, ${sourceKey}, ${newBusiness.ownerName}, ${senderName},
-            ${`Business Directory ${newBusiness.sponsorshipPackage} Listing`}, ${amount}, 'PKR', ${paymentMethod || null}, ${paymentReference || null},
-            ${paymentProofUrl}, ${JSON.stringify(additionalPhotos)}, 'Business profile created manually by admin; uploaded proof retained for finance review.', 'pending'
-          )
-          ON CONFLICT ("sourceKey") DO NOTHING
-        `;
-      }
+      await syncBusinessPaymentSubmission(tx, newBusiness, { paymentSenderName, paymentMethod, paymentReference, supportingDocuments: additionalPhotos });
       return newBusiness;
     });
 
     res.status(201).json({ ...created, additionalPhotos: parsePhotos(created.additionalPhotos) });
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    const guarded = financeGuardMessage(err);
+    if (guarded) return void res.status(409).json({ error: guarded });
+    next(err);
+  }
 });
 
 router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
@@ -180,14 +226,10 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     if (status && !validStatuses.includes(status)) return void res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
     if (paymentStatus && !validPayments.includes(paymentStatus)) return void res.status(400).json({ error: `Invalid payment status. Must be one of: ${validPayments.join(", ")}` });
 
-    const current = await prisma.business.findUnique({ where: { id }, select: { paymentStatus: true } });
+    const current = await prisma.business.findUnique({ where: { id } });
     if (!current) return void res.status(404).json({ error: "Business not found" });
 
     let nextPaymentStatus = paymentStatus as string | undefined;
-    // Backward compatibility: the legacy AdminPage Approve button sends
-    // "verified". Convert that one-click directory approval to "received"
-    // unless Finance has already verified the payment. This prevents a listing
-    // admin from bypassing PaymentSubmission review / ledger posting.
     if (nextPaymentStatus === "verified" && current.paymentStatus !== "verified") {
       if (status === "approved") nextPaymentStatus = "received";
       else return void res.status(409).json({ error: "Final payment verification is completed from the Finance Verification queue." });
@@ -195,13 +237,18 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
 
     const effectivePayment = nextPaymentStatus || current.paymentStatus;
     if (status === "approved" && !["received", "verified"].includes(effectivePayment)) {
-      return void res.status(409).json({ error: "Review the uploaded payment slip and mark it received before approving this business listing." });
+      return void res.status(409).json({ error: "Review the uploaded payment slip and mark it Received / Admin Checked before approving this business listing." });
+    }
+    if (status === "approved" && !current.paymentProofUrl) {
+      return void res.status(409).json({ error: "A payment slip/receipt is required before approving this listing so it remains linked to Finance Verification." });
     }
 
     const updated = await prisma.business.update({ where: { id }, data: { status, paymentStatus: nextPaymentStatus, adminNote } });
     res.json({ ...updated, additionalPhotos: parsePhotos(updated.additionalPhotos) });
   } catch (err: any) {
     if (err.code === "P2025") return void res.status(404).json({ error: "Business not found" });
+    const guarded = financeGuardMessage(err);
+    if (guarded) return void res.status(409).json({ error: guarded });
     next(err);
   }
 });
@@ -209,31 +256,31 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
 router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
-    const previous = await prisma.business.findUnique({ where: { id }, select: { logoUrl: true, paymentProofUrl: true, additionalPhotos: true } });
+    const previous = await prisma.business.findUnique({ where: { id } });
     if (!previous) return void res.status(404).json({ error: "Business not found" });
     const before = [previous.logoUrl, previous.paymentProofUrl, ...parsePhotos(previous.additionalPhotos)];
     const { paymentSenderName, paymentMethod, paymentReference, ...editable } = req.body as any;
     const data = { ...editable } as any;
     if (Array.isArray(data.additionalPhotos)) data.additionalPhotos = JSON.stringify(data.additionalPhotos);
-    const updated = await prisma.business.update({ where: { id }, data });
+
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const row = await tx.business.update({ where: { id }, data });
+      await syncBusinessPaymentSubmission(tx, row, {
+        paymentSenderName,
+        paymentMethod,
+        paymentReference,
+        supportingDocuments: parsePhotos(row.additionalPhotos),
+      });
+      return row;
+    });
+
     const after = [updated.logoUrl, updated.paymentProofUrl, ...parsePhotos(updated.additionalPhotos)];
     await cleanupRemovedFiles(before, after);
-
-    if (updated.paymentProofUrl && String(updated.paymentStatus || "").toLowerCase() !== "verified") {
-      await prisma.$executeRaw`
-        UPDATE "PaymentSubmission"
-        SET "senderName" = COALESCE(${paymentSenderName || null}, "senderName"),
-            "paymentMethod" = COALESCE(${paymentMethod || null}, "paymentMethod"),
-            "transactionReference" = COALESCE(${paymentReference || null}, "transactionReference"),
-            "proofUrl" = ${updated.paymentProofUrl},
-            "supportingDocuments" = ${updated.additionalPhotos || "[]"},
-            "updatedAt" = CURRENT_TIMESTAMP
-        WHERE "sourceType" = 'business' AND "sourceRecordId" = ${id} AND "status" = 'pending'
-      `;
-    }
     res.json({ ...updated, additionalPhotos: parsePhotos(updated.additionalPhotos) });
   } catch (err: any) {
     if (err.code === "P2025") return void res.status(404).json({ error: "Business not found" });
+    const guarded = financeGuardMessage(err);
+    if (guarded) return void res.status(409).json({ error: guarded });
     next(err);
   }
 });
@@ -241,7 +288,21 @@ router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), asyn
 router.delete("/:id", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
-    const removed = await prisma.business.delete({ where: { id } });
+    const paymentRows = await prisma.$queryRaw<Array<{ status: string }>>`
+      SELECT "status" FROM "PaymentSubmission"
+      WHERE "sourceType" = 'business' AND "sourceRecordId" = ${id}
+    `;
+    if (paymentRows.some((row) => String(row.status).toLowerCase() === "approved")) {
+      return void res.status(409).json({ error: "This business has a Finance-approved payment and cannot be deleted. Reject/archive the listing instead so the accounts audit trail is preserved." });
+    }
+
+    const removed = await prisma.$transaction(async (tx: any) => {
+      await tx.$executeRaw`
+        DELETE FROM "PaymentSubmission"
+        WHERE "sourceType" = 'business' AND "sourceRecordId" = ${id} AND "status" <> 'approved'
+      `;
+      return tx.business.delete({ where: { id } });
+    });
     await cleanupRemovedFiles([removed.logoUrl, removed.paymentProofUrl, ...parsePhotos(removed.additionalPhotos)], []);
     res.json({ success: true });
   } catch (err: any) {
