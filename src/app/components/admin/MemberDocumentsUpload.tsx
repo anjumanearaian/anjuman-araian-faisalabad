@@ -15,6 +15,7 @@ interface Props {
   additionalFiles?: string[];
   context?: "admin" | "applicant";
   required?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   onChange: (key: SingleKey | "additionalPhotos", value: string | string[]) => void;
 }
 
@@ -33,28 +34,33 @@ function basename(url: string) {
   }
 }
 
-export function MemberDocumentsUpload({ photoUrl, cnicFrontUrl, cnicBackUrl, paymentProofUrl, additionalFiles = [], context = "admin", required = false, onChange }: Props) {
+export function MemberDocumentsUpload({ photoUrl, cnicFrontUrl, cnicBackUrl, paymentProofUrl, additionalFiles = [], context = "admin", required = false, onBusyChange, onChange }: Props) {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
+
+  const markBusy = (key: string, value: boolean) => {
+    setBusy((old) => ({ ...old, [key]: value }));
+    onBusyChange?.(value);
+  };
 
   const uploadOne = async (key: SingleKey, file?: File) => {
     if (!file) return;
     setError("");
-    setBusy((old) => ({ ...old, [key]: true }));
+    markBusy(key, true);
     try {
       const url = await uploadFile(file, `member-${key}`);
       onChange(key, url);
     } catch (e: any) {
       setError(e?.message || "Upload failed. Please try again.");
     } finally {
-      setBusy((old) => ({ ...old, [key]: false }));
+      markBusy(key, false);
     }
   };
 
   const uploadAdditional = async (files: FileList | null) => {
     if (!files?.length) return;
     setError("");
-    setBusy((old) => ({ ...old, additionalPhotos: true }));
+    markBusy("additionalPhotos", true);
     try {
       const next = [...additionalFiles];
       for (const file of Array.from(files).slice(0, Math.max(0, 12 - next.length))) {
@@ -64,7 +70,7 @@ export function MemberDocumentsUpload({ photoUrl, cnicFrontUrl, cnicBackUrl, pay
     } catch (e: any) {
       setError(e?.message || "One or more documents could not be uploaded.");
     } finally {
-      setBusy((old) => ({ ...old, additionalPhotos: false }));
+      markBusy("additionalPhotos", false);
     }
   };
 
