@@ -3,7 +3,10 @@ import prisma from "../lib/prisma";
 import { requireWelfareAdmin, requireMember } from "../middleware/auth";
 
 const router = Router();
-const allowedTypes = new Set(["membership", "matrimonial", "business"]);
+
+function allowedType(formType: string) {
+  return formType === "membership" || formType === "business" || formType === "matrimonial" || formType.startsWith("matrimonial:");
+}
 
 router.get("/admin/all", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -20,11 +23,8 @@ router.get("/admin/all", requireWelfareAdmin, async (req: Request, res: Response
 router.get("/:formType", requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const formType = String(req.params.formType);
-    if (!allowedTypes.has(formType)) return void res.status(400).json({ error: "Unknown form type" });
+    if (!allowedType(formType)) return void res.status(400).json({ error: "Unknown form type" });
     const draft = await prisma.formDraft.findUnique({ where: { authUserId_formType: { authUserId: (req as any).user.id, formType } } });
-    // A completed business submission is a historical receipt, not the starting
-    // point for the next business. Keep it visible to admin Saved Forms, but let
-    // the member start the next registration with a clean form.
     if (formType === "business" && draft?.status === "submitted") return void res.json(null);
     res.json(draft || null);
   } catch (error) { next(error); }
@@ -33,7 +33,7 @@ router.get("/:formType", requireMember, async (req: Request, res: Response, next
 router.put("/:formType", requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const formType = String(req.params.formType);
-    if (!allowedTypes.has(formType)) return void res.status(400).json({ error: "Unknown form type" });
+    if (!allowedType(formType)) return void res.status(400).json({ error: "Unknown form type" });
     const { data, currentStep = 0, completion = 0, status = "incomplete", paymentStatus = "pending" } = req.body || {};
     const draft = await prisma.formDraft.upsert({
       where: { authUserId_formType: { authUserId: (req as any).user.id, formType } },
