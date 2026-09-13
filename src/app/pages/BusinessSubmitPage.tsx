@@ -1,533 +1,161 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
+import { ArrowLeft, Briefcase, CheckCircle, DollarSign, Upload } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
-import { Upload, CheckCircle, Briefcase, DollarSign, ArrowLeft } from "lucide-react";
-import { createBusiness, businessCategories, sponsorshipPackages, Business } from "../lib/businessStore";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
+import { createBusiness, businessCategories, sponsorshipPackages } from "../lib/businessStore";
+import { getSiteSettings } from "../lib/settingsStore";
 import { uploadFile } from "../lib/upload";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
 
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "10px 14px", border: "1px solid rgba(26,77,46,0.2)", borderRadius: 7,
+  fontSize: 14, boxSizing: "border-box", fontFamily: "'Poppins', sans-serif", background: "white",
+};
+const labelStyle: React.CSSProperties = { display: "block", color: GREEN, fontSize: 13, fontWeight: 700, marginBottom: 6 };
+
 export function BusinessSubmitPage() {
-  const navigate = useNavigate();
+  const settings = getSiteSettings();
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-
   const [form, setForm] = useState({
-    businessName: "",
-    ownerName: "",
-    category: businessCategories[0],
-    city: "",
-    address: "",
-    phone: "",
-    whatsapp: "",
-    email: "",
-    website: "",
-    socialLinks: "",
-    logoUrl: "",
-    description: "",
-    productsServices: "",
-    discountOffer: "",
-    sponsorshipPackage: "basic" as any,
-    paymentProofUrl: "",
-    additionalPhotos: [] as string[]
+    businessName: "", ownerName: "", category: businessCategories[0], city: "", address: "", phone: "", whatsapp: "", email: "",
+    website: "", socialLinks: "", logoUrl: "", description: "", productsServices: "", discountOffer: "", sponsorshipPackage: "basic" as any,
+    paymentSenderName: "", paymentMethod: "Bank Transfer", paymentReference: "", paymentProofUrl: "", additionalPhotos: [] as string[],
   });
 
-  const set = (key: string, val: any) => {
-    setForm((p) => ({ ...p, [key]: val }));
-    if (errors[key]) {
-      setErrors((err) => ({ ...err, [key]: "" }));
-    }
+  const set = (key: string, value: any) => {
+    setForm((old) => ({ ...old, [key]: value }));
+    if (errors[key]) setErrors((old) => ({ ...old, [key]: "" }));
   };
 
-  const handleFileUpload = (key: string) => async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (key: "logoUrl" | "paymentProofUrl") => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 12 * 1024 * 1024) {
-      setErrors((err) => ({ ...err, [key]: "Image source must be 12 MB or smaller." }));
-      return;
-    }
-    setUploading((u) => ({ ...u, [key]: true }));
-    setErrors((err) => ({ ...err, [key]: "" }));
-    try {
-      const url = await uploadFile(file, key === "logoUrl" ? "business-logo" : "business-document");
-      set(key, url);
-    } catch (err: any) {
-      setErrors((prev) => ({ ...prev, [key]: err?.message || "Upload failed. Please try again." }));
-    } finally {
-      setUploading((u) => ({ ...u, [key]: false }));
-      e.target.value = "";
-    }
+    const max = file.type.startsWith("image/") ? 12 * 1024 * 1024 : 4 * 1024 * 1024;
+    if (file.size > max) { setErrors((old) => ({ ...old, [key]: file.type.startsWith("image/") ? "Image source must be 12 MB or smaller." : "PDF must be 4 MB or smaller." })); return; }
+    setUploading((old) => ({ ...old, [key]: true }));
+    try { set(key, await uploadFile(file, key === "logoUrl" ? "business-logo" : "business-payment-proof")); }
+    catch (error: any) { setErrors((old) => ({ ...old, [key]: error?.message || "Upload failed. Please try again." })); }
+    finally { setUploading((old) => ({ ...old, [key]: false })); e.target.value = ""; }
   };
 
   const validate = () => {
-    const errs: Record<string, string> = {};
-    if (!form.businessName.trim()) errs.businessName = "Business name is required.";
-    if (!form.ownerName.trim()) errs.ownerName = "Owner name is required.";
-    if (!form.city.trim()) errs.city = "City is required.";
-    if (!form.phone.trim()) errs.phone = "Phone number is required.";
-    if (!form.email.trim()) errs.email = "Email is required.";
-    if (!form.description.trim()) errs.description = "Business description is required.";
-    if (!form.paymentProofUrl) errs.paymentProofUrl = "Payment receipt upload is required.";
-
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
+    const next: Record<string, string> = {};
+    if (!form.businessName.trim()) next.businessName = "Business name is required.";
+    if (!form.ownerName.trim()) next.ownerName = "Owner name is required.";
+    if (!form.city.trim()) next.city = "City is required.";
+    if (!form.phone.trim()) next.phone = "Phone number is required.";
+    if (!form.email.trim()) next.email = "Email is required.";
+    if (!form.description.trim()) next.description = "Business description is required.";
+    if (form.paymentSenderName.trim().length < 2) next.paymentSenderName = "Enter the sender/account-holder name shown on the payment proof.";
+    if (!form.paymentMethod.trim()) next.paymentMethod = "Select a payment method.";
+    if (form.paymentMethod !== "Cash" && form.paymentReference.trim().length < 2) next.paymentReference = "Enter the bank/wallet transaction or reference ID.";
+    if (!form.paymentProofUrl) next.paymentProofUrl = "Payment proof/receipt is required.";
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (Object.values(uploading).some(Boolean)) {
-      setErrors({ form: "Please wait for file uploads to finish." });
-      return;
-    }
-    if (!validate()) {
-      window.scrollTo({ top: 300, behavior: "smooth" });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await createBusiness(form as any);
-      setSubmitted(true);
-    } catch (err: any) {
-      if (err.details) {
-        const backendErrors: Record<string, string> = {};
-        for (const key in err.details) {
-           backendErrors[key] = err.details[key][0];
-        }
-        setErrors(backendErrors);
-        window.scrollTo({ top: 400, behavior: "smooth" });
-      } else {
-        setErrors({ form: err.message || "Failed to submit business listing." });
-        window.scrollTo({ top: 300, behavior: "smooth" });
-      }
-    } finally {
-      setLoading(false);
-    }
+    if (Object.values(uploading).some(Boolean)) { setErrors({ form: "Please wait for file uploads to finish." }); return; }
+    if (!validate()) { window.scrollTo({ top: 260, behavior: "smooth" }); return; }
+    setLoading(true); setErrors({});
+    try { await createBusiness(form as any); setSubmitted(true); }
+    catch (error: any) {
+      if (error?.details) {
+        const next: Record<string, string> = {};
+        for (const [key, messages] of Object.entries(error.details)) next[key] = (messages as string[])[0];
+        setErrors(next);
+      } else setErrors({ form: error?.message || "Failed to submit business listing." });
+      window.scrollTo({ top: 260, behavior: "smooth" });
+    } finally { setLoading(false); }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "10px 14px",
-    border: `1px solid rgba(26,77,46,0.2)`,
-    borderRadius: 7,
-    fontSize: 14,
-    boxSizing: "border-box",
-    fontFamily: "'Poppins', sans-serif"
-  };
+  if (submitted) return <div>
+    <PageHeader title="Submission Received" breadcrumb={["Home", "Business Directory", "Register"]} />
+    <div style={{ maxWidth: 560, margin: "72px auto", padding: "0 24px", textAlign: "center" }}>
+      <div style={{ width: 78, height: 78, borderRadius: "50%", background: "#dcfce7", display: "grid", placeItems: "center", margin: "0 auto 22px" }}><CheckCircle size={38} color="#15803d" /></div>
+      <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif" }}>Business Profile Submitted</h2>
+      <p style={{ color: "#555", lineHeight: 1.8 }}>Your profile and payment proof have been received. The payment is now <strong>Pending Finance Verification</strong>. It is not counted as paid and is not added to the accounting ledger until Finance/Accounts matches the sender, reference and slip and approves it.</p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 20 }}><Link to="/business" style={primaryLink}>Back to Directory</Link><Link to="/" style={secondaryLink}>Home</Link></div>
+    </div>
+  </div>;
 
-  const labelStyle: React.CSSProperties = {
-    display: "block",
-    color: GREEN,
-    fontSize: 13,
-    fontWeight: 700,
-    marginBottom: 6
-  };
+  return <div>
+    <PageHeader title="Register Business" subtitle="List your business profile and promote it in the Araian community" breadcrumb={["Home", "Business Directory", "Register"]} />
+    <section style={{ maxWidth: 840, margin: "0 auto", padding: "42px 24px 70px" }}>
+      <Link to="/business" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: GREEN, textDecoration: "none", fontWeight: 700, marginBottom: 20 }}><ArrowLeft size={16} /> Back to Directory</Link>
 
-  if (submitted) {
-    return (
-      <div>
-        <PageHeader title="Submission Received" breadcrumb={["Home", "Business Directory", "Register"]} />
-        <div style={{ maxWidth: 540, margin: "80px auto", padding: "0 24px", textAlign: "center" }}>
-          <div style={{ width: 80, height: 80, borderRadius: "50%", backgroundColor: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
-            <CheckCircle size={40} color="#15803d" />
-          </div>
-          <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, marginBottom: 12 }}>
-            Listing Submitted Successfully!
-          </h2>
-          <p style={{ color: "#555", fontSize: 15, lineHeight: 1.8, marginBottom: 24 }}>
-            Your business registration profile and payment receipt have been uploaded. The admin panel will review your listing and payment details shortly. Once approved, your business will appear in our official directory.
-          </p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-            <Link to="/business" style={{ backgroundColor: GREEN, color: "white", padding: "12px 28px", borderRadius: 8, fontSize: 14, fontWeight: 700, textDecoration: "none" }}>
-              Back to Directory
-            </Link>
-            <Link to="/" style={{ backgroundColor: "#f5f5f5", color: "#444", padding: "12px 28px", borderRadius: 8, fontSize: 14, fontWeight: 700, textDecoration: "none" }}>
-              Go to Home
-            </Link>
-          </div>
+      <div style={{ background: "#fcf8f0", border: "1px solid rgba(200,160,74,.35)", borderRadius: 12, padding: 22, marginBottom: 24 }}>
+        <h3 style={{ display: "flex", gap: 8, alignItems: "center", margin: "0 0 9px", color: GREEN, fontFamily: "'Playfair Display', serif" }}><DollarSign size={19} color={GOLD} /> Fee Payment & Verification</h3>
+        <p style={{ margin: "0 0 14px", color: "#5f655f", fontSize: 13, lineHeight: 1.7 }}>Pay through an official method below, then enter the exact sender/account-holder name and transaction ID and upload the slip. Finance verifies it separately before any amount enters the ledger.</p>
+        <div className="payment-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+          {settings.paymentMethods?.length ? settings.paymentMethods.map((pm: any) => <div key={pm.id} style={{ background: "white", border: "1px solid #eee3cc", borderRadius: 8, padding: 12, fontSize: 12 }}><b style={{ color: GREEN }}>{pm.bankName}</b><div style={{ color: "#666", marginTop: 4 }}>Title: {pm.accountTitle}</div><strong>{pm.accountNo}</strong></div>) : <div style={{ color: "#777", fontSize: 12 }}>No payment method is currently configured. Contact the office before paying.</div>}
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div>
-      <PageHeader 
-        title="Register Business" 
-        subtitle="List your business profile and promote it in the Araian community" 
-        breadcrumb={["Home", "Business Directory", "Register"]} 
-      />
+      <form onSubmit={submit} style={{ background: "white", borderRadius: 14, padding: "32px", boxShadow: "0 4px 24px rgba(0,0,0,.07)", border: "1px solid rgba(26,77,46,.08)" }}>
+        {errors.form && <Notice>{errors.form}</Notice>}
+        <SectionTitle icon={<Briefcase size={18} />} text="Business Information" />
+        <div className="form-grid" style={grid2}>
+          <FormField label="Business Name *" error={errors.businessName}><input style={inputStyle} value={form.businessName} onChange={(e)=>set("businessName",e.target.value)} /></FormField>
+          <FormField label="Owner / Member Name *" error={errors.ownerName}><input style={inputStyle} value={form.ownerName} onChange={(e)=>set("ownerName",e.target.value)} /></FormField>
+          <FormField label="Business Category *"><select style={inputStyle} value={form.category} onChange={(e)=>set("category",e.target.value)}>{businessCategories.map((x)=><option key={x}>{x}</option>)}</select></FormField>
+          <FormField label="City *" error={errors.city}><input style={inputStyle} value={form.city} onChange={(e)=>set("city",e.target.value)} /></FormField>
+          <div style={{gridColumn:"span 2"}}><FormField label="Business Address"><input style={inputStyle} value={form.address} onChange={(e)=>set("address",e.target.value)} /></FormField></div>
+          <div style={{gridColumn:"span 2"}}><FormField label="Business Description *" error={errors.description}><textarea rows={4} style={{...inputStyle,resize:"vertical"}} value={form.description} onChange={(e)=>set("description",e.target.value)} /></FormField></div>
+          <div style={{gridColumn:"span 2"}}><FormField label="Products / Services"><input style={inputStyle} value={form.productsServices} onChange={(e)=>set("productsServices",e.target.value)} /></FormField></div>
+        </div>
 
-      <section style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
-        <Link 
-          to="/business" 
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, color: GREEN, textDecoration: "none", fontWeight: 700, fontSize: 14, marginBottom: 24 }}
-        >
-          <ArrowLeft size={16} /> Back to Directory
-        </Link>
+        <SectionTitle text="Contact & Digital Links" />
+        <div className="form-grid" style={grid2}>
+          <FormField label="Phone *" error={errors.phone}><input style={inputStyle} value={form.phone} onChange={(e)=>set("phone",e.target.value)} /></FormField>
+          <FormField label="WhatsApp"><input style={inputStyle} value={form.whatsapp} onChange={(e)=>set("whatsapp",e.target.value)} /></FormField>
+          <FormField label="Email *" error={errors.email}><input type="email" style={inputStyle} value={form.email} onChange={(e)=>set("email",e.target.value)} /></FormField>
+          <FormField label="Website"><input style={inputStyle} value={form.website} onChange={(e)=>set("website",e.target.value)} placeholder="https://" /></FormField>
+          <div style={{gridColumn:"span 2"}}><FormField label="Social Media Links"><input style={inputStyle} value={form.socialLinks} onChange={(e)=>set("socialLinks",e.target.value)} /></FormField></div>
+        </div>
 
-        {/* Payment info block */}
-        <div 
-          style={{ 
-            backgroundColor: "#fcf8f0", 
-            border: `1px solid rgba(200,160,74,0.3)`, 
-            borderRadius: 12, 
-            padding: "24px 28px", 
-            marginBottom: 32 
-          }}
-        >
-          <h4 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, margin: "0 0 10px 0", display: "flex", alignItems: "center", gap: 8 }}>
-            <DollarSign size={20} color={GOLD} /> Manual Fee Payment Instructions
-          </h4>
-          <p style={{ color: "#555", fontSize: 13, lineHeight: 1.7, margin: "0 0 12px 0" }}>
-            Please transfer the listing fee corresponding to your selected package to our official account. Keep a screenshot/receipt of the transfer to upload at the end of this form.
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }} className="payment-cols">
-            <div style={{ backgroundColor: "white", padding: 12, borderRadius: 6, border: "1px solid #eee" }}>
-              <strong>Bank Account:</strong> Habib Bank Limited (HBL)<br/>
-              <strong>Title:</strong> Anjuman e Araian Faisalabad<br/>
-              <strong>Account No:</strong> 1234-5678-9012-34
-            </div>
-            <div style={{ backgroundColor: "white", padding: 12, borderRadius: 6, border: "1px solid #eee" }}>
-              <strong>Easypaisa / JazzCash:</strong><br/>
-              <strong>Mobile No:</strong> 0300-8655522<br/>
-              <strong>Title:</strong> Muhammad Rafiq
-            </div>
+        <SectionTitle text="Listing Package" />
+        <div className="package-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12, marginBottom: 20 }}>
+          {(Object.keys(sponsorshipPackages) as Array<keyof typeof sponsorshipPackages>).map((key) => { const pkg=sponsorshipPackages[key]; const active=form.sponsorshipPackage===key; return <button type="button" key={key} onClick={()=>set("sponsorshipPackage",key)} style={{ textAlign:"left",background:active?"#fff9ef":"white",border:`2px solid ${active?GOLD:"#e5e7eb"}`,borderRadius:10,padding:14,cursor:"pointer" }}><strong style={{color:GREEN}}>{pkg.name}</strong><div style={{color:"#9b741b",fontWeight:800,marginTop:4}}>{pkg.price}</div><p style={{fontSize:11,color:"#666",lineHeight:1.5,marginBottom:0}}>{pkg.benefits}</p></button>; })}
+        </div>
+        <FormField label="Discount Offer for Anjuman Members"><input style={inputStyle} value={form.discountOffer} onChange={(e)=>set("discountOffer",e.target.value)} /></FormField>
+
+        <SectionTitle text="Payment Proof & Finance Verification" />
+        <div style={{ background: "#fff9e9", border: "1px solid #ead39a", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <div className="payment-form-grid" style={{ display:"grid",gridTemplateColumns:"1.2fr 1fr 1.2fr",gap:12 }}>
+            <FormField label="Sender / Account-Holder Name *" error={errors.paymentSenderName}><input style={inputStyle} value={form.paymentSenderName} onChange={(e)=>set("paymentSenderName",e.target.value)} placeholder="Exact name shown on slip" /></FormField>
+            <FormField label="Payment Method *" error={errors.paymentMethod}><select style={inputStyle} value={form.paymentMethod} onChange={(e)=>set("paymentMethod",e.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>Easypaisa</option><option>Cheque</option><option>Cash</option><option>Other</option></select></FormField>
+            <FormField label="Transaction / Reference ID" error={errors.paymentReference}><input style={inputStyle} value={form.paymentReference} onChange={(e)=>set("paymentReference",e.target.value)} placeholder={form.paymentMethod==="Cash"?"Optional for cash":"Required"} /></FormField>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ backgroundColor: "white", borderRadius: 14, padding: "36px 32px", boxShadow: "0 4px 24px rgba(0,0,0,0.07)", border: `1px solid rgba(26,77,46,0.08)`, opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto" }}>
-          {errors.form && (
-            <div style={{ backgroundColor: "#fee2e2", color: "#dc2626", padding: "12px 16px", borderRadius: 8, marginBottom: 24, fontSize: 14, fontWeight: 600 }}>
-              {errors.form}
-            </div>
-          )}
-          {/* Section 1 */}
-          <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, marginBottom: 20, paddingBottom: 10, borderBottom: `2px solid #f0f0f0`, display: "flex", alignItems: "center", gap: 8 }}>
-            <Briefcase size={18} color={GREEN} /> Business Information
-          </h3>
+        <div className="upload-grid" style={grid2}>
+          <FileBox title="Business Logo (optional)" value={form.logoUrl} loading={Boolean(uploading.logoUrl)} accept="image/*" onChange={handleFileUpload("logoUrl")} error={errors.logoUrl} />
+          <FileBox title="Payment Proof / Receipt *" value={form.paymentProofUrl} loading={Boolean(uploading.paymentProofUrl)} accept="image/*,.pdf,application/pdf" onChange={handleFileUpload("paymentProofUrl")} error={errors.paymentProofUrl} />
+        </div>
+        <div style={{marginTop:18}}><MultiImageUpload label="Additional Business Photos / Relevant Documents (Optional)" images={form.additionalPhotos} onChange={(images)=>set("additionalPhotos",images)} /></div>
+        <div style={{ background:"#f0f7f3",borderRadius:9,padding:12,marginTop:16,color:"#53615a",fontSize:12,lineHeight:1.7 }}><strong>Accounting control:</strong> submitting this form creates a pending payment proof only. Finance/Accounts must open the slip, match sender/reference and approve it before a ledger receipt is generated.</div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }} className="form-2col">
-            <div>
-              <label style={labelStyle}>Business Name *</label>
-              <input 
-                style={inputStyle} 
-                value={form.businessName} 
-                onChange={(e) => set("businessName", e.target.value)} 
-                placeholder="e.g. Al-Araian Agro Trade" 
-              />
-              {errors.businessName && <span style={{ color: "#dc2626", fontSize: 12 }}>{errors.businessName}</span>}
-            </div>
-            <div>
-              <label style={labelStyle}>Owner / Member Name *</label>
-              <input 
-                style={inputStyle} 
-                value={form.ownerName} 
-                onChange={(e) => set("ownerName", e.target.value)} 
-                placeholder="e.g. Ch. Muhammad Ali" 
-              />
-              {errors.ownerName && <span style={{ color: "#dc2626", fontSize: 12 }}>{errors.ownerName}</span>}
-            </div>
-            <div>
-              <label style={labelStyle}>Business Category *</label>
-              <select 
-                style={inputStyle} 
-                value={form.category} 
-                onChange={(e) => set("category", e.target.value)}
-              >
-                {businessCategories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>City *</label>
-              <input 
-                style={inputStyle} 
-                value={form.city} 
-                onChange={(e) => set("city", e.target.value)} 
-                placeholder="e.g. Faisalabad" 
-              />
-              {errors.city && <span style={{ color: "#dc2626", fontSize: 12 }}>{errors.city}</span>}
-            </div>
-            <div style={{ gridColumn: "span 2" }}>
-              <label style={labelStyle}>Business Address</label>
-              <input 
-                style={inputStyle} 
-                value={form.address} 
-                onChange={(e) => set("address", e.target.value)} 
-                placeholder="Detailed commercial address..." 
-              />
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Business Description *</label>
-            <textarea 
-              rows={4} 
-              style={{ ...inputStyle, resize: "vertical" }} 
-              value={form.description} 
-              onChange={(e) => set("description", e.target.value)} 
-              placeholder="What does your business do? Describe your services/products." 
-            />
-            {errors.description && <span style={{ color: "#dc2626", fontSize: 12 }}>{errors.description}</span>}
-          </div>
-
-          <div style={{ marginBottom: 28 }}>
-            <label style={labelStyle}>Products / Services</label>
-            <input 
-              style={inputStyle} 
-              value={form.productsServices} 
-              onChange={(e) => set("productsServices", e.target.value)} 
-              placeholder="e.g. Fertilizers, Drip Irrigation, Crop Protection (separated by commas)" 
-            />
-          </div>
-
-          {/* Contact Details */}
-          <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, marginBottom: 20, paddingBottom: 10, borderBottom: `2px solid #f0f0f0` }}>
-            Contact and Digital Links
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }} className="form-2col">
-            <div>
-              <label style={labelStyle}>Phone Number *</label>
-              <input 
-                style={inputStyle} 
-                value={form.phone} 
-                onChange={(e) => set("phone", e.target.value)} 
-                placeholder="+92 300 000 0000" 
-              />
-              {errors.phone && (
-                <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>
-                  <span>{errors.phone}</span>
-                  <div style={{ color: "#888", fontSize: 11, marginTop: 2 }}>Hint: Ensure format like +92 300 0000000</div>
-                </div>
-              )}
-            </div>
-            <div>
-              <label style={labelStyle}>WhatsApp Number</label>
-              <input 
-                style={inputStyle} 
-                value={form.whatsapp} 
-                onChange={(e) => set("whatsapp", e.target.value)} 
-                placeholder="+92 300 000 0000" 
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Email Address *</label>
-              <input 
-                type="email" 
-                style={inputStyle} 
-                value={form.email} 
-                onChange={(e) => set("email", e.target.value)} 
-                placeholder="info@yourbusiness.com" 
-              />
-              {errors.email && <span style={{ color: "#dc2626", fontSize: 12 }}>{errors.email}</span>}
-            </div>
-            <div>
-              <label style={labelStyle}>Website (optional)</label>
-              <input 
-                style={inputStyle} 
-                value={form.website} 
-                onChange={(e) => set("website", e.target.value)} 
-                placeholder="https://www.yourbusiness.com" 
-              />
-              {errors.website && (
-                <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>
-                  <span>{errors.website}</span>
-                  <div style={{ color: "#888", fontSize: 11, marginTop: 2 }}>Hint: Ensure it starts with https://</div>
-                </div>
-              )}
-            </div>
-            <div style={{ gridColumn: "span 2" }}>
-              <label style={labelStyle}>Social Media Links (optional)</label>
-              <input 
-                style={inputStyle} 
-                value={form.socialLinks} 
-                onChange={(e) => set("socialLinks", e.target.value)} 
-                placeholder="Facebook page link, LinkedIn page, etc." 
-              />
-            </div>
-          </div>
-
-          {/* Member Promo and Packages */}
-          <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, marginBottom: 20, paddingBottom: 10, borderBottom: `2px solid #f0f0f0` }}>
-            Promo and Sponsorship Package
-          </h3>
-          <div style={{ marginBottom: 24 }}>
-            <label style={labelStyle}>Discount Offer for Anjuman Members (optional)</label>
-            <input 
-              style={inputStyle} 
-              value={form.discountOffer} 
-              onChange={(e) => set("discountOffer", e.target.value)} 
-              placeholder="e.g. 10% Flat Discount for members who present card" 
-            />
-          </div>
-
-          {/* Packages */}
-          <label style={labelStyle}>Select Listing Package *</label>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }} className="package-grid">
-            {(Object.keys(sponsorshipPackages) as any[]).map((key) => {
-              const pkg = sponsorshipPackages[key as keyof typeof sponsorshipPackages];
-              const isSelected = form.sponsorshipPackage === key;
-
-              return (
-                <div 
-                  key={key} 
-                  onClick={() => set("sponsorshipPackage", key)}
-                  style={{
-                    border: `2px solid ${isSelected ? GOLD : "#e5e7eb"}`,
-                    borderRadius: 10,
-                    padding: "16px 14px",
-                    cursor: "pointer",
-                    backgroundColor: isSelected ? "#fff9ef" : "white",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between"
-                  }}
-                >
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <span style={{ color: GREEN, fontWeight: 700, fontSize: 13 }}>{pkg.name}</span>
-                      <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${isSelected ? GOLD : "#d1d5db"}`, backgroundColor: isSelected ? GOLD : "transparent" }} />
-                    </div>
-                    <p style={{ color: GOLD, fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{pkg.price}</p>
-                  </div>
-                  <p style={{ color: "#666", fontSize: 11, lineHeight: 1.5, margin: 0 }}>{pkg.benefits}</p>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Files Upload */}
-          <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, marginBottom: 20, paddingBottom: 10, borderBottom: `2px solid #f0f0f0` }}>
-            File Uploads
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }} className="form-2col">
-            <div>
-              <label style={labelStyle}>Business Logo (optional)</label>
-              <label 
-                style={{ 
-                  display: "block", 
-                  border: `2px dashed ${form.logoUrl ? GOLD : "rgba(26,77,46,0.2)"}`, 
-                  borderRadius: 10, 
-                  padding: "16px 12px", 
-                  textAlign: "center", 
-                  cursor: "pointer",
-                  backgroundColor: form.logoUrl ? "#fff9ef" : "#fafaf8" 
-                }}
-              >
-                {form.logoUrl ? (
-                  <img src={form.logoUrl} alt="logo preview" style={{ width: "100%", height: 90, objectFit: "contain", borderRadius: 6 }} />
-                ) : (
-                  <div>
-                    <Upload size={22} color="#9ca3af" style={{ margin: "0 auto 6px" }} />
-                    <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>Click to upload Logo</p>
-                  </div>
-                )}
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileUpload("logoUrl")} />
-              </label>
-              {errors.logoUrl && <span style={{ color: "#dc2626", fontSize: 12 }}>{errors.logoUrl}</span>}
-            </div>
-
-            <div>
-              <label style={labelStyle}>Payment Proof Receipt *</label>
-              <label 
-                style={{ 
-                  display: "block", 
-                  border: `2px dashed ${form.paymentProofUrl ? GOLD : "rgba(26,77,46,0.2)"}`, 
-                  borderRadius: 10, 
-                  padding: "16px 12px", 
-                  textAlign: "center", 
-                  cursor: "pointer",
-                  backgroundColor: form.paymentProofUrl ? "#fff9ef" : "#fafaf8" 
-                }}
-              >
-                {form.paymentProofUrl ? (
-                  <img src={form.paymentProofUrl} alt="payment preview" style={{ width: "100%", height: 90, objectFit: "contain", borderRadius: 6 }} />
-                ) : (
-                  <div>
-                    <Upload size={22} color="#9ca3af" style={{ margin: "0 auto 6px" }} />
-                    <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>Upload Payment Screenshot</p>
-                  </div>
-                )}
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileUpload("paymentProofUrl")} />
-              </label>
-              {errors.paymentProofUrl && <span style={{ color: "#dc2626", fontSize: 12 }}>{errors.paymentProofUrl}</span>}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 24, marginBottom: 24 }}>
-            <MultiImageUpload
-              label="Additional Business Photos (Optional)"
-              images={form.additionalPhotos}
-              onChange={(imgs) => set("additionalPhotos", imgs)}
-            />
-          </div>
-
-          {/* Live Preview Card */}
-          <div style={{ backgroundColor: "#f8f5ef", border: "1px solid rgba(26,77,46,0.1)", borderRadius: 12, padding: 24, marginBottom: 32 }}>
-            <h4 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, margin: "0 0 12px 0" }}>Live Directory Preview</h4>
-            <div style={{ backgroundColor: "white", borderRadius: 8, padding: 18, border: `1px solid ${GOLD}`, boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ width: 80, height: 80, borderRadius: 8, backgroundColor: "#f0f7f3", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0, border: "1px solid #e5e7eb" }}>
-                {form.logoUrl ? (
-                  <img src={form.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                ) : (
-                  <Briefcase size={32} color={GREEN} />
-                )}
-              </div>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-                  <h5 style={{ color: GREEN, fontSize: 16, fontWeight: 700, margin: 0 }}>{form.businessName || "Business Name"}</h5>
-                  <span style={{ fontSize: 11, backgroundColor: "#fef3c7", color: "#d97706", padding: "2px 8px", borderRadius: 12, fontWeight: 700, textTransform: "uppercase" }}>
-                    {form.sponsorshipPackage} Package
-                  </span>
-                </div>
-                <p style={{ color: "#777", fontSize: 12, margin: "4px 0 8px 0" }}>Owned by {form.ownerName || "Owner Name"} | {form.category} | {form.city || "City"}</p>
-                <p style={{ fontSize: 13, color: "#444", margin: "0 0 8px 0", lineHeight: 1.5 }}>
-                  {form.description || "Business description goes here..."}
-                </p>
-                {form.discountOffer && (
-                  <div style={{ fontSize: 12, backgroundColor: "#f0f7f3", color: GREEN, padding: "6px 10px", borderRadius: 6, display: "inline-block", fontWeight: 600 }}>
-                    Discount: {form.discountOffer}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Submit */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 32, paddingTop: 24, borderTop: "1px solid #f5f5f5" }}>
-            <button 
-              type="submit" 
-              disabled={loading}
-              style={{ 
-                backgroundColor: loading ? "#a3b8aa" : GREEN, 
-                color: "white", 
-                border: "none", 
-                borderRadius: 8, 
-                padding: "12px 36px", 
-                fontWeight: 700, 
-                fontSize: 14, 
-                cursor: loading ? "not-allowed" : "pointer" 
-              }}
-            >
-              {loading ? "Submitting..." : "Submit Profile for Review"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <style>{`
-        @media (max-width: 640px) {
-          .form-2col, .package-grid, .payment-cols {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
-    </div>
-  );
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:26,paddingTop:20,borderTop:"1px solid #eee"}}><button type="submit" disabled={loading||Object.values(uploading).some(Boolean)} style={{...primaryButton,opacity:loading?.65:1}}>{loading?"Submitting...":"Submit Profile for Review"}</button></div>
+      </form>
+    </section>
+    <style>{`@media(max-width:700px){.form-grid,.package-grid,.payment-grid,.payment-form-grid,.upload-grid{grid-template-columns:1fr!important}.form-grid>[style*="span 2"]{grid-column:span 1!important}input,select,textarea{font-size:16px!important}}`}</style>
+  </div>;
 }
+
+function Notice({children}:{children:React.ReactNode}) { return <div style={{background:"#fee2e2",color:"#b91c1c",padding:"11px 13px",borderRadius:8,marginBottom:18}}>{children}</div>; }
+function FormField({label,error,children}:{label:string;error?:string;children:React.ReactNode}) { return <div><label style={labelStyle}>{label}</label>{children}{error&&<div style={{color:"#b91c1c",fontSize:11,marginTop:4}}>{error}</div>}</div>; }
+function SectionTitle({text,icon}:{text:string;icon?:React.ReactNode}) { return <h3 style={{display:"flex",gap:7,alignItems:"center",color:GREEN,fontFamily:"'Playfair Display', serif",fontSize:18,borderBottom:"2px solid #f2f2f2",paddingBottom:9,margin:"26px 0 16px"}}>{icon}{text}</h3>; }
+function FileBox({title,value,loading,accept,onChange,error}:{title:string;value:string;loading:boolean;accept:string;onChange:(e:React.ChangeEvent<HTMLInputElement>)=>void;error?:string}) { const pdf=value?.toLowerCase().includes(".pdf"); return <div><label style={labelStyle}>{title}</label><label style={{minHeight:120,border:`2px dashed ${error?"#b91c1c":value?GOLD:"#ccd8cf"}`,borderRadius:10,display:"grid",placeItems:"center",padding:12,cursor:"pointer",background:value?"#fff9ef":"#fafbf9",textAlign:"center"}}>{loading?<span>Uploading...</span>:value?(pdf?<div style={{color:GREEN,fontWeight:800}}><CheckCircle size={22}/><div style={{marginTop:6}}>PDF uploaded</div></div>:<img src={value} alt="Uploaded" style={{maxWidth:"100%",maxHeight:95,objectFit:"contain"}}>):<div><Upload size={22} color="#999"/><div style={{fontSize:11,color:"#888",marginTop:5}}>Click to upload</div></div>}<input type="file" accept={accept} style={{display:"none"}} onChange={onChange}/></label>{error&&<div style={{color:"#b91c1c",fontSize:11,marginTop:4}}>{error}</div>}</div>; }
+
+const grid2: React.CSSProperties = { display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:15,marginBottom:15 };
+const primaryButton: React.CSSProperties = { background:GREEN,color:"white",border:0,borderRadius:8,padding:"12px 28px",fontWeight:800,cursor:"pointer" };
+const primaryLink: React.CSSProperties = { display:"inline-block",background:GREEN,color:"white",padding:"10px 16px",borderRadius:8,textDecoration:"none",fontWeight:800 };
+const secondaryLink: React.CSSProperties = { display:"inline-block",background:"#f5f5f5",color:GREEN,padding:"10px 16px",borderRadius:8,textDecoration:"none",fontWeight:800 };
