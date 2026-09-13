@@ -25,8 +25,6 @@ export default function BusinessSpotlightSection() {
   }, []);
 
   const display = useMemo(() => businesses.filter(isPlatinum).sort((a, b) => a.businessName.localeCompare(b.businessName)), [businesses]);
-  if (!display.length) return null;
-
   const sliderItems = display.length > 1 ? [...display, ...display] : display;
 
   return <section className="home-section home-business-section home-business-slider-section">
@@ -35,7 +33,7 @@ export default function BusinessSpotlightSection() {
         <div><span className="home-eyebrow home-eyebrow--green">Platinum business members</span><h2>Our Business Partners</h2><p className="home-business-intro">Platinum partners receive premium homepage visibility. Member discounts and partner benefits are highlighted where available.</p></div>
         <Link to="/business">View Business Community <ArrowRight size={17} /></Link>
       </div>
-      <div className="home-partner-slider" aria-label="Platinum business partners">
+      {display.length ? <div className="home-partner-slider" aria-label="Platinum business partners">
         <div className={`home-partner-track ${display.length > 1 ? "home-partner-track--moving" : ""}`}>
           {sliderItems.map((business, index) => {
             const benefit = memberBenefit(business.discountOffer);
@@ -46,7 +44,7 @@ export default function BusinessSpotlightSection() {
             </Link>;
           })}
         </div>
-      </div>
+      </div> : <div className="home-partner-empty"><Building2 size={28}/><div><strong>Platinum Partner Showcase</strong><p>Approved Platinum business members will appear here automatically with their logo and member benefits.</p></div></div>}
     </div>
   </section>;
 }
