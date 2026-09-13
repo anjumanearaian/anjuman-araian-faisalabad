@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
-export type AdminRole = "admin" | "super_admin" | "content_manager" | "welfare_manager" | "finance_secretary" | "assistant_finance_secretary";
+export type AdminRole = "admin" | "super_admin" | "content_manager" | "welfare_manager" | "matrimonial_manager" | "finance_secretary" | "assistant_finance_secretary";
 
 interface AdminContextType {
   isAdmin: boolean;
@@ -16,12 +16,13 @@ const AdminContext = createContext<AdminContextType>({
   logout: () => {},
 });
 
-const ADMIN_ROLES: AdminRole[] = ["admin", "super_admin", "content_manager", "welfare_manager", "finance_secretary", "assistant_finance_secretary"];
+const ADMIN_ROLES: AdminRole[] = ["admin", "super_admin", "content_manager", "welfare_manager", "matrimonial_manager", "finance_secretary", "assistant_finance_secretary"];
 
 function clearStoredAdminSession() {
   sessionStorage.removeItem("araian_admin_role");
   sessionStorage.removeItem("araian_admin_token");
   sessionStorage.removeItem("araian_admin_business_draft");
+  sessionStorage.removeItem("araian_admin_matrimonial_draft");
 }
 
 function decodeJwtPayload(token: string): any | null {
