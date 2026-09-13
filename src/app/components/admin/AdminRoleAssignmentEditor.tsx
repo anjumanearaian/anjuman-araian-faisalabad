@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Edit2, Save, X } from "lucide-react";
+import { Save, X } from "lucide-react";
 import { useAdmin } from "../../context/AdminContext";
 import {
   fetchOrganizationAssignments,
@@ -95,7 +95,6 @@ export function AdminRoleAssignmentEditor() {
 
     const removeButtons = () => document.querySelectorAll<HTMLButtonElement>(`button[${BUTTON_MARKER}]`).forEach((button) => button.remove());
     const injectButtons = () => {
-      removeButtons();
       const tables = Array.from(document.querySelectorAll<HTMLTableElement>("table"));
       const target = tables.find((table) => {
         const heading = normalize(table.querySelector("thead")?.textContent);
@@ -105,9 +104,10 @@ export function AdminRoleAssignmentEditor() {
 
       const rows = Array.from(target.querySelectorAll<HTMLTableRowElement>("tbody tr"));
       rows.forEach((row) => {
-        const assignment = assignments.find((item) => rowMatchesAssignment(row, item));
         const actionCell = row.querySelectorAll<HTMLTableCellElement>("td")[5];
-        if (!assignment || !actionCell) return;
+        if (!actionCell || actionCell.querySelector(`button[${BUTTON_MARKER}]`)) return;
+        const assignment = assignments.find((item) => rowMatchesAssignment(row, item));
+        if (!assignment) return;
 
         const button = document.createElement("button");
         button.type = "button";
@@ -139,12 +139,9 @@ export function AdminRoleAssignmentEditor() {
     };
 
     injectButtons();
-    const observer = new MutationObserver(() => injectButtons());
-    observer.observe(document.body, { childList: true, subtree: true });
-    const timer = window.setInterval(injectButtons, 1500);
+    const timer = window.setInterval(injectButtons, 1000);
 
     return () => {
-      observer.disconnect();
       window.clearInterval(timer);
       removeButtons();
     };
