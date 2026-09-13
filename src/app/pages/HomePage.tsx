@@ -1,4 +1,3 @@
-
 import HeroSection from "../components/home/HeroSection";
 import ActivitiesSection from "../components/home/ActivitiesSection";
 import LeadershipSection from "../components/home/LeadershipSection";
@@ -9,6 +8,7 @@ import StatisticsSection from "../components/home/StatisticsSection";
 import EventsSection from "../components/home/EventsSection";
 import "../../styles/homepage-final.css";
 import "../../styles/business-spotlight.css";
+import "../../styles/homepage-polish.css";
 
 export function HomePage(){
  return <>
