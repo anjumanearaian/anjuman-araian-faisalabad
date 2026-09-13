@@ -32,6 +32,10 @@
       "destination": "/api/__proxy__auth__admin/:id/role"
     },
     {
+      "source": "/api/matrimonial/manual-flow",
+      "destination": "/api/__proxy__matrimonial__manual-flow"
+    },
+    {
       "source": "/((?!api/|uploads/).*)",
       "destination": "/index.html"
     }
