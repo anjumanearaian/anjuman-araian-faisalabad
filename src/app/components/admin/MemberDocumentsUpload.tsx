@@ -13,6 +13,8 @@ interface Props {
   cnicBackUrl?: string;
   paymentProofUrl?: string;
   additionalFiles?: string[];
+  context?: "admin" | "applicant";
+  required?: boolean;
   onChange: (key: SingleKey | "additionalPhotos", value: string | string[]) => void;
 }
 
@@ -31,7 +33,7 @@ function basename(url: string) {
   }
 }
 
-export function MemberDocumentsUpload({ photoUrl, cnicFrontUrl, cnicBackUrl, paymentProofUrl, additionalFiles = [], onChange }: Props) {
+export function MemberDocumentsUpload({ photoUrl, cnicFrontUrl, cnicBackUrl, paymentProofUrl, additionalFiles = [], context = "admin", required = false, onChange }: Props) {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
 
@@ -66,16 +68,19 @@ export function MemberDocumentsUpload({ photoUrl, cnicFrontUrl, cnicBackUrl, pay
     }
   };
 
+  const mark = required ? " *" : "";
   const cards: Array<{ key: SingleKey; label: string; value?: string; accept: string; imageOnly?: boolean }> = [
-    { key: "photoUrl", label: "Passport / Profile Photo", value: photoUrl, accept: "image/jpeg,image/png,image/webp", imageOnly: true },
-    { key: "cnicFrontUrl", label: "CNIC Front", value: cnicFrontUrl, accept: "image/jpeg,image/png,image/webp,application/pdf" },
-    { key: "cnicBackUrl", label: "CNIC Back", value: cnicBackUrl, accept: "image/jpeg,image/png,image/webp,application/pdf" },
-    { key: "paymentProofUrl", label: "Payment Proof / Slip", value: paymentProofUrl, accept: "image/jpeg,image/png,image/webp,application/pdf" },
+    { key: "photoUrl", label: `Passport / Profile Photo${mark}`, value: photoUrl, accept: "image/jpeg,image/png,image/webp", imageOnly: true },
+    { key: "cnicFrontUrl", label: `CNIC Front${mark}`, value: cnicFrontUrl, accept: "image/jpeg,image/png,image/webp,application/pdf" },
+    { key: "cnicBackUrl", label: `CNIC Back${mark}`, value: cnicBackUrl, accept: "image/jpeg,image/png,image/webp,application/pdf" },
+    { key: "paymentProofUrl", label: `Payment Proof / Slip${mark}`, value: paymentProofUrl, accept: "image/jpeg,image/png,image/webp,application/pdf" },
   ];
 
   return <div>
     <div style={{ background: "#f4f8f5", border: "1px solid #d7e4da", borderRadius: 9, padding: "10px 12px", marginBottom: 12, color: "#58655d", fontSize: 11, lineHeight: 1.55 }}>
-      These are the same document fields used by the online membership form. Admin uploads are saved into the same member record, so there is only one photo/CNIC/payment-proof/document structure.
+      {context === "admin"
+        ? "These are the same document fields used by the online membership form. Staff uploads are saved into the same member record, so there is only one photo/CNIC/payment-proof/document structure."
+        : "These files are stored in your membership record. The same fields are available to authorized staff if the office needs to complete or replace a document later."}
     </div>
     {error && <div style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 7, padding: "8px 10px", marginBottom: 10, fontSize: 11 }}>{error}</div>}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }} className="member-doc-grid">
