@@ -6,6 +6,7 @@ import { MemberProvider } from "./context/MemberContext";
 import { AdminDashboardNavigation } from "./components/admin/AdminDashboardNavigation";
 import { OperationsFinanceRedirect } from "./components/admin/OperationsFinanceRedirect";
 import { AdminSmartMemberSelectors } from "./components/admin/AdminSmartMemberSelectors";
+import { AdminRoleAssignmentEditor } from "./components/admin/AdminRoleAssignmentEditor";
 
 function AdminMemberCenterShortcut() {
   const { isAdmin } = useAdmin();
@@ -43,6 +44,7 @@ export default function App() {
       <AdminDashboardNavigation />
       <OperationsFinanceRedirect />
       <AdminSmartMemberSelectors />
+      <AdminRoleAssignmentEditor />
       <AdminMemberCenterShortcut />
       <MemberProvider>
         <RouterProvider router={router} />
