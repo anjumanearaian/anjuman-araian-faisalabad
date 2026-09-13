@@ -7,6 +7,9 @@ const prismaModule = require("../backend/dist/lib/prisma.js");
 const prisma = prismaModule.default ?? prismaModule.prisma;
 const manualFlowModule = require("../backend/dist/serverless/manualMatrimonialFlow.js");
 const manualMatrimonialFlow = manualFlowModule.manualMatrimonialFlow;
+const managerRoleModule = require("../backend/dist/serverless/matrimonialManagerRole.js");
+const createMatrimonialManagerAdmin = managerRoleModule.createMatrimonialManagerAdmin;
+const assignMatrimonialManagerRole = managerRoleModule.assignMatrimonialManagerRole;
 const jwt = require("jsonwebtoken");
 
 function bodyOf(req: any) {
@@ -301,9 +304,18 @@ export default async function handler(req: any, res: any) {
   restoreNestedApiPath(req);
   const pathname = String(req.url || "").split("?")[0];
   const method = String(req.method || "").toUpperCase();
+  const requestBody = bodyOf(req);
 
   if (pathname === "/api/matrimonial/manual-flow" && (method === "GET" || method === "POST")) {
     return manualMatrimonialFlow(req, res);
+  }
+
+  if (pathname === "/api/auth/admin" && method === "POST" && String(requestBody?.role || "") === "matrimonial_manager") {
+    return createMatrimonialManagerAdmin(req, res);
+  }
+  const adminRoleMatch = pathname.match(/^\/api\/auth\/admin\/([^/]+)\/role\/?$/);
+  if (adminRoleMatch && method === "PATCH" && String(requestBody?.role || "") === "matrimonial_manager") {
+    return assignMatrimonialManagerRole(req, res, decodeURIComponent(adminRoleMatch[1]));
   }
 
   if (pathname === "/api/matrimonial/published" && method === "GET") {
@@ -315,10 +327,6 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  // The separate approval-center screen used these admin-only operations, but
-  // they did not exist in the Express member router. Keep them inside the
-  // existing catch-all function so no database connection or Vercel function
-  // configuration needs to change.
   if (pathname === "/api/members/admin-create" && method === "POST") {
     try {
       return await createAdminMember(req, res);
@@ -340,17 +348,11 @@ export default async function handler(req: any, res: any) {
   }
 
   const statusMatch = pathname.match(/\/api\/members\/([^/]+)\/status\/?$/);
-  // Clicking Approve in the authenticated admin panel is the administrator's
-  // explicit confirmation that the relevant membership fee has been received.
-  // Mark it verified immediately before the normal backend approval transaction,
-  // which creates/updates the revenue record and official receipt reference.
   if (statusMatch && method === "PATCH" && String(bodyOf(req)?.status || "") === "approved") {
     try {
       const user = welfareAdminUser(req);
       if (user) await prisma.member.update({ where: { id: decodeURIComponent(statusMatch[1]) }, data: { paymentStatus: "verified" } });
-    } catch {
-      // The normal backend middleware will return the authoritative error.
-    }
+    } catch {}
   }
 
   return app(req, res);
