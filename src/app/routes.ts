@@ -25,33 +25,18 @@ import { MemberLoginPage } from "./pages/MemberLoginPage";
 import { MemberPortalPage } from "./pages/MemberPortalPage";
 import { MemberForgotPasswordPage } from "./pages/MemberForgotPasswordPage";
 import { BusinessPage } from "./pages/BusinessPage";
-import { BusinessSubmitPage } from "./pages/BusinessSubmitPage";
+import { BusinessSubmitVerifiedPage } from "./pages/BusinessSubmitVerifiedPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
 import { ContentDetailPage } from "./pages/ContentDetailPage";
 import { LeadershipMessagesPage } from "./pages/LeadershipMessagesPage";
 
 export const router = createBrowserRouter([
-  {
-    path: "admin",
-    Component: AdminPage,
-  },
-  {
-    path: "admin/members",
-    Component: AdminMemberCenterPage,
-  },
-  {
-    path: "admin/matrimonial",
-    Component: AdminMatrimonialPage,
-  },
-  {
-    path: "admin/operations",
-    Component: AdminOperationsShellPage,
-  },
-  {
-    path: "admin/finance",
-    Component: AdminFinancePage,
-  },
+  { path: "admin", Component: AdminPage },
+  { path: "admin/members", Component: AdminMemberCenterPage },
+  { path: "admin/matrimonial", Component: AdminMatrimonialPage },
+  { path: "admin/operations", Component: AdminOperationsShellPage },
+  { path: "admin/finance", Component: AdminFinancePage },
   {
     Component: Layout,
     children: [
@@ -78,7 +63,7 @@ export const router = createBrowserRouter([
       { path: "matrimonial", Component: MatrimonialMemberOnlyPage },
       { path: "matrimonial/requests", Component: MatrimonialRequestsPage },
       { path: "business", Component: BusinessPage },
-      { path: "business/submit", Component: BusinessSubmitPage },
+      { path: "business/submit", Component: BusinessSubmitVerifiedPage },
       { path: "member/register", Component: MemberRegisterPage },
       { path: "member/login", Component: MemberLoginPage },
       { path: "member/forgot-password", Component: MemberForgotPasswordPage },
