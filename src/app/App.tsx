@@ -9,6 +9,7 @@ import { OperationsFinanceRedirect } from "./components/admin/OperationsFinanceR
 import { AdminSmartMemberSelectors } from "./components/admin/AdminSmartMemberSelectors";
 import { AdminRoleAssignmentEditor } from "./components/admin/AdminRoleAssignmentEditor";
 import { AdminMatrimonialRoleOption } from "./components/admin/AdminMatrimonialRoleOption";
+import { AdminMatrimonialUrduHints } from "./components/admin/AdminMatrimonialUrduHints";
 import { MatrimonialPrivateImageHydrator } from "./components/MatrimonialPrivateImageHydrator";
 
 function ScopedAdminRedirect() {
@@ -60,6 +61,7 @@ export default function App() {
       <AdminSmartMemberSelectors />
       <AdminRoleAssignmentEditor />
       <AdminMatrimonialRoleOption />
+      <AdminMatrimonialUrduHints />
       <AdminBusinessShortcut />
       <AdminMemberCenterShortcut />
       <MatrimonialMatchingShortcut />
