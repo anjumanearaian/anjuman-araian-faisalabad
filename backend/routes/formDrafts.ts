@@ -22,6 +22,10 @@ router.get("/:formType", requireMember, async (req: Request, res: Response, next
     const formType = String(req.params.formType);
     if (!allowedTypes.has(formType)) return void res.status(400).json({ error: "Unknown form type" });
     const draft = await prisma.formDraft.findUnique({ where: { authUserId_formType: { authUserId: (req as any).user.id, formType } } });
+    // A completed business submission is a historical receipt, not the starting
+    // point for the next business. Keep it visible to admin Saved Forms, but let
+    // the member start the next registration with a clean form.
+    if (formType === "business" && draft?.status === "submitted") return void res.json(null);
     res.json(draft || null);
   } catch (error) { next(error); }
 });
