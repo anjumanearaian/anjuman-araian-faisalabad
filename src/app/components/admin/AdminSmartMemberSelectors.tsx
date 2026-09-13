@@ -9,11 +9,19 @@ type SearchMember = Pick<Member, "id" | "memberNo" | "fullName"> & Partial<Pick<
 const TARGET_LABEL = /(approved member|existing member referrer|member referrer|link approved member)/i;
 const INPUT_MARKER = "data-admin-smart-member-search";
 const SELECT_MARKER = "data-admin-smart-member-select";
+const RANK_MARKER = "data-admin-auto-role-rank";
 
 function selectContext(select: HTMLSelectElement) {
   const directLabel = select.closest("label")?.textContent || "";
   const parentLabel = select.parentElement?.querySelector(":scope > label")?.textContent || "";
   const preceding = select.previousElementSibling?.textContent || "";
+  return `${directLabel} ${parentLabel} ${preceding}`.replace(/\s+/g, " ").trim();
+}
+
+function inputContext(input: HTMLInputElement) {
+  const directLabel = input.closest("label")?.textContent || "";
+  const parentLabel = input.parentElement?.querySelector(":scope > label")?.textContent || "";
+  const preceding = input.previousElementSibling?.textContent || "";
   return `${directLabel} ${parentLabel} ${preceding}`.replace(/\s+/g, " ").trim();
 }
 
@@ -31,11 +39,36 @@ function searchableValues(member: SearchMember) {
   ];
 }
 
+function suggestedRoleRank(role: string) {
+  const key = String(role || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (key === "president") return 10;
+  if (key.includes("senior vice president")) return 20;
+  if (key === "vice president" || key.startsWith("vice president")) return 30;
+  if (key.includes("general secretary")) return 40;
+  if (key.includes("joint secretary")) return 50;
+  if (key.includes("finance secretary")) return 60;
+  if (key.includes("information secretary")) return 70;
+  if (key.includes("media")) return 80;
+  if (key.includes("welfare")) return 90;
+  if (key.includes("convener")) return 110;
+  if (key.includes("committee secretary")) return 120;
+  if (key.includes("coordinator")) return 130;
+  if (key.includes("executive member")) return 200;
+  if (key === "member") return 300;
+  return 150;
+}
+
+function setControlledInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  if (setter) setter.call(input, value); else input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 /**
- * Progressive smart-search enhancer for existing native member selectors.
- * It intentionally keeps the underlying React <select> intact, so every page
- * continues to use its existing state, permissions and save handlers. The same
- * matching rule is therefore reused without creating duplicate member controls.
+ * Reuses one progressive member-search rule across native admin member selectors
+ * without replacing the pages' existing React state/save handlers. It also gives
+ * governance roles a spaced hierarchy order while preserving a manual override.
  */
 export function AdminSmartMemberSelectors() {
   const { isAdmin, role } = useAdmin();
@@ -63,7 +96,7 @@ export function AdminSmartMemberSelectors() {
       }
     };
 
-    const enhance = (select: HTMLSelectElement, index: number) => {
+    const enhanceSelect = (select: HTMLSelectElement, index: number) => {
       const context = selectContext(select);
       if (!TARGET_LABEL.test(context)) return;
 
@@ -100,9 +133,33 @@ export function AdminSmartMemberSelectors() {
       applyFilter(select);
     };
 
+    const enhanceRoleRank = () => {
+      if (!window.location.pathname.startsWith("/admin/operations")) return;
+      const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("input"));
+      const roleInput = inputs.find((item) => /^role\s*\/\s*designation$/i.test(inputContext(item)));
+      const rankInput = inputs.find((item) => /^display\s*\/\s*hierarchy order$/i.test(inputContext(item)));
+      if (!roleInput || !rankInput || roleInput.hasAttribute(RANK_MARKER)) return;
+
+      roleInput.setAttribute(RANK_MARKER, "true");
+      roleInput.dataset.lastSuggestedRank = ["", "10", "150"].includes(rankInput.value) ? rankInput.value : "";
+      const updateRank = () => {
+        const next = String(suggestedRoleRank(roleInput.value));
+        const last = roleInput.dataset.lastSuggestedRank || "";
+        const current = rankInput.value;
+        const canAutoUpdate = current === "" || current === "10" || current === "150" || current === last;
+        if (!canAutoUpdate) return;
+        roleInput.dataset.lastSuggestedRank = next;
+        setControlledInputValue(rankInput, next);
+      };
+      roleInput.addEventListener("input", updateRank);
+      roleInput.addEventListener("change", updateRank);
+      if (roleInput.value.trim()) updateRank();
+    };
+
     const scan = () => {
       if (disposed) return;
-      Array.from(document.querySelectorAll<HTMLSelectElement>("select")).forEach(enhance);
+      Array.from(document.querySelectorAll<HTMLSelectElement>("select")).forEach(enhanceSelect);
+      enhanceRoleRank();
     };
 
     const load = async () => {
@@ -136,6 +193,10 @@ export function AdminSmartMemberSelectors() {
         select.removeAttribute(SELECT_MARKER);
         delete select.dataset.adminSmartMemberInputId;
         Array.from(select.options).forEach((option) => { option.hidden = false; });
+      });
+      document.querySelectorAll<HTMLInputElement>(`input[${RANK_MARKER}]`).forEach((input) => {
+        input.removeAttribute(RANK_MARKER);
+        delete input.dataset.lastSuggestedRank;
       });
     };
   }, [isAdmin, role]);
