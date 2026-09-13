@@ -1,5 +1,5 @@
 export type BusinessStatus = "pending" | "approved" | "rejected";
-export type PaymentStatus = "pending" | "received" | "verified" | "rejected";
+export type PaymentStatus = "pending" | "submitted" | "received" | "verified" | "rejected";
 export type SponsorshipPackage = "basic" | "premium" | "vip";
 
 export interface Business {
@@ -13,13 +13,13 @@ export interface Business {
   whatsapp: string;
   email: string;
   website: string;
-  socialLinks: string; // social media links
-  logoUrl: string; // base64 logo
+  socialLinks: string;
+  logoUrl: string;
   description: string;
   productsServices: string;
-  discountOffer: string; // discount for members
+  discountOffer: string;
   sponsorshipPackage: SponsorshipPackage;
-  paymentProofUrl: string; // base64 payment proof receipt
+  paymentProofUrl: string;
   additionalPhotos?: string[];
   status: BusinessStatus;
   paymentStatus: PaymentStatus;
@@ -29,8 +29,6 @@ export interface Business {
 }
 
 import { apiClient } from "./apiClient";
-
-// Removed localStorage helper functions getBusinesses, saveBusinesses, getMockBusinesses
 
 export const businessCategories = [
   "Agriculture and Farming",
@@ -72,6 +70,7 @@ export const businessStatusColors: Record<BusinessStatus, { bg: string; text: st
 
 export const paymentStatusColors: Record<PaymentStatus, { bg: string; text: string; label: string }> = {
   pending:  { bg: "#fef9c3", text: "#854d0e", label: "Pending Receipt" },
+  submitted: { bg: "#fff7ed", text: "#9a3412", label: "Receipt Submitted" },
   received: { bg: "#dbeafe", text: "#1e40af", label: "Payment Received" },
   verified: { bg: "#dcfce7", text: "#15803d", label: "Payment Verified" },
   rejected: { bg: "#fee2e2", text: "#b91c1c", label: "Payment Rejected" }
@@ -83,8 +82,19 @@ export async function fetchAllBusinesses(page: number = 1, limit: number = 10, i
   return { data: res.businesses as Business[], total: res.pagination.total, totalPages: res.pagination.totalPages };
 }
 
-export async function createBusiness(data: Omit<Business, "id" | "createdAt" | "updatedAt" | "status" | "paymentStatus">) {
+export async function createBusiness(data: Omit<Business, "id" | "createdAt" | "updatedAt" | "status" | "paymentStatus"> & {
+  paymentSenderName?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+}) {
   return apiClient("/businesses/submit", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createBusinessAdmin(data: Partial<Business> & Pick<Business, "businessName" | "ownerName" | "category" | "city" | "address" | "phone">) {
+  return apiClient("/businesses/admin", {
     method: "POST",
     body: JSON.stringify(data),
   });
