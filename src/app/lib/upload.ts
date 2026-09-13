@@ -16,17 +16,12 @@ export async function uploadFile(file: File, category = "document"): Promise<str
   const formData = new FormData();
   formData.append("file", prepared);
   formData.append("category", category);
-  const result = await apiClient<{ url: string }>("/upload", { method: "POST", body: formData });
+  const endpoint = category.startsWith("matrimonial-") ? "/matrimonial/private-upload" : "/upload";
+  const result = await apiClient<{ url: string }>(endpoint, { method: "POST", body: formData });
   if (!result?.url) throw new Error("Upload completed without a file URL");
   return result.url;
 }
 
 export async function uploadPrivateMatrimonialFile(file: File, category: "matrimonial-photo" | "matrimonial-payment-proof" | "matrimonial-document"): Promise<string> {
-  const prepared = await prepareUpload(file);
-  const formData = new FormData();
-  formData.append("file", prepared);
-  formData.append("category", category);
-  const result = await apiClient<{ url: string }>("/matrimonial/private-upload", { method: "POST", body: formData });
-  if (!result?.url) throw new Error("Private upload completed without a file URL");
-  return result.url;
+  return uploadFile(file, category);
 }
