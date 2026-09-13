@@ -71,10 +71,21 @@ export const businessStatusColors: Record<BusinessStatus, { bg: string; text: st
 export const paymentStatusColors: Record<PaymentStatus, { bg: string; text: string; label: string }> = {
   pending:  { bg: "#fef9c3", text: "#854d0e", label: "Pending Receipt" },
   submitted: { bg: "#fff7ed", text: "#9a3412", label: "Receipt Submitted" },
-  received: { bg: "#dbeafe", text: "#1e40af", label: "Payment Received" },
-  verified: { bg: "#dcfce7", text: "#15803d", label: "Payment Verified" },
+  received: { bg: "#dbeafe", text: "#1e40af", label: "Received / Admin Checked" },
+  verified: { bg: "#dcfce7", text: "#15803d", label: "Finance Verified" },
   rejected: { bg: "#fee2e2", text: "#b91c1c", label: "Payment Rejected" }
 };
+
+function cleanOptionalFields<T extends Record<string, any>>(data: T): T {
+  const copy: Record<string, any> = { ...data };
+  for (const key of ["logoUrl", "paymentProofUrl", "paymentSenderName", "paymentMethod", "paymentReference", "website", "email", "whatsapp", "socialLinks"]) {
+    if (typeof copy[key] === "string" && !copy[key].trim()) {
+      if (key === "website" || key === "email" || key === "whatsapp" || key === "socialLinks") copy[key] = "";
+      else delete copy[key];
+    }
+  }
+  return copy as T;
+}
 
 export async function fetchAllBusinesses(page: number = 1, limit: number = 10, includePending: boolean = false) {
   const endpoint = includePending ? `/businesses?page=${page}&limit=${limit}` : `/businesses/published?page=${page}&limit=${limit}`;
@@ -89,14 +100,18 @@ export async function createBusiness(data: Omit<Business, "id" | "createdAt" | "
 }) {
   return apiClient("/businesses/submit", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify(cleanOptionalFields(data as any)),
   });
 }
 
-export async function createBusinessAdmin(data: Partial<Business> & Pick<Business, "businessName" | "ownerName" | "category" | "city" | "address" | "phone">) {
+export async function createBusinessAdmin(data: Partial<Business> & Pick<Business, "businessName" | "ownerName" | "category" | "city" | "address" | "phone"> & {
+  paymentSenderName?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+}) {
   return apiClient("/businesses/admin", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify(cleanOptionalFields(data as any)),
   });
 }
 
@@ -107,10 +122,14 @@ export async function updateBusinessStatus(id: string, status: BusinessStatus, p
   });
 }
 
-export async function updateBusiness(id: string, partial: Partial<Business>) {
+export async function updateBusiness(id: string, partial: Partial<Business> & {
+  paymentSenderName?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+}) {
   return apiClient(`/businesses/${id}`, {
     method: "PUT",
-    body: JSON.stringify(partial),
+    body: JSON.stringify(cleanOptionalFields(partial as any)),
   });
 }
 
