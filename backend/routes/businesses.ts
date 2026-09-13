@@ -128,8 +128,12 @@ router.post("/admin", requireWelfareAdmin, validate(AdminBusinessSchema), async 
       ...businessFields
     } = req.body;
 
-    if (status === "approved" && !["received", "verified"].includes(paymentStatus)) {
-      return void res.status(409).json({ error: "An approved paid listing must have payment marked received or verified." });
+    // A manually created business cannot become finance-verified merely from the
+    // directory screen. "received" records an admin/accounts visual check; only
+    // the Finance Center may later set the source to "verified" and post a ledger receipt.
+    const effectivePaymentStatus = paymentStatus === "verified" ? "received" : paymentStatus;
+    if (status === "approved" && !["received", "verified"].includes(effectivePaymentStatus)) {
+      return void res.status(409).json({ error: "An approved paid listing must have payment marked received first." });
     }
 
     const created = await prisma.$transaction(async (tx: any) => {
@@ -139,7 +143,7 @@ router.post("/admin", requireWelfareAdmin, validate(AdminBusinessSchema), async 
           paymentProofUrl: paymentProofUrl || null,
           additionalPhotos: JSON.stringify(additionalPhotos),
           status,
-          paymentStatus,
+          paymentStatus: effectivePaymentStatus,
           adminNote: adminNote || "Created manually by admin.",
         },
       });
@@ -155,8 +159,7 @@ router.post("/admin", requireWelfareAdmin, validate(AdminBusinessSchema), async 
           ) VALUES (
             'business', ${newBusiness.id}, ${sourceKey}, ${newBusiness.ownerName}, ${senderName},
             ${`Business Directory ${newBusiness.sponsorshipPackage} Listing`}, ${amount}, 'PKR', ${paymentMethod || null}, ${paymentReference || null},
-            ${paymentProofUrl}, ${JSON.stringify(additionalPhotos)}, 'Business profile created manually by admin; uploaded proof retained for finance review.',
-            ${paymentStatus === "verified" ? "approved" : "pending"}
+            ${paymentProofUrl}, ${JSON.stringify(additionalPhotos)}, 'Business profile created manually by admin; uploaded proof retained for finance review.', 'pending'
           )
           ON CONFLICT ("sourceKey") DO NOTHING
         `;
@@ -179,12 +182,23 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
 
     const current = await prisma.business.findUnique({ where: { id }, select: { paymentStatus: true } });
     if (!current) return void res.status(404).json({ error: "Business not found" });
-    const effectivePayment = paymentStatus || current.paymentStatus;
-    if (status === "approved" && !["received", "verified"].includes(effectivePayment)) {
-      return void res.status(409).json({ error: "Verify or mark the uploaded payment slip as received before approving this business listing." });
+
+    let nextPaymentStatus = paymentStatus as string | undefined;
+    // Backward compatibility: the legacy AdminPage Approve button sends
+    // "verified". Convert that one-click directory approval to "received"
+    // unless Finance has already verified the payment. This prevents a listing
+    // admin from bypassing PaymentSubmission review / ledger posting.
+    if (nextPaymentStatus === "verified" && current.paymentStatus !== "verified") {
+      if (status === "approved") nextPaymentStatus = "received";
+      else return void res.status(409).json({ error: "Final payment verification is completed from the Finance Verification queue." });
     }
 
-    const updated = await prisma.business.update({ where: { id }, data: { status, paymentStatus, adminNote } });
+    const effectivePayment = nextPaymentStatus || current.paymentStatus;
+    if (status === "approved" && !["received", "verified"].includes(effectivePayment)) {
+      return void res.status(409).json({ error: "Review the uploaded payment slip and mark it received before approving this business listing." });
+    }
+
+    const updated = await prisma.business.update({ where: { id }, data: { status, paymentStatus: nextPaymentStatus, adminNote } });
     res.json({ ...updated, additionalPhotos: parsePhotos(updated.additionalPhotos) });
   } catch (err: any) {
     if (err.code === "P2025") return void res.status(404).json({ error: "Business not found" });
