@@ -70,6 +70,7 @@ async function syncBusinessPaymentSubmission(tx: any, business: any, params: {
   paymentMethod?: string;
   paymentReference?: string;
   supportingDocuments?: string[];
+  resubmitRejected?: boolean;
 }) {
   if (!business.paymentProofUrl) return;
 
@@ -99,6 +100,7 @@ async function syncBusinessPaymentSubmission(tx: any, business: any, params: {
 
   const queueStatus = String(existing[0].status || "").toLowerCase();
   if (queueStatus === "approved") return;
+  if (queueStatus === "rejected" && !params.resubmitRejected) return;
 
   await tx.$executeRaw`
     UPDATE "PaymentSubmission"
@@ -263,6 +265,18 @@ router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), asyn
     const data = { ...editable } as any;
     if (Array.isArray(data.additionalPhotos)) data.additionalPhotos = JSON.stringify(data.additionalPhotos);
 
+    const proofChanged = Object.prototype.hasOwnProperty.call(data, "paymentProofUrl") && data.paymentProofUrl !== previous.paymentProofUrl;
+    if (proofChanged) {
+      const approvedQueue = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "PaymentSubmission"
+        WHERE "sourceType" = 'business' AND "sourceRecordId" = ${id} AND "status" = 'approved'
+        LIMIT 1
+      `;
+      if (approvedQueue.length) {
+        return void res.status(409).json({ error: "This payment proof is already Finance Verified and locked. Create a new financial adjustment/record through Finance instead of replacing the approved proof." });
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx: any) => {
       const row = await tx.business.update({ where: { id }, data });
       await syncBusinessPaymentSubmission(tx, row, {
@@ -270,6 +284,7 @@ router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), asyn
         paymentMethod,
         paymentReference,
         supportingDocuments: parsePhotos(row.additionalPhotos),
+        resubmitRejected: Boolean(proofChanged || paymentSenderName || paymentMethod || paymentReference),
       });
       return row;
     });
