@@ -29,7 +29,7 @@
     },
     {
       "source": "/api/auth/admin/:id/role",
-      "destination": "/api/__proxy__auth__admin__:id__role"
+      "destination": "/api/__proxy__auth__admin/:id/role"
     },
     {
       "source": "/((?!api/|uploads/).*)",
