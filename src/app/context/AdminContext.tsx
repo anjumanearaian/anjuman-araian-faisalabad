@@ -21,6 +21,7 @@ const ADMIN_ROLES: AdminRole[] = ["admin", "super_admin", "content_manager", "we
 function clearStoredAdminSession() {
   sessionStorage.removeItem("araian_admin_role");
   sessionStorage.removeItem("araian_admin_token");
+  sessionStorage.removeItem("araian_admin_business_draft");
 }
 
 function decodeJwtPayload(token: string): any | null {
