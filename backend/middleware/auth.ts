@@ -35,15 +35,14 @@ function requireRoles(allowedRoles: string[], errorMessage: string) {
   };
 }
 
-// Core administrative settings, leadership, messages and finance remain limited
-// to full administrators. Scoped managers use the dedicated guards below.
 export const requireAdmin = requireRoles(["admin", "super_admin"], "Admin access required");
 export const requireContentAdmin = requireRoles(["admin", "super_admin", "content_manager"], "Content manager access required");
 export const requireWelfareAdmin = requireRoles(["admin", "super_admin", "welfare_manager"], "Welfare manager access required");
+export const requireMatrimonialAdmin = requireRoles(["admin", "super_admin", "welfare_manager", "matrimonial_manager"], "Matrimonial manager access required");
 export const requireSuperAdmin = requireRoles(["super_admin"], "Super Admin access required");
 export const requireFinanceAdmin = requireRoles(["admin", "super_admin", "finance_secretary", "assistant_finance_secretary"], "Finance access required");
 
-// Any signed-in member/applicant/admin token. Ownership checks remain the
+// Any signed-in applicant/member token. Ownership checks remain the
 // responsibility of the route that consumes this middleware.
 export const requireMember = (req: Request, res: Response, next: NextFunction): void => {
   const authHeader = req.headers.authorization;
