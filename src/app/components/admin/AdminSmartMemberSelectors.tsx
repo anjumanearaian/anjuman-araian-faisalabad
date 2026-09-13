@@ -9,6 +9,7 @@ type SearchMember = Pick<Member, "id" | "memberNo" | "fullName"> & Partial<Pick<
 const TARGET_LABEL = /(approved member|existing member referrer|member referrer|link approved member)/i;
 const INPUT_MARKER = "data-admin-smart-member-search";
 const SELECT_MARKER = "data-admin-smart-member-select";
+const RESULT_MARKER = "data-admin-smart-member-results";
 const RANK_MARKER = "data-admin-auto-role-rank";
 
 function selectContext(select: HTMLSelectElement) {
@@ -65,10 +66,17 @@ function setControlledInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function setControlledSelectValue(select: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+  if (setter) setter.call(select, value); else select.value = value;
+  select.dispatchEvent(new Event("input", { bubbles: true }));
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 /**
- * Reuses one progressive member-search rule across native admin member selectors
- * without replacing the pages' existing React state/save handlers. It also gives
- * governance roles a spaced hierarchy order while preserving a manual override.
+ * One progressive member-search rule for native admin selectors. The original
+ * React <select> stays intact as the source of truth, while a visible narrowing
+ * result list makes large member databases practical to use.
  */
 export function AdminSmartMemberSelectors() {
   const { isAdmin, role } = useAdmin();
@@ -80,14 +88,8 @@ export function AdminSmartMemberSelectors() {
     let members: SearchMember[] = [];
     const financeOnly = role === "finance_secretary" || role === "assistant_finance_secretary";
 
-    const applyFilter = (select: HTMLSelectElement) => {
-      const inputId = select.dataset.adminSmartMemberInputId;
-      const input = inputId ? document.getElementById(inputId) as HTMLInputElement | null : null;
-      if (!input) return;
-      const query = input.value.trim();
-      const ranked = query ? smartSearchSort(members, query, searchableValues, (m) => m.fullName || m.memberNo || "") : members;
+    const syncNativeOptions = (select: HTMLSelectElement, query: string, ranked: SearchMember[]) => {
       const allowed = new Set(ranked.map((m) => m.id));
-
       for (const option of Array.from(select.options)) {
         if (!option.value) { option.hidden = false; continue; }
         const memberHit = allowed.has(option.value);
@@ -96,23 +98,99 @@ export function AdminSmartMemberSelectors() {
       }
     };
 
+    const renderResults = (select: HTMLSelectElement) => {
+      const inputId = select.dataset.adminSmartMemberInputId;
+      const resultsId = select.dataset.adminSmartMemberResultsId;
+      const input = inputId ? document.getElementById(inputId) as HTMLInputElement | null : null;
+      const results = resultsId ? document.getElementById(resultsId) as HTMLDivElement | null : null;
+      if (!input || !results) return;
+
+      const query = input.value.trim();
+      const ranked = query.length >= 2
+        ? smartSearchSort(members, query, searchableValues, (m) => m.fullName || m.memberNo || "")
+        : members;
+      syncNativeOptions(select, query, ranked);
+
+      results.innerHTML = "";
+      if (query.length < 2) {
+        results.style.display = "none";
+        return;
+      }
+
+      results.style.display = "block";
+      const summary = document.createElement("div");
+      summary.textContent = `${ranked.length} matching member${ranked.length === 1 ? "" : "s"}. Keep typing to narrow the list.`;
+      summary.style.padding = "7px 10px";
+      summary.style.fontSize = "10px";
+      summary.style.color = "#6b7280";
+      summary.style.background = "#f8f5ef";
+      summary.style.borderBottom = "1px solid #e8e2d7";
+      results.appendChild(summary);
+
+      if (!ranked.length) {
+        const empty = document.createElement("div");
+        empty.textContent = "No matching approved member.";
+        empty.style.padding = "12px 10px";
+        empty.style.fontSize = "11px";
+        empty.style.color = "#777";
+        results.appendChild(empty);
+        return;
+      }
+
+      ranked.forEach((member) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.style.width = "100%";
+        button.style.display = "block";
+        button.style.textAlign = "left";
+        button.style.padding = "9px 10px";
+        button.style.border = "0";
+        button.style.borderBottom = "1px solid #eee";
+        button.style.background = member.id === select.value ? "#eef7f1" : "white";
+        button.style.cursor = "pointer";
+        button.style.color = "#24382b";
+
+        const title = document.createElement("strong");
+        title.textContent = member.fullName || "Unnamed member";
+        title.style.display = "block";
+        title.style.fontSize = "12px";
+        button.appendChild(title);
+
+        const meta = document.createElement("span");
+        meta.textContent = [member.memberNo, member.phone || member.whatsapp, member.designation, member.city].filter(Boolean).join(" · ");
+        meta.style.display = "block";
+        meta.style.marginTop = "2px";
+        meta.style.fontSize = "10px";
+        meta.style.color = "#777";
+        button.appendChild(meta);
+
+        button.addEventListener("click", () => {
+          setControlledSelectValue(select, member.id);
+          input.value = `${member.fullName} · ${member.memberNo}`;
+          results.style.display = "none";
+        });
+        results.appendChild(button);
+      });
+    };
+
     const enhanceSelect = (select: HTMLSelectElement, index: number) => {
       const context = selectContext(select);
       if (!TARGET_LABEL.test(context)) return;
 
       if (select.hasAttribute(SELECT_MARKER)) {
-        applyFilter(select);
+        renderResults(select);
         return;
       }
 
       const id = `admin-smart-member-search-${Date.now()}-${index}`;
+      const resultId = `${id}-results`;
       const input = document.createElement("input");
       input.id = id;
       input.type = "search";
       input.autocomplete = "off";
       input.placeholder = financeOnly
-        ? "Search member name, AAF / registration no. or email..."
-        : "Search any part of name, AAF / member no., mobile, CNIC or designation...";
+        ? "Search name, AAF / registration no. or email..."
+        : "Search name from any word, AAF / member no., mobile, CNIC or designation...";
       input.setAttribute(INPUT_MARKER, "true");
       input.style.width = "100%";
       input.style.boxSizing = "border-box";
@@ -126,11 +204,31 @@ export function AdminSmartMemberSelectors() {
       input.style.fontSize = "12px";
       input.style.outline = "none";
 
+      const results = document.createElement("div");
+      results.id = resultId;
+      results.setAttribute(RESULT_MARKER, "true");
+      results.style.display = "none";
+      results.style.maxHeight = "250px";
+      results.style.overflowY = "auto";
+      results.style.margin = "0 0 6px";
+      results.style.border = "1px solid #d9e2dc";
+      results.style.borderRadius = "8px";
+      results.style.background = "white";
+      results.style.boxShadow = "0 8px 24px rgba(0,0,0,.10)";
+
       select.setAttribute(SELECT_MARKER, "true");
       select.dataset.adminSmartMemberInputId = id;
+      select.dataset.adminSmartMemberResultsId = resultId;
       select.parentElement?.insertBefore(input, select);
-      input.addEventListener("input", () => applyFilter(select));
-      applyFilter(select);
+      select.parentElement?.insertBefore(results, select);
+
+      input.addEventListener("input", () => renderResults(select));
+      input.addEventListener("focus", () => renderResults(select));
+      select.addEventListener("change", () => {
+        const selected = members.find((m) => m.id === select.value);
+        if (selected) input.value = `${selected.fullName} · ${selected.memberNo}`;
+      });
+      renderResults(select);
     };
 
     const enhanceRoleRank = () => {
@@ -189,9 +287,11 @@ export function AdminSmartMemberSelectors() {
       observer.disconnect();
       window.clearInterval(timer);
       document.querySelectorAll<HTMLInputElement>(`input[${INPUT_MARKER}]`).forEach((input) => input.remove());
+      document.querySelectorAll<HTMLDivElement>(`div[${RESULT_MARKER}]`).forEach((results) => results.remove());
       document.querySelectorAll<HTMLSelectElement>(`select[${SELECT_MARKER}]`).forEach((select) => {
         select.removeAttribute(SELECT_MARKER);
         delete select.dataset.adminSmartMemberInputId;
+        delete select.dataset.adminSmartMemberResultsId;
         Array.from(select.options).forEach((option) => { option.hidden = false; });
       });
       document.querySelectorAll<HTMLInputElement>(`input[${RANK_MARKER}]`).forEach((input) => {
