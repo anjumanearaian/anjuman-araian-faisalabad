@@ -12,7 +12,6 @@ const FIELD_HINTS: Record<string, string> = {
   "Sect (optional)": "مسلک، صرف اگر بتانا چاہیں۔",
   "Languages": "بولی یا سمجھی جانے والی زبانیں، مثلاً اردو، پنجابی، انگریزی۔",
   "Hobbies": "اہم مشاغل یا دلچسپیاں۔",
-  "Marriage Timeline": "شادی کا متوقع وقت، مثلاً 6 ماہ، 1 سال یا جلد از جلد۔",
   "Relocation": "شادی کے بعد دوسرے شہر یا ملک منتقل ہونے کی آمادگی۔",
   "Family Notes": "خاندان کے بارے میں مختصر اہم معلومات۔",
   "Other Partner Expectations": "وہ اضافی باتیں جو شریکِ حیات کے انتخاب میں اہم ہوں۔",
@@ -31,6 +30,7 @@ const SECTION_HINTS: Record<string, string> = {
   "Candidate & Consent": "امیدوار کی بنیادی معلومات اور امیدوار/سرپرست کی اجازت۔",
   "Location, Education & Career": "رہائش، تعلیم اور پیشہ ورانہ معلومات۔",
   "Family & Lifestyle": "خاندانی ماحول، طرزِ زندگی اور شادی کی ترجیحات۔",
+  "Family, Lifestyle & Compatibility": "خاندانی ماحول، طرزِ زندگی، شادی کا متوقع وقت اور مختصر مطابقتی سوالات۔",
   "Layered Partner Preferences": "Primary = پہلی ترجیح، Secondary = دوسری ترجیح، Acceptable = قابلِ قبول۔ Must = لازمی، Preferred = ترجیحی، Nice to have = ہو تو بہتر۔",
   "Privacy, Media & Approval": "تصویر، رابطہ، دستاویزات اور منظوری کی رازداری کی ترتیبات۔"
 };
@@ -42,42 +42,17 @@ const CHECKBOX_HINTS: Record<string, string> = {
 };
 
 const PLACEHOLDERS: Record<string, string> = {
-  "Marriage Timeline": "e.g. 6 months / 1 year",
   "Relocation": "e.g. Yes - UAE / No / Within Pakistan",
   "Employer Type": "e.g. Government / Private / Own business",
   "Languages": "e.g. Urdu, Punjabi, English",
   "Hobbies": "e.g. Reading, Cricket, Travel"
 };
 
-function cleanText(value: string | null | undefined) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
+function cleanText(value: string | null | undefined) { return String(value || "").replace(/\s+/g, " ").trim(); }
 function makeUrduHint(text: string, kind: "field" | "section" | "checkbox") {
   const el = document.createElement(kind === "section" ? "div" : "small");
-  el.setAttribute("data-matrimonial-urdu-hint", kind);
-  el.setAttribute("lang", "ur");
-  el.setAttribute("dir", "rtl");
-  el.textContent = text;
-  Object.assign(el.style, kind === "section" ? {
-    display: "block",
-    margin: "-7px 0 11px",
-    padding: "7px 10px",
-    borderRadius: "7px",
-    background: "#f5f8f6",
-    color: "#496555",
-    fontSize: "10px",
-    lineHeight: "1.7",
-    textAlign: "right"
-  } : {
-    display: "block",
-    marginTop: "3px",
-    color: kind === "checkbox" ? "#66756c" : "#708078",
-    fontSize: "9px",
-    fontWeight: "500",
-    lineHeight: "1.55",
-    textAlign: "right"
-  });
+  el.setAttribute("data-matrimonial-urdu-hint", kind); el.setAttribute("lang", "ur"); el.setAttribute("dir", "rtl"); el.textContent = text;
+  Object.assign(el.style, kind === "section" ? { display:"block", margin:"-7px 0 11px", padding:"7px 10px", borderRadius:"7px", background:"#f5f8f6", color:"#496555", fontSize:"10px", lineHeight:"1.7", textAlign:"right" } : { display:"block", marginTop:"3px", color:kind === "checkbox" ? "#66756c" : "#708078", fontSize:"9px", fontWeight:"500", lineHeight:"1.55", textAlign:"right" });
   return el;
 }
 
@@ -85,52 +60,19 @@ function enhanceForm() {
   const path = window.location.pathname;
   const isTarget = path === "/admin/matrimonial/new" || /^\/admin\/matrimonial\/[^/]+\/edit$/.test(path);
   if (!isTarget) return;
-
   document.querySelectorAll<HTMLLabelElement>("form label").forEach((label) => {
     if (label.querySelector("[data-matrimonial-urdu-hint]")) return;
     const labelText = cleanText(Array.from(label.childNodes).filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent).join(" "));
     const hint = FIELD_HINTS[labelText];
-    if (hint) {
-      label.appendChild(makeUrduHint(hint, "field"));
-      const control = label.parentElement?.querySelector<HTMLInputElement | HTMLTextAreaElement>("input:not([type='file']), textarea");
-      if (control && PLACEHOLDERS[labelText] && !control.placeholder) control.placeholder = PLACEHOLDERS[labelText];
-    }
+    if (hint) { label.appendChild(makeUrduHint(hint, "field")); const control = label.parentElement?.querySelector<HTMLInputElement | HTMLTextAreaElement>("input:not([type='file']), textarea"); if (control && PLACEHOLDERS[labelText] && !control.placeholder) control.placeholder = PLACEHOLDERS[labelText]; }
   });
-
-  document.querySelectorAll<HTMLHeadingElement>("form h3").forEach((heading) => {
-    if (heading.nextElementSibling?.getAttribute("data-matrimonial-urdu-hint") === "section") return;
-    const hint = SECTION_HINTS[cleanText(heading.textContent)];
-    if (hint) heading.insertAdjacentElement("afterend", makeUrduHint(hint, "section"));
-  });
-
-  document.querySelectorAll<HTMLElement>("form strong").forEach((strong) => {
-    const text = cleanText(strong.textContent);
-    const hint = CHECKBOX_HINTS[text];
-    if (!hint) return;
-    const span = strong.parentElement;
-    if (!span || span.querySelector("[data-matrimonial-urdu-hint]")) return;
-    span.appendChild(makeUrduHint(hint, "checkbox"));
-  });
-
-  document.querySelectorAll<HTMLInputElement>("form input").forEach((input) => {
-    const wrapper = input.parentElement;
-    const label = wrapper?.querySelector("label");
-    const labelText = cleanText(label?.childNodes?.[0]?.textContent);
-    if (labelText && PLACEHOLDERS[labelText] && !input.placeholder) input.placeholder = PLACEHOLDERS[labelText];
-  });
+  document.querySelectorAll<HTMLHeadingElement>("form h3").forEach((heading) => { if (heading.nextElementSibling?.getAttribute("data-matrimonial-urdu-hint") === "section") return; const hint = SECTION_HINTS[cleanText(heading.textContent)]; if (hint) heading.insertAdjacentElement("afterend", makeUrduHint(hint, "section")); });
+  document.querySelectorAll<HTMLElement>("form strong").forEach((strong) => { const text=cleanText(strong.textContent), hint=CHECKBOX_HINTS[text]; if(!hint)return; const span=strong.parentElement; if(!span||span.querySelector("[data-matrimonial-urdu-hint]"))return; span.appendChild(makeUrduHint(hint,"checkbox")); });
 }
 
 export function AdminMatrimonialUrduHints() {
   const { isAdmin, role } = useAdmin();
   const allowed = ["admin", "super_admin", "welfare_manager", "matrimonial_manager"].includes(String(role || ""));
-
-  useEffect(() => {
-    if (!isAdmin || !allowed || typeof document === "undefined") return;
-    enhanceForm();
-    const observer = new MutationObserver(enhanceForm);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [isAdmin, allowed]);
-
+  useEffect(() => { if (!isAdmin || !allowed || typeof document === "undefined") return; enhanceForm(); const observer = new MutationObserver(enhanceForm); observer.observe(document.body, { childList:true, subtree:true }); return () => observer.disconnect(); }, [isAdmin, allowed]);
   return null;
 }
