@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordlessSignIn } from "../components/PasswordlessSignIn";
-import { CheckCircle, Clock, Heart, ShieldCheck, XCircle, ArrowLeft, Phone } from "lucide-react";
+import { CheckCircle, Clock, Heart, ShieldCheck, XCircle, ArrowLeft, Phone, BadgeCheck, Image as ImageIcon } from "lucide-react";
 import { fetchMyMatchRequests, MatchRequestView, respondToMatchRequest } from "../lib/matrimonialStore";
 
 const GREEN = "#1a4d2e";
@@ -17,132 +17,62 @@ export function MatrimonialRequestsPage() {
 
   const load = async () => {
     if (!authenticated) return;
-    setLoading(true);
-    setError("");
-    try {
-      setRequests(await fetchMyMatchRequests());
-    } catch (e: any) {
-      if (e?.status === 401) {
-        localStorage.removeItem("araian_member_token");
-        setAuthenticated(false);
-      } else {
-        setError(e?.message || "Could not load your match requests.");
-      }
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true); setError("");
+    try { setRequests(await fetchMyMatchRequests()); }
+    catch (e: any) {
+      if (e?.status === 401) { localStorage.removeItem("araian_member_token"); setAuthenticated(false); }
+      else setError(e?.message || "Could not load your interest requests.");
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { void load(); }, [authenticated]);
 
   const respond = async (id: string, decision: "accept" | "decline") => {
-    if (decision === "accept" && !confirm("Accept this match request? Your contact details and the requester's contact details will then be released to both sides.")) return;
-    if (decision === "decline" && !confirm("Decline this match request? No contact details will be shared.")) return;
-    setBusyId(id);
-    setError("");
-    try {
-      await respondToMatchRequest(id, decision);
-      await load();
-    } catch (e: any) {
-      setError(e?.message || "Could not update this request.");
-    } finally {
-      setBusyId(null);
-    }
+    if (decision === "accept" && !confirm("Accept this interest? The system will release only the details allowed by both profiles' privacy settings.")) return;
+    if (decision === "decline" && !confirm("Decline this interest? No private details will be released.")) return;
+    setBusyId(id); setError("");
+    try { await respondToMatchRequest(id, decision); await load(); }
+    catch (e: any) { setError(e?.message || "Could not update this request."); }
+    finally { setBusyId(null); }
   };
 
-  if (!authenticated) {
-    return (
-      <div>
-        <PageHeader title="Matrimonial Match Requests" subtitle="Private, consent-based matching" breadcrumb={["Home", "Matrimonial", "Requests"]} />
-        <section style={{ maxWidth: 500, margin: "48px auto", padding: "0 24px" }}>
-          <div style={{ background: "white", borderRadius: 14, padding: 32, boxShadow: "0 6px 30px rgba(0,0,0,.08)" }}>
-            <ShieldCheck size={28} color={GREEN} />
-            <h2 style={{ color: GREEN, margin: "14px 0 8px", fontFamily: "'Playfair Display', serif" }}>Verify your account</h2>
-            <p style={{ color: "#666", fontSize: 14, lineHeight: 1.7 }}>Use the same verified email/Google account used for your matrimonial profile. Requests and contact details are visible only to the relevant profile owners and authorized administrators.</p>
-            <PasswordlessSignIn onAuthenticated={() => setAuthenticated(true)} compact />
-          </div>
-        </section>
-      </div>
-    );
-  }
+  if (!authenticated) return <div><PageHeader title="Matrimonial Interests" subtitle="Private, consent-based introductions" breadcrumb={["Home", "Matrimonial", "Interests"]}/><section style={{ maxWidth: 500, margin: "48px auto", padding: "0 24px" }}><div style={card}><ShieldCheck size={28} color={GREEN}/><h2 style={heading}>Verify your account</h2><p style={muted}>Use the same verified email used for your candidate profile. Requests and released details are visible only to the relevant account and authorized matrimonial managers.</p><PasswordlessSignIn onAuthenticated={() => setAuthenticated(true)} compact/></div></section></div>;
 
   const incoming = requests.filter((r) => r.direction === "incoming");
   const outgoing = requests.filter((r) => r.direction === "outgoing");
 
-  return (
-    <div>
-      <PageHeader title="Matrimonial Match Requests" subtitle="Admin-reviewed and consent-based contact exchange" breadcrumb={["Home", "Matrimonial", "Requests"]} />
-      <section style={{ maxWidth: 980, margin: "0 auto", padding: "36px 20px 60px" }}>
-        <Link to="/member/portal" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: GREEN, textDecoration: "none", fontSize: 13, fontWeight: 700, marginBottom: 18 }}><ArrowLeft size={15} /> Back to Member Portal</Link>
-
-        <div style={{ background: "#f0f7f3", border: "1px solid rgba(26,77,46,.15)", borderRadius: 12, padding: "16px 18px", display: "flex", gap: 10, marginBottom: 24 }}>
-          <ShieldCheck size={20} color={GREEN} style={{ flexShrink: 0 }} />
-          <p style={{ margin: 0, color: "#4b5563", fontSize: 13, lineHeight: 1.7 }}><strong style={{ color: GREEN }}>Privacy rule:</strong> basic profile information is visible before consent. Contact details are released only after the administrator forwards the request and the receiving profile accepts it.</p>
-        </div>
-
-        {error && <div style={{ background: "#fee2e2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 8, padding: "11px 14px", marginBottom: 18, fontSize: 13 }}>{error}</div>}
-        {loading && <div style={{ color: "#777", padding: 20 }}>Loading requests...</div>}
-
-        {!loading && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }} className="request-cols">
-            <RequestColumn title={`Incoming Requests (${incoming.length})`} requests={incoming} busyId={busyId} onRespond={respond} />
-            <RequestColumn title={`Outgoing Requests (${outgoing.length})`} requests={outgoing} busyId={busyId} onRespond={respond} />
-          </div>
-        )}
-      </section>
-      <style>{`@media (max-width: 800px) { .request-cols { grid-template-columns: 1fr !important; } }`}</style>
-    </div>
-  );
+  return <div>
+    <PageHeader title="Matrimonial Interests" subtitle="Manager-reviewed and consent-controlled introductions" breadcrumb={["Home", "Matrimonial", "Interests"]}/>
+    <section style={{ maxWidth: 1050, margin: "0 auto", padding: "34px 20px 64px" }}>
+      <Link to="/matrimonial" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: GREEN, textDecoration: "none", fontSize: 12, fontWeight: 800, marginBottom: 16 }}><ArrowLeft size={14}/> Matrimonial Dashboard</Link>
+      <div style={{ background: "#f0f7f3", border: "1px solid rgba(26,77,46,.15)", borderRadius: 11, padding: 14, display: "flex", gap: 9, marginBottom: 20 }}><ShieldCheck size={18} color={GREEN}/><p style={{ margin: 0, color: "#4b5563", fontSize: 11, lineHeight: 1.7 }}><strong style={{ color: GREEN }}>Privacy workflow:</strong> anonymous compatibility first → manager review → target consent → permitted profile/photo/contact release. A payment or uploaded photo never makes a candidate publicly visible.</p></div>
+      {error && <div style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 8, padding: 11, marginBottom: 14, fontSize: 12 }}>{error}</div>}
+      {loading ? <div style={{ padding: 30, color: "#777" }}>Loading private requests...</div> : <div className="request-cols" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}><RequestColumn title={`Incoming (${incoming.length})`} requests={incoming} busyId={busyId} onRespond={respond}/><RequestColumn title={`Outgoing (${outgoing.length})`} requests={outgoing} busyId={busyId} onRespond={respond}/></div>}
+    </section>
+    <style>{`@media(max-width:820px){.request-cols{grid-template-columns:1fr!important}}`}</style>
+  </div>;
 }
 
-function RequestColumn({ title, requests, busyId, onRespond }: { title: string; requests: MatchRequestView[]; busyId: string | null; onRespond: (id: string, decision: "accept" | "decline") => void }) {
-  return (
-    <div>
-      <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 19, margin: "0 0 14px" }}>{title}</h3>
-      <div style={{ display: "grid", gap: 14 }}>
-        {requests.map((r) => <RequestCard key={r.id} request={r} busy={busyId === r.id} onRespond={onRespond} />)}
-        {requests.length === 0 && <div style={{ background: "white", border: "1px solid #eee", borderRadius: 12, padding: 30, textAlign: "center", color: "#aaa" }}><Heart size={28} style={{ margin: "0 auto 8px" }} /><p style={{ margin: 0, fontSize: 13 }}>No requests here yet.</p></div>}
-      </div>
-    </div>
-  );
+function RequestColumn({ title, requests, busyId, onRespond }: { title:string; requests:MatchRequestView[]; busyId:string|null; onRespond:(id:string, decision:"accept"|"decline")=>void }) {
+  return <div><h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, margin: "0 0 12px" }}>{title}</h3><div style={{ display: "grid", gap: 12 }}>{requests.map((r) => <RequestCard key={r.id} r={r} busy={busyId === r.id} onRespond={onRespond}/>)}{!requests.length && <div style={{ ...card, textAlign: "center", color: "#999", padding: 28 }}><Heart size={25} color={GOLD}/><p style={{ marginBottom: 0, fontSize: 12 }}>No requests here yet.</p></div>}</div></div>;
 }
 
-function RequestCard({ request: r, busy, onRespond }: { request: MatchRequestView; busy: boolean; onRespond: (id: string, decision: "accept" | "decline") => void }) {
+function RequestCard({ r, busy, onRespond }: { r:MatchRequestView; busy:boolean; onRespond:(id:string, decision:"accept"|"decline")=>void }) {
   const p = r.counterpart;
   const status = statusMeta(r.status);
-  const accepted = r.status === "accepted" && Boolean(r.contactReleasedAt);
-  return (
-    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 18, boxShadow: "0 2px 8px rgba(0,0,0,.03)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 12, alignItems: "flex-start" }}>
-        <div><div style={{ color: GREEN, fontWeight: 800, fontSize: 14 }}>{p.profileCode || p.id.slice(0, 8)}</div><div style={{ color: "#777", fontSize: 12, marginTop: 3, textTransform: "capitalize" }}>{p.gender} · {p.age} years · {p.city}</div></div>
-        <span style={{ background: status.bg, color: status.color, borderRadius: 20, padding: "4px 9px", fontSize: 10, fontWeight: 800 }}>{status.label}</span>
-      </div>
-      <div style={{ color: "#4b5563", fontSize: 13, lineHeight: 1.7 }}><div><strong>Education:</strong> {p.education}</div><div><strong>Profession:</strong> {p.profession}</div></div>
-      {r.requesterMessage && <div style={{ marginTop: 10, background: "#f8fafc", borderRadius: 7, padding: 10, color: "#555", fontSize: 12 }}><strong>Message:</strong> {r.requesterMessage}</div>}
-
-      {accepted && (
-        <div style={{ marginTop: 12, background: "#dcfce7", border: "1px solid #86efac", borderRadius: 8, padding: 11, color: "#166534", fontSize: 12 }}>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}><CheckCircle size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Mutual consent completed</div>
-          {p.name && <div><strong>Name:</strong> {p.name}</div>}
-          {p.contact && <div style={{ marginTop: 3 }}><Phone size={12} style={{ verticalAlign: "middle", marginRight: 5 }} /><strong>Contact:</strong> {p.contact}</div>}
-        </div>
-      )}
-
-      {r.direction === "incoming" && r.status === "awaiting_target" && (
-        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-          <button disabled={busy} onClick={() => onRespond(r.id, "accept")} style={{ flex: 1, background: GREEN, color: "white", border: 0, borderRadius: 7, padding: "9px 8px", fontWeight: 700, cursor: busy ? "wait" : "pointer" }}><CheckCircle size={14} style={{ verticalAlign: "middle", marginRight: 5 }} /> Accept</button>
-          <button disabled={busy} onClick={() => onRespond(r.id, "decline")} style={{ flex: 1, background: "#fff", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 7, padding: "9px 8px", fontWeight: 700, cursor: busy ? "wait" : "pointer" }}><XCircle size={14} style={{ verticalAlign: "middle", marginRight: 5 }} /> Decline</button>
-        </div>
-      )}
-      {r.status === "pending_admin" && <div style={{ marginTop: 12, color: "#8a6118", fontSize: 12 }}><Clock size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Waiting for admin review.</div>}
-    </div>
-  );
+  const accepted = r.status === "accepted";
+  return <article style={{ ...card, padding: 17 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}><div><strong style={{ color: GREEN, fontSize: 13 }}>{p.profileCode}</strong><div style={{ color: "#777", fontSize: 11, marginTop: 3, textTransform: "capitalize" }}>{p.gender} · {p.age} years · {p.city || p.province || p.country}</div></div><span style={{ background: status.bg, color: status.color, borderRadius: 18, padding: "4px 8px", fontSize: 9, fontWeight: 800 }}>{status.label}</span></div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginTop: 11 }}><Fact label="Education" value={p.education}/><Fact label="Profession" value={p.profession}/></div>
+    {r.mutualScore !== undefined && r.mutualScore !== null && <div style={{ background: "#f8f5ef", borderRadius: 8, padding: 9, marginTop: 10, fontSize: 10, color: "#555" }}><BadgeCheck size={11} style={{ verticalAlign: "-2px", marginRight: 4 }}/><strong>{r.mutualScore}% mutual compatibility</strong> · confidence {r.scoreConfidence || 0}%</div>}
+    {r.requesterMessage && <div style={{ marginTop: 9, background: "#f8fafc", borderRadius: 7, padding: 9, color: "#555", fontSize: 10 }}><strong>Message:</strong> {r.requesterMessage}</div>}
+    {accepted && <div style={{ marginTop: 11, background: "#dcfce7", border: "1px solid #bbf7d0", borderRadius: 8, padding: 10, color: "#166534", fontSize: 10, lineHeight: 1.6 }}><div style={{ fontWeight: 900 }}><CheckCircle size={12} style={{ verticalAlign: "-2px", marginRight: 4 }}/>Mutual consent completed</div>{p.name && <div><strong>Name:</strong> {p.name}</div>}{p.contact && <div><Phone size={11} style={{ verticalAlign: "-2px", marginRight: 4 }}/><strong>Contact:</strong> {p.contact}</div>}{p.photoUrl && <div style={{ marginTop: 7 }}><ImageIcon size={11} style={{ verticalAlign: "-2px", marginRight: 4 }}/>Photo access released under privacy settings.<div style={{ marginTop: 5 }}><img src={p.photoUrl} alt="Consented candidate" style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 8 }}/></div></div>}</div>}
+    {r.direction === "incoming" && r.status === "awaiting_target" && <div style={{ display: "flex", gap: 7, marginTop: 12 }}><button disabled={busy} onClick={() => onRespond(r.id,"accept")} style={{ flex: 1, background: GREEN, color: "white", border: 0, borderRadius: 7, padding: "8px 7px", fontWeight: 800, fontSize: 10, cursor: "pointer" }}><CheckCircle size={12} style={{ verticalAlign: "-2px", marginRight: 4 }}/>Accept</button><button disabled={busy} onClick={() => onRespond(r.id,"decline")} style={{ flex: 1, background: "white", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 7, padding: "8px 7px", fontWeight: 800, fontSize: 10, cursor: "pointer" }}><XCircle size={12} style={{ verticalAlign: "-2px", marginRight: 4 }}/>Decline</button></div>}
+    {r.status === "pending_admin" && <div style={{ marginTop: 10, color: "#8a6118", fontSize: 10 }}><Clock size={11} style={{ verticalAlign: "-2px", marginRight: 4 }}/>Waiting for matrimonial manager review.</div>}
+  </article>;
 }
-
-function statusMeta(status: string) {
-  if (status === "accepted") return { label: "Accepted", bg: "#dcfce7", color: "#166534" };
-  if (status === "awaiting_target") return { label: "Awaiting Consent", bg: "#dbeafe", color: "#1d4ed8" };
-  if (status === "declined" || status === "rejected") return { label: status === "declined" ? "Declined" : "Admin Rejected", bg: "#fee2e2", color: "#b91c1c" };
-  if (status === "closed") return { label: "Closed", bg: "#f3f4f6", color: "#4b5563" };
-  return { label: "Admin Review", bg: "#fef9c3", color: "#854d0e" };
-}
+function Fact({ label, value }: { label:string; value?:string }) { return <div style={{ background: "#faf9f6", borderRadius: 7, padding: 8 }}><div style={{ color: "#999", fontSize: 8, fontWeight: 800, textTransform: "uppercase" }}>{label}</div><div style={{ color: "#455249", fontSize: 10, marginTop: 2 }}>{value || "Not specified"}</div></div>; }
+function statusMeta(status:string) { if(status==="accepted") return {label:"Accepted",bg:"#dcfce7",color:"#166534"}; if(status==="awaiting_target") return {label:"Awaiting Consent",bg:"#dbeafe",color:"#1d4ed8"}; if(status==="declined"||status==="rejected") return {label:status==="declined"?"Declined":"Manager Rejected",bg:"#fee2e2",color:"#b91c1c"}; if(status==="closed") return {label:"Closed",bg:"#f3f4f6",color:"#4b5563"}; return {label:"Manager Review",bg:"#fef9c3",color:"#854d0e"}; }
+const card:React.CSSProperties={background:"white",border:"1px solid #e8e3da",borderRadius:12,padding:28,boxShadow:"0 3px 14px rgba(0,0,0,.04)"};
+const heading:React.CSSProperties={color:GREEN,fontFamily:"'Playfair Display', serif",margin:"12px 0 8px"};
+const muted:React.CSSProperties={color:"#666",fontSize:12,lineHeight:1.7};
