@@ -176,11 +176,7 @@ export function AdminSmartMemberSelectors() {
     const enhanceSelect = (select: HTMLSelectElement, index: number) => {
       const context = selectContext(select);
       if (!TARGET_LABEL.test(context)) return;
-
-      if (select.hasAttribute(SELECT_MARKER)) {
-        renderResults(select);
-        return;
-      }
+      if (select.hasAttribute(SELECT_MARKER)) return;
 
       const id = `admin-smart-member-search-${Date.now()}-${index}`;
       const resultId = `${id}-results`;
@@ -228,7 +224,6 @@ export function AdminSmartMemberSelectors() {
         const selected = members.find((m) => m.id === select.value);
         if (selected) input.value = `${selected.fullName} · ${selected.memberNo}`;
       });
-      renderResults(select);
     };
 
     const enhanceRoleRank = () => {
