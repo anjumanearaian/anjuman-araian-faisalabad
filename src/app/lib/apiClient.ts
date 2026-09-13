@@ -18,6 +18,9 @@ function getAuthToken(endpoint: string) {
   const memberFirst =
     ["/members/me", "/members/register", "/members/login", "/matrimonial/submit", "/matrimonial/mine"].includes(endpoint) ||
     endpoint.startsWith("/matrimonial/published") ||
+    endpoint.startsWith("/matrimonial/matches") ||
+    endpoint.startsWith("/matrimonial/private-upload") ||
+    endpoint.startsWith("/matrimonial/private-file") ||
     (endpoint.startsWith("/forms/") && !endpoint.startsWith("/forms/admin/")) ||
     (endpoint.startsWith("/matrimonial/match-requests") && !endpoint.startsWith("/matrimonial/match-requests/admin"));
 
@@ -36,28 +39,16 @@ function expireAdminSession() {
 
 function needsNestedProxy(endpoint: string) {
   const pathname = endpoint.split("?")[0];
-
-  // Membership registration already has a long-standing dedicated Vercel
-  // function that finalizes the saved form and payment-verification queue.
-  // Business and matrimonial submissions stay inside the consolidated Express
-  // catch-all so the Hobby deployment remains within its function-count limit.
   if (pathname === "/members/register") return false;
-
   return pathname.split("/").filter(Boolean).length > 1;
 }
 
 function buildRequestUrl(endpoint: string) {
   if (!needsNestedProxy(endpoint)) return `${API_BASE_URL}${endpoint}`;
-
   const question = endpoint.indexOf("?");
   const pathname = question >= 0 ? endpoint.slice(0, question) : endpoint;
   const queryString = question >= 0 ? endpoint.slice(question + 1) : "";
-  const encodedPath = pathname
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("__");
+  const encodedPath = pathname.replace(/^\/+/, "").split("/").filter(Boolean).map((part) => encodeURIComponent(part)).join("__");
   return `${API_BASE_URL}/__proxy__${encodedPath}${queryString ? `?${queryString}` : ""}`;
 }
 
@@ -74,9 +65,7 @@ function friendlyStatusMessage(status: number, requestUrl: string) {
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const adminToken = typeof window !== "undefined" ? sessionStorage.getItem("araian_admin_token") : null;
   const token = getAuthToken(endpoint);
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string> || {}),
-  };
+  const headers: Record<string, string> = { ...(options.headers as Record<string, string> || {}) };
 
   if (!(options.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -84,15 +73,11 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
 
   const requestUrl = buildRequestUrl(endpoint);
   let response: Response;
-  try {
-    response = await fetch(requestUrl, { ...options, headers });
-  } catch {
-    throw new ApiError("Unable to reach the server. Check your internet connection and try again.", undefined, 0);
-  }
+  try { response = await fetch(requestUrl, { ...options, headers }); }
+  catch { throw new ApiError("Unable to reach the server. Check your internet connection and try again.", undefined, 0); }
 
   if (!response.ok) {
     if (response.status === 401 && adminToken && token === adminToken) expireAdminSession();
-
     let errorMessage = friendlyStatusMessage(response.status, requestUrl);
     let details: Record<string, string[]> | undefined;
     try {
