@@ -5,10 +5,79 @@ import Footer from "./Footer";
 import { WhatsAppButton } from "./WhatsAppButton";
 import { fetchSiteSettings } from "../lib/settingsStore";
 
+const DEFAULT_TITLE = "Anjuman-e-Araian Faisalabad | Official Community Platform";
+const DEFAULT_DESCRIPTION = "Official platform of Anjuman-e-Araian Faisalabad for membership, community welfare, news, events, leadership, business directory and community services.";
+
+function setMeta(selector: string, attr: "name" | "property", key: string, content: string) {
+  let node = document.head.querySelector<HTMLMetaElement>(selector);
+  if (!node) {
+    node = document.createElement("meta");
+    node.setAttribute(attr, key);
+    document.head.appendChild(node);
+  }
+  node.content = content;
+}
+
+function applySeo(pathname: string) {
+  const isBusinessDirectory = pathname === "/business";
+  const isBusinessForm = pathname === "/business/submit";
+  const title = isBusinessDirectory
+    ? "Araian Business Directory Faisalabad | Anjuman-e-Araian"
+    : isBusinessForm
+      ? "Register Your Business | Anjuman-e-Araian Faisalabad"
+      : DEFAULT_TITLE;
+  const description = isBusinessDirectory
+    ? "Explore verified Araian-owned and community businesses in Faisalabad and beyond. Search by business name, category and city through the official Anjuman-e-Araian Faisalabad directory."
+    : isBusinessForm
+      ? "Submit a business profile for review and inclusion in the official Anjuman-e-Araian Faisalabad Business Directory."
+      : DEFAULT_DESCRIPTION;
+  const robots = isBusinessForm ? "noindex, follow" : "index, follow";
+  const canonicalUrl = `${window.location.origin}${pathname}`;
+
+  document.title = title;
+  setMeta('meta[name="description"]', "name", "description", description);
+  setMeta('meta[name="robots"]', "name", "robots", robots);
+  setMeta('meta[property="og:title"]', "property", "og:title", title);
+  setMeta('meta[property="og:description"]', "property", "og:description", description);
+  setMeta('meta[property="og:url"]', "property", "og:url", canonicalUrl);
+  setMeta('meta[property="og:type"]', "property", "og:type", isBusinessDirectory ? "website" : "website");
+  setMeta('meta[name="twitter:title"]', "name", "twitter:title", title);
+  setMeta('meta[name="twitter:description"]', "name", "twitter:description", description);
+
+  let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  if (!canonical) {
+    canonical = document.createElement("link");
+    canonical.rel = "canonical";
+    document.head.appendChild(canonical);
+  }
+  canonical.href = canonicalUrl;
+
+  document.getElementById("araian-route-jsonld")?.remove();
+  if (isBusinessDirectory) {
+    const script = document.createElement("script");
+    script.id = "araian-route-jsonld";
+    script.type = "application/ld+json";
+    script.text = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "CollectionPage",
+      name: "Anjuman-e-Araian Faisalabad Business Directory",
+      description,
+      url: canonicalUrl,
+      isPartOf: {
+        "@type": "WebSite",
+        name: "Anjuman-e-Araian Faisalabad",
+        url: window.location.origin,
+      },
+    });
+    document.head.appendChild(script);
+  }
+}
+
 export function Layout() {
   const { pathname } = useLocation();
-  useEffect(() => { 
-    window.scrollTo(0, 0); 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    applySeo(pathname);
   }, [pathname]);
 
   useEffect(() => {
