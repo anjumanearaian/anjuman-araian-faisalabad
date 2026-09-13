@@ -1,0 +1,94 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, Navigate } from "react-router";
+import { ArrowLeft, BadgeCheck, CheckCircle, HeartHandshake, Loader2, PhoneCall, RefreshCw, Search, ShieldCheck, Sparkles, UserRoundCheck, XCircle } from "lucide-react";
+import { useAdmin } from "../context/AdminContext";
+import { adminReviewMatchRequest, fetchAllMatrimonials, MatrimonialProfile } from "../lib/matrimonialStore";
+
+const GREEN="#1a4d2e", GOLD="#c8a04a";
+
+type PreviewMatch=MatrimonialProfile&{mutualScore:number;requesterToTargetScore:number;targetToRequesterScore:number;scoreConfidence:number;eligible:boolean;breakdown?:any};
+
+function adminToken(){return sessionStorage.getItem("araian_admin_token")||"";}
+async function manualFlow(method:"GET"|"POST", body?:any){
+  const suffix=method==="GET"?"?action=manual_consent_queue":"";
+  const res=await fetch(`/api/matrimonial/manual-flow${suffix}`,{method,headers:{Authorization:`Bearer ${adminToken()}`,...(method==="POST"?{"Content-Type":"application/json"}:{})},body:method==="POST"?JSON.stringify(body||{}):undefined,cache:"no-store"});
+  const data=await res.json().catch(()=>({})); if(!res.ok)throw new Error(data?.error||`Request failed (${res.status})`); return data;
+}
+
+export function AdminMatrimonialManualMatchPage(){
+  const {isAdmin,role}=useAdmin();
+  const allowed=["admin","super_admin","welfare_manager","matrimonial_manager"].includes(String(role||""));
+  const [profiles,setProfiles]=useState<MatrimonialProfile[]>([]);
+  const [requesterId,setRequesterId]=useState("");
+  const [matches,setMatches]=useState<PreviewMatch[]>([]);
+  const [queue,setQueue]=useState<any[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [matching,setMatching]=useState(false);
+  const [busy,setBusy]=useState<string|null>(null);
+  const [search,setSearch]=useState("");
+  const [minScore,setMinScore]=useState(55);
+  const [error,setError]=useState("");
+  const [success,setSuccess]=useState("");
+  const [consentForm,setConsentForm]=useState<Record<string,{method:string;note:string}>>({});
+
+  const load=async()=>{setLoading(true);setError("");try{const [p,q]=await Promise.all([fetchAllMatrimonials(1,100),manualFlow("GET")]);setProfiles(p.data);setQueue(q.requests||[]);if(!requesterId){const first=p.data.find(x=>x.status==="approved"&&x.showOnPortal&&x.isActive!==false);if(first)setRequesterId(first.id);}}catch(e:any){setError(e?.message||"Matching desk could not be loaded.");}finally{setLoading(false);}};
+  useEffect(()=>{if(isAdmin&&allowed)void load();},[isAdmin,allowed]);
+  useEffect(()=>{if(requesterId)void preview(requesterId);else setMatches([]);},[requesterId]);
+
+  if(!isAdmin||!allowed)return <Navigate to="/admin" replace/>;
+  const eligibleProfiles=profiles.filter(p=>p.status==="approved"&&p.showOnPortal&&p.isActive!==false);
+  const requester=profiles.find(p=>p.id===requesterId);
+  const visible=useMemo(()=>matches.filter(m=>(m.mutualScore||0)>=minScore&&(!search.trim()||`${m.profileCode||""} ${m.name||""} ${m.city||""} ${m.education||""} ${m.profession||""}`.toLowerCase().includes(search.trim().toLowerCase()))),[matches,minScore,search]);
+
+  async function preview(id:string){setMatching(true);setError("");setSuccess("");try{const data=await manualFlow("POST",{action:"preview_batch",requesterProfileId:id});setMatches(data.matches||[]);}catch(e:any){setMatches([]);setError(e?.message||"Compatibility preview failed.");}finally{setMatching(false);}}
+
+  async function createAndForward(target:PreviewMatch){
+    if(!requesterId)return;
+    if(!confirm(`Create a manager-assisted interest from ${requester?.profileCode} to ${target.profileCode} and forward it for consent? No contact or photo is released at this stage.`))return;
+    setBusy(target.id);setError("");setSuccess("");
+    try{const created=await manualFlow("POST",{action:"create_interest",requesterProfileId:requesterId,targetProfileId:target.id,note:`Manager-assisted interest created after ${target.mutualScore}% compatibility review.`});await adminReviewMatchRequest(created.request.id,"forward","Manager-assisted introduction reviewed and forwarded for candidate/guardian consent.");setSuccess(`${requester?.profileCode} → ${target.profileCode} has been forwarded for consent. Private details remain locked until consent is recorded.`);await load();}
+    catch(e:any){setError(e?.message||"Interest could not be created.");}finally{setBusy(null);}
+  }
+
+  async function recordConsent(item:any,decision:"accept"|"decline"){
+    const form=consentForm[item.id]||{method:"office_visit",note:""};
+    if(form.note.trim().length<5){setError("Add a short consent note before recording the decision.");return;}
+    if(!confirm(`${decision==="accept"?"Accept":"Decline"} this interest on behalf of the offline candidate/guardian based on the recorded consent method?`))return;
+    setBusy(item.id);setError("");setSuccess("");
+    try{await manualFlow("POST",{action:"record_consent",requestId:item.id,decision,consentMethod:form.method,note:form.note.trim()});setSuccess(decision==="accept"?"Consent accepted and permitted private details released according to profile privacy settings.":"Interest declined. No private details were released.");await load();}
+    catch(e:any){setError(e?.message||"Consent decision could not be recorded.");}finally{setBusy(null);}
+  }
+
+  return <div style={{minHeight:"100vh",background:"#f7f4ee",fontFamily:"Lato, sans-serif"}}>
+    <header style={{background:GREEN,color:"white",borderBottom:`4px solid ${GOLD}`,padding:"18px 22px"}}><div style={{maxWidth:1320,margin:"0 auto",display:"flex",justifyContent:"space-between",gap:14,alignItems:"center",flexWrap:"wrap"}}><div><h1 style={{margin:0,fontFamily:"'Playfair Display', serif",fontSize:25}}>Matrimonial Matching Desk</h1><p style={{margin:"4px 0 0",opacity:.8,fontSize:11}}>Dashboard flow for manager-assisted clients, two-way scoring, introductions and offline consent</p></div><div style={{display:"flex",gap:7}}><button onClick={()=>void load()} style={ghost}><RefreshCw size={13}/>Refresh</button><Link to="/admin/matrimonial" style={{...ghost,textDecoration:"none"}}><ArrowLeft size={13}/>Control Center</Link></div></div></header>
+    <main style={{maxWidth:1320,margin:"0 auto",padding:"24px 20px 60px"}}>
+      <div className="flow-grid" style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:17}}>{[
+        ["1","Select Candidate","Choose an approved profile"],["2","Score Matches","Two-way compatibility"],["3","Manager Review","Create & forward interest"],["4","Consent","Portal or recorded offline"],["5","Release","Only permitted private details"],
+      ].map(([n,t,d])=><div key={n} style={{background:"white",border:"1px solid #e7e1d7",borderRadius:10,padding:11}}><span style={{width:23,height:23,borderRadius:"50%",display:"grid",placeItems:"center",background:GREEN,color:"white",fontWeight:900,fontSize:10}}>{n}</span><strong style={{display:"block",color:GREEN,fontSize:11,marginTop:7}}>{t}</strong><span style={{display:"block",color:"#888",fontSize:9,marginTop:2,lineHeight:1.35}}>{d}</span></div>)}</div>
+      <div style={{background:"#eef6ff",border:"1px solid #cfe4fb",color:"#315f7d",borderRadius:10,padding:12,marginBottom:15,fontSize:10,lineHeight:1.7}}><ShieldCheck size={14} style={{verticalAlign:"-3px",marginRight:5}}/><strong>Manager-assisted rule:</strong> this desk supports walk-in and phone-assisted clients. The manager may create and forward an introduction, but acceptance must be based on the candidate/guardian's recorded consent. Names, photos and contacts stay locked until the consent stage permits release.</div>
+      {error&&<Notice bg="#fee2e2" color="#b91c1c">{error}</Notice>}{success&&<Notice bg="#dcfce7" color="#166534">{success}</Notice>}
+
+      <section style={card}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"end",flexWrap:"wrap"}}><div style={{minWidth:280,flex:"1 1 420px"}}><label style={label}>1. Select Requester Candidate</label><select value={requesterId} onChange={e=>setRequesterId(e.target.value)} style={input}><option value="">Select approved candidate</option>{eligibleProfiles.map(p=><option key={p.id} value={p.id}>{p.profileCode} · {p.name} · {p.gender} · {p.age} · {p.city}</option>)}</select></div><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{color:"#777",fontSize:10}}>Eligible profiles: <b>{eligibleProfiles.length}</b></span>{requester&&<Badge text={requester.profileCode||"Candidate"} good/>}</div></div>
+      </section>
+
+      <section style={{...card,marginTop:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}><div><h2 style={sectionTitle}>2. Compatibility Results</h2><p style={sub}>Sorted by mutual score. Both sides' structured preferences are evaluated before an interest is created.</p></div><div style={{display:"flex",gap:7,flexWrap:"wrap"}}><div style={{position:"relative"}}><Search size={13} color="#999" style={{position:"absolute",left:9,top:9}}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search result..." style={{...input,width:220,paddingLeft:28}}/></div><select value={minScore} onChange={e=>setMinScore(Number(e.target.value))} style={input}><option value={0}>All scores</option><option value={40}>40%+</option><option value={55}>55%+</option><option value={70}>70%+</option><option value={80}>80%+</option></select></div></div>
+        {matching||loading?<div style={{padding:40,textAlign:"center",color:"#777"}}><Loader2 className="spin"/> Calculating two-way compatibility...</div>:!requesterId?<Empty text="Select a requester candidate to start matching."/>:visible.length?<div className="match-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>{visible.map(m=><article key={m.id} style={{border:"1px solid #e8e2d8",borderRadius:10,padding:13}}><div style={{display:"flex",justifyContent:"space-between",gap:9,alignItems:"flex-start"}}><div><strong style={{color:GREEN,fontSize:12}}>{m.profileCode} · {m.name}</strong><small style={small}>{m.gender} · {m.age} · {m.city}{m.country&&m.country!=="Pakistan"?`, ${m.country}`:""}</small></div><Score value={m.mutualScore}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginTop:10}}><Mini k="Education" v={m.education}/><Mini k="Profession" v={m.profession}/><Mini k="Requester → Target" v={`${m.requesterToTargetScore}%`}/><Mini k="Target → Requester" v={`${m.targetToRequesterScore}%`}/></div><div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginTop:10,flexWrap:"wrap"}}><span style={{fontSize:9,color:"#777"}}>Score confidence <b>{m.scoreConfidence}%</b>{m.eligible===false?" · must-have conflict":""}</span><button disabled={busy===m.id||m.eligible===false} onClick={()=>void createAndForward(m)} style={{...actionBtn,opacity:m.eligible===false?.45:1}}><HeartHandshake size={12}/>{busy===m.id?"Processing...":"Create & Forward Interest"}</button></div></article>)}</div>:<Empty text="No matches meet the selected score/search filter."/>}
+      </section>
+
+      <section style={{...card,marginTop:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",marginBottom:12}}><div><h2 style={sectionTitle}>3. Offline Consent Queue</h2><p style={sub}>Only requests where the target has no verified portal account appear here. Portal users should accept or decline from their own account.</p></div><Badge text={`${queue.length} waiting`} good={queue.length===0}/></div>
+        {queue.length?<div style={{display:"grid",gap:10}}>{queue.map(q=>{const form=consentForm[q.id]||{method:"office_visit",note:""};return <article key={q.id} style={{border:"1px solid #e8e2d8",borderRadius:10,padding:13}}><div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><div><strong style={{color:GREEN,fontSize:12}}>{q.requesterCode} → {q.targetCode}</strong><small style={small}>{q.requesterName} → {q.targetName} · {q.mutualScore||0}% mutual compatibility</small></div><Badge text="Awaiting offline consent" good={false}/></div><div className="consent-grid" style={{display:"grid",gridTemplateColumns:"180px 1fr",gap:8,marginTop:10}}><select value={form.method} onChange={e=>setConsentForm(old=>({...old,[q.id]:{...form,method:e.target.value}}))} style={input}><option value="office_visit">Office visit</option><option value="phone">Phone confirmation</option><option value="signed_form">Signed consent form</option><option value="family_meeting">Family meeting</option><option value="other">Other documented method</option></select><input value={form.note} onChange={e=>setConsentForm(old=>({...old,[q.id]:{...form,note:e.target.value}}))} placeholder="Consent note, e.g. candidate/guardian confirmed by phone at 4:30 PM" style={input}/></div><div style={{display:"flex",gap:7,marginTop:9,flexWrap:"wrap"}}><button disabled={busy===q.id} onClick={()=>void recordConsent(q,"accept")} style={actionBtn}><UserRoundCheck size={12}/>Record Acceptance</button><button disabled={busy===q.id} onClick={()=>void recordConsent(q,"decline")} style={dangerBtn}><XCircle size={12}/>Record Decline</button><span style={{marginLeft:"auto",fontSize:9,color:"#777",display:"inline-flex",alignItems:"center",gap:4}}><PhoneCall size={11}/>{q.targetContact||"Contact on profile"}</span></div></article>})}</div>:<Empty text="No offline consent requests are waiting."/>}
+      </section>
+    </main>
+    <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .9s linear infinite}@media(max-width:850px){.flow-grid{grid-template-columns:1fr 1fr!important}.match-grid{grid-template-columns:1fr!important}.consent-grid{grid-template-columns:1fr!important}}@media(max-width:520px){.flow-grid{grid-template-columns:1fr!important}}`}</style>
+  </div>;
+}
+
+function Score({value}:{value:number}){const good=value>=70,mid=value>=55;return <span style={{background:good?"#dcfce7":mid?"#fef3c7":"#f3f4f6",color:good?"#166534":mid?"#92400e":"#555",borderRadius:20,padding:"6px 9px",fontWeight:900,fontSize:11}}>{value}%</span>}
+function Badge({text,good}:{text:string;good:boolean}){return <span style={{background:good?"#dcfce7":"#f3f4f6",color:good?"#166534":"#555",borderRadius:18,padding:"4px 8px",fontSize:9,fontWeight:800,whiteSpace:"nowrap"}}>{text}</span>}
+function Mini({k,v}:{k:string;v:any}){return <div style={{background:"#faf9f6",borderRadius:7,padding:7}}><div style={{fontSize:8,color:"#999",fontWeight:800,textTransform:"uppercase"}}>{k}</div><div style={{fontSize:10,color:"#445147",marginTop:2}}>{v||"Not specified"}</div></div>}
+function Empty({text}:{text:string}){return <div style={{padding:34,textAlign:"center",color:"#999"}}><Sparkles size={24} color={GOLD}/><p style={{fontSize:11,marginBottom:0}}>{text}</p></div>}
+function Notice({bg,color,children}:{bg:string;color:string;children:React.ReactNode}){return <div style={{background:bg,color,borderRadius:8,padding:10,marginBottom:12,fontSize:11}}>{children}</div>}
+const card:React.CSSProperties={background:"white",border:"1px solid #e7e1d7",borderRadius:12,padding:16,boxShadow:"0 3px 14px rgba(0,0,0,.035)"};const sectionTitle:React.CSSProperties={margin:0,color:GREEN,fontFamily:"'Playfair Display', serif",fontSize:18};const sub:React.CSSProperties={margin:"4px 0 0",color:"#777",fontSize:10,lineHeight:1.5};const input:React.CSSProperties={border:"1px solid #d5ddd7",borderRadius:7,padding:"8px 9px",fontSize:10,background:"white",boxSizing:"border-box",maxWidth:"100%"};const label:React.CSSProperties={display:"block",color:GREEN,fontSize:10,fontWeight:800,marginBottom:5};const small:React.CSSProperties={display:"block",fontSize:9,color:"#888",marginTop:3};const actionBtn:React.CSSProperties={display:"inline-flex",alignItems:"center",gap:4,background:GREEN,color:"white",border:0,borderRadius:7,padding:"7px 9px",fontSize:9,fontWeight:800,cursor:"pointer"};const dangerBtn:React.CSSProperties={...actionBtn,background:"white",color:"#b91c1c",border:"1px solid #fecaca"};const ghost:React.CSSProperties={display:"inline-flex",alignItems:"center",gap:4,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.08)",color:"white",borderRadius:7,padding:"7px 9px",fontSize:9,fontWeight:800,cursor:"pointer"};
