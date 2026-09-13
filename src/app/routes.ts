@@ -21,6 +21,8 @@ import { MatrimonialRequestsPage } from "./pages/MatrimonialRequestsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
 import { AdminMatrimonialPage } from "./pages/AdminMatrimonialPage";
+import { AdminMatrimonialProfilePage } from "./pages/AdminMatrimonialProfilePage";
+import { AdminMatrimonialPrintPage } from "./pages/AdminMatrimonialPrintPage";
 import { AdminOperationsShellPage } from "./pages/AdminOperationsShellPage";
 import { AdminFinancePage } from "./pages/AdminFinancePage";
 import { AdminBusinessCenterPage } from "./pages/AdminBusinessCenterPage";
@@ -40,6 +42,9 @@ export const router = createBrowserRouter([
   { path: "admin", Component: AdminPage },
   { path: "admin/members", Component: AdminMemberCenterPage },
   { path: "admin/matrimonial", Component: AdminMatrimonialPage },
+  { path: "admin/matrimonial/new", Component: AdminMatrimonialProfilePage },
+  { path: "admin/matrimonial/edit/:id", Component: AdminMatrimonialProfilePage },
+  { path: "admin/matrimonial/print/:id", Component: AdminMatrimonialPrintPage },
   { path: "admin/businesses", Component: AdminBusinessCenterPage },
   { path: "admin/businesses/add", Component: AdminBusinessCreatePage },
   { path: "admin/operations", Component: AdminOperationsShellPage },
