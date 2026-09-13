@@ -16,8 +16,12 @@ const privateUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
-    cb(allowed.includes(file.mimetype) ? null : new Error("Only JPG, PNG, WebP and PDF files are allowed."), allowed.includes(file.mimetype));
+    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.mimetype);
+    if (!allowed) {
+      cb(new Error("Only JPG, PNG, WebP and PDF files are allowed."));
+      return;
+    }
+    cb(null, true);
   },
 });
 
