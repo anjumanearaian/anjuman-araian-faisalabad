@@ -11,6 +11,13 @@ const GOLD = "#c8a04a";
 const input: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #d8e1da", borderRadius: 8, fontSize: 13, background: "white" };
 const label: React.CSSProperties = { display: "block", color: GREEN, fontSize: 12, fontWeight: 800, marginBottom: 6 };
 
+function apiErrorText(error: any, fallback: string) {
+  const details = error?.details && typeof error.details === "object"
+    ? Object.entries(error.details).flatMap(([field, messages]: any) => (messages || []).map((m: string) => `${field}: ${m}`)).join(" · ")
+    : "";
+  return details || error?.message || fallback;
+}
+
 export function AdminBusinessCreatePage() {
   const { isAdmin, role } = useAdmin();
   const navigate = useNavigate();
@@ -29,25 +36,29 @@ export function AdminBusinessCreatePage() {
   if (!isAdmin) return <Navigate to="/admin" replace />;
   if (!allowed) return <Navigate to="/admin" replace />;
 
-  const set = (key: string, value: any) => setForm((old) => ({ ...old, [key]: value }));
+  const set = (key: string, value: any) => { setForm((old) => ({ ...old, [key]: value })); setError(""); };
 
   const upload = (key: "logoUrl" | "paymentProofUrl") => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true); setError("");
     try { set(key, await uploadFile(file, key === "logoUrl" ? "business-logo" : "business-payment-proof")); }
-    catch (e: any) { setError(e?.message || "Upload failed."); }
+    catch (e: any) { setError(apiErrorText(e, "Upload failed.")); }
     finally { setUploading(false); e.target.value = ""; }
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.businessName.trim() || !form.ownerName.trim() || !form.city.trim() || !form.address.trim() || !form.phone.trim()) {
-      setError("Business name, owner name, city, address and phone are required.");
+      setError("Business name, owner/contact name, city, address and phone are required.");
       return;
     }
     if (form.status === "approved" && form.paymentStatus !== "received") {
-      setError("For an approved listing, mark payment as Received / Admin Checked. Final verification is completed separately in the Finance Center.");
+      setError("For an approved listing, select Received / Admin Checked. Final verification is completed separately by the Accounts/Finance office.");
+      return;
+    }
+    if (form.status === "approved" && !form.paymentProofUrl) {
+      setError("Upload the payment slip, receipt or cash receipt before approving. This proof is what sends the payment to the Finance Verification queue.");
       return;
     }
     setSaving(true); setError("");
@@ -55,7 +66,7 @@ export function AdminBusinessCreatePage() {
       await createBusinessAdmin(form as any);
       setDone(true);
     } catch (e: any) {
-      setError(e?.message || "Business could not be created.");
+      setError(apiErrorText(e, "Business could not be created."));
     } finally { setSaving(false); }
   };
 
@@ -63,10 +74,11 @@ export function AdminBusinessCreatePage() {
     <div style={{ minHeight: "100vh", background: "#f8f5ef", padding: 30 }}>
       <div style={{ maxWidth: 680, margin: "70px auto", background: "white", borderRadius: 16, padding: 36, textAlign: "center", boxShadow: "0 6px 28px rgba(0,0,0,.08)" }}>
         <CheckCircle size={48} color={GREEN}/><h2 style={{ color: GREEN }}>Business profile created</h2>
-        <p style={{ color: "#666" }}>The business has been saved with the selected listing and admin payment-review status. Finance verification remains separate.</p>
+        <p style={{ color: "#666", lineHeight: 1.7 }}>The business profile has been saved. When a payment proof is attached, its payment is also placed in the Accounts/Finance Verification queue. The listing can be approved by the directory admin, while final payment verification and ledger posting remain with Finance.</p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={() => { setDone(false); setForm((f) => ({ ...f, businessName: "", ownerName: "", phone: "", whatsapp: "", email: "", website: "", address: "", description: "", productsServices: "", discountOffer: "", logoUrl: "", paymentProofUrl: "", additionalPhotos: [], paymentSenderName: "", paymentMethod: "", paymentReference: "", status: "pending", paymentStatus: "pending" })); }} style={primary}>Add Another Business</button>
           <button onClick={() => navigate("/admin/businesses")} style={secondary}>Business Control Center</button>
+          <button onClick={() => navigate("/admin/finance")} style={secondary}>Finance Verification</button>
         </div>
       </div>
     </div>
@@ -76,12 +88,12 @@ export function AdminBusinessCreatePage() {
     <div style={{ minHeight: "100vh", background: "#f8f5ef", padding: "28px 22px 70px" }}>
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, gap: 12, flexWrap: "wrap" }}>
-          <div><h1 style={{ margin: 0, color: GREEN, fontFamily: "'Playfair Display', serif" }}>Add Business Manually</h1><p style={{ color: "#666", margin: "5px 0 0" }}>Create a complete business profile from the admin panel.</p></div>
+          <div><h1 style={{ margin: 0, color: GREEN, fontFamily: "'Playfair Display', serif" }}>Add Business Manually</h1><p style={{ color: "#666", margin: "5px 0 0" }}>Create a business profile and, when payment proof is attached, send it to Accounts/Finance Verification automatically.</p></div>
           <Link to="/admin/businesses" style={{ color: GREEN, fontWeight: 800, textDecoration: "none" }}>← Business Control Center</Link>
         </div>
 
         <form onSubmit={submit} style={{ background: "white", borderRadius: 16, padding: 28, boxShadow: "0 5px 24px rgba(0,0,0,.06)" }}>
-          {error && <div style={{ background: "#fee2e2", color: "#b91c1c", padding: 12, borderRadius: 8, marginBottom: 16, fontWeight: 700, fontSize: 13 }}>{error}</div>}
+          {error && <div style={{ background: "#fee2e2", color: "#b91c1c", padding: 12, borderRadius: 8, marginBottom: 16, fontWeight: 700, fontSize: 13, lineHeight: 1.6 }}>{error}</div>}
           <Section title="Business Profile" icon={<Briefcase size={17}/>}/>
           <div className="admin-business-grid" style={grid}>
             <Field title="Business Name *"><input style={input} value={form.businessName} onChange={e=>set("businessName",e.target.value)}/></Field>
@@ -98,8 +110,8 @@ export function AdminBusinessCreatePage() {
             <div style={{ gridColumn: "span 2" }}><Field title="Member Discount / Offer"><input style={input} value={form.discountOffer} onChange={e=>set("discountOffer",e.target.value)}/></Field></div>
           </div>
 
-          <Section title="Listing & Approval"/>
-          <p style={{ margin: "-4px 0 14px", color: "#777", fontSize: 12, lineHeight: 1.6 }}>“Received / Admin Checked” means the office has reviewed the payment information for directory approval. “Finance Verified” is not set here; it is created by the Finance Verification workflow after ledger review.</p>
+          <Section title="Listing & Accounts Handoff"/>
+          <p style={{ margin: "-4px 0 14px", color: "#777", fontSize: 12, lineHeight: 1.7 }}>“Received / Admin Checked” means the directory/admin office has reviewed the proof for listing approval. The payment remains in the Accounts/Finance Verification queue until Finance approves it and posts the ledger/receipt. “Finance Verified” cannot be selected here.</p>
           <div className="admin-business-grid" style={grid}>
             <Field title="Listing Package"><select style={input} value={form.sponsorshipPackage} onChange={e=>set("sponsorshipPackage",e.target.value)}>{Object.entries(sponsorshipPackages).map(([key,p])=><option key={key} value={key}>{p.name} - {p.price}</option>)}</select></Field>
             <Field title="Business Status"><select style={input} value={form.status} onChange={e=>set("status",e.target.value)}><option value="pending">Pending Review</option><option value="approved">Approved / Publish</option><option value="rejected">Rejected</option></select></Field>
@@ -113,8 +125,9 @@ export function AdminBusinessCreatePage() {
           <Section title="Logo, Payment Slip & Documents"/>
           <div className="admin-business-grid" style={grid}>
             <UploadBox title="Business Logo" value={form.logoUrl} loading={uploading} accept="image/*" onChange={upload("logoUrl")}/>
-            <UploadBox title="Payment Slip / Receipt (optional for manual admin entry)" value={form.paymentProofUrl} loading={uploading} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")}/>
+            <UploadBox title="Payment Slip / Receipt / Cash Receipt" value={form.paymentProofUrl} loading={uploading} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")}/>
           </div>
+          <p style={{ margin: "-4px 0 14px", color: "#777", fontSize: 12, lineHeight: 1.7 }}>Payment proof is optional while the listing is Pending. It becomes required if you choose Approved / Publish, because the Accounts office needs the same evidence in Finance Verification.</p>
           <MultiImageUpload label="Business Photos / Supporting Documents" images={form.additionalPhotos} onChange={images=>set("additionalPhotos",images)}/>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24, flexWrap: "wrap" }}>
