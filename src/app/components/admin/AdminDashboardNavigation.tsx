@@ -92,6 +92,20 @@ function enhanceBusinessPanel() {
     "Review payment slips, approve listings and manually manage business profiles",
     "businessCenterLinked",
   );
+
+  // The original inline business detail modal predates the "submitted" status.
+  // Keep it readable for admins who use the legacy View action while the full
+  // Business Control Center remains the preferred workflow.
+  const selects = Array.from(document.querySelectorAll<HTMLSelectElement>("select"));
+  for (const select of selects) {
+    if (select.value !== "submitted" || select.querySelector('option[value="submitted"]')) continue;
+    const option = document.createElement("option");
+    option.value = "submitted";
+    option.textContent = "Slip Submitted";
+    const received = select.querySelector('option[value="received"]');
+    if (received) select.insertBefore(option, received);
+    else select.appendChild(option);
+  }
 }
 
 function enhanceAdminUi() {
