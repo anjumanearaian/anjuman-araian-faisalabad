@@ -32,6 +32,14 @@
       "destination": "/api/__proxy__auth__admin/:id/role"
     },
     {
+      "source": "/api/matrimonial/published",
+      "destination": "/api/__proxy__matrimonial__public-stats"
+    },
+    {
+      "source": "/api/__proxy__matrimonial__published",
+      "destination": "/api/__proxy__matrimonial__public-stats"
+    },
+    {
       "source": "/api/matrimonial/manual-flow",
       "destination": "/api/__proxy__matrimonial__manual-flow"
     },
