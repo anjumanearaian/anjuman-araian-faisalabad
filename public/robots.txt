@@ -5,6 +5,8 @@ Disallow: /member/portal
 Disallow: /member/login
 Disallow: /member/register
 Disallow: /business/submit
+Disallow: /matrimonial/new
+Disallow: /matrimonial/matches
 Disallow: /matrimonial/requests
 
 Sitemap: https://anjuman-araian-faisalabad.vercel.app/sitemap.xml
