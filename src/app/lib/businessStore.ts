@@ -28,6 +28,20 @@ export interface Business {
   adminNote?: string;
 }
 
+export interface BusinessAuditRow {
+  id: string;
+  businessId: string;
+  action: string;
+  actorId?: string | null;
+  actorName?: string | null;
+  actorRole?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  beforeData?: Record<string, any> | null;
+  afterData?: Record<string, any> | null;
+  createdAt: string;
+}
+
 import { apiClient } from "./apiClient";
 
 export const businessCategories = [
@@ -98,7 +112,7 @@ export async function createBusiness(data: Omit<Business, "id" | "createdAt" | "
   paymentMethod?: string;
   paymentReference?: string;
 }) {
-  return apiClient("/businesses/submit", {
+  return apiClient<Business>("/businesses/submit", {
     method: "POST",
     body: JSON.stringify(cleanOptionalFields(data as any)),
   });
@@ -109,14 +123,14 @@ export async function createBusinessAdmin(data: Partial<Business> & Pick<Busines
   paymentMethod?: string;
   paymentReference?: string;
 }) {
-  return apiClient("/businesses/admin", {
+  return apiClient<Business>("/businesses/admin", {
     method: "POST",
     body: JSON.stringify(cleanOptionalFields(data as any)),
   });
 }
 
 export async function updateBusinessStatus(id: string, status: BusinessStatus, paymentStatus?: PaymentStatus, adminNote?: string) {
-  return apiClient(`/businesses/${id}/status`, {
+  return apiClient<Business>(`/businesses/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, paymentStatus, adminNote }),
   });
@@ -127,10 +141,14 @@ export async function updateBusiness(id: string, partial: Partial<Business> & {
   paymentMethod?: string;
   paymentReference?: string;
 }) {
-  return apiClient(`/businesses/${id}`, {
+  return apiClient<Business>(`/businesses/${id}`, {
     method: "PUT",
     body: JSON.stringify(cleanOptionalFields(partial as any)),
   });
+}
+
+export async function fetchBusinessAudit(id: string) {
+  return apiClient<BusinessAuditRow[]>(`/businesses/${id}/audit`);
 }
 
 export async function deleteBusiness(id: string) {
