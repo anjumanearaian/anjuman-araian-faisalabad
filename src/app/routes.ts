@@ -10,6 +10,7 @@ import { ExPresidentsPage } from "./pages/ExPresidentsPage";
 import { CabinetPage } from "./pages/CabinetPage";
 import { ExecutiveMembersPage } from "./pages/ExecutiveMembersPage";
 import { AdvisoryBoardPage } from "./pages/AdvisoryBoardPage";
+import { MembersPage } from "./pages/MembersPage";
 import { MediaPage } from "./pages/MediaPage";
 import { OverseasPage } from "./pages/OverseasPage";
 import { ContactPage } from "./pages/ContactPage";
@@ -50,6 +51,7 @@ export const router = createBrowserRouter([
       { path: "secretary-message", loader: () => redirect("/leadership-messages#secretary") },
       { path: "founders", Component: FoundersPage },
       { path: "ex-presidents", Component: ExPresidentsPage },
+      { path: "members", Component: MembersPage },
       { path: "cabinet", Component: CabinetPage },
       { path: "executive-members", Component: ExecutiveMembersPage },
       { path: "advisory-board", Component: AdvisoryBoardPage },
