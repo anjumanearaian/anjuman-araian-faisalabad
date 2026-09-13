@@ -15,6 +15,14 @@ export class ApiError extends Error {
 }
 
 function getAuthToken(endpoint: string) {
+  const adminToken = typeof window !== "undefined" ? sessionStorage.getItem("araian_admin_token") : null;
+  const memberToken = typeof window !== "undefined" ? localStorage.getItem("araian_member_token") : null;
+  const onAdminScreen = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
+
+  // On admin screens always prefer the scoped admin session, especially for
+  // confidential matrimonial file uploads where audit attribution matters.
+  if (onAdminScreen && adminToken) return adminToken;
+
   const memberFirst =
     ["/members/me", "/members/register", "/members/login", "/matrimonial/submit", "/matrimonial/mine"].includes(endpoint) ||
     endpoint.startsWith("/matrimonial/published") ||
@@ -24,10 +32,8 @@ function getAuthToken(endpoint: string) {
     (endpoint.startsWith("/forms/") && !endpoint.startsWith("/forms/admin/")) ||
     (endpoint.startsWith("/matrimonial/match-requests") && !endpoint.startsWith("/matrimonial/match-requests/admin"));
 
-  if (memberFirst) {
-    return localStorage.getItem("araian_member_token") || sessionStorage.getItem("araian_admin_token") || null;
-  }
-  return sessionStorage.getItem("araian_admin_token") || localStorage.getItem("araian_member_token") || null;
+  if (memberFirst) return memberToken || adminToken || null;
+  return adminToken || memberToken || null;
 }
 
 function expireAdminSession() {
@@ -90,6 +96,6 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
 
   const text = await response.text();
   if (!text) return {} as T;
-  try { return JSON.parse(text) as T; }
-  catch { return text as any as T; }
+  try { return JSON.parse(text) as T;
+  } catch { return text as any as T; }
 }
