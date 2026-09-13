@@ -21,6 +21,7 @@ import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
 import { AdminMatrimonialPage } from "./pages/AdminMatrimonialPage";
 import { AdminOperationsShellPage } from "./pages/AdminOperationsShellPage";
 import { AdminFinancePage } from "./pages/AdminFinancePage";
+import { AdminBusinessCreatePage } from "./pages/AdminBusinessCreatePage";
 import { MemberRegisterPage } from "./pages/MemberRegisterPage";
 import { MemberLoginPage } from "./pages/MemberLoginPage";
 import { MemberPortalPage } from "./pages/MemberPortalPage";
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
   { path: "admin", Component: AdminPage },
   { path: "admin/members", Component: AdminMemberCenterPage },
   { path: "admin/matrimonial", Component: AdminMatrimonialPage },
+  { path: "admin/businesses/add", Component: AdminBusinessCreatePage },
   { path: "admin/operations", Component: AdminOperationsShellPage },
   { path: "admin/finance", Component: AdminFinancePage },
   {
