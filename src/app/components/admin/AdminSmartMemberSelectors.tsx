@@ -136,8 +136,8 @@ export function AdminSmartMemberSelectors() {
     const enhanceRoleRank = () => {
       if (!window.location.pathname.startsWith("/admin/operations")) return;
       const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("input"));
-      const roleInput = inputs.find((item) => /^role\s*\/\s*designation$/i.test(inputContext(item)));
-      const rankInput = inputs.find((item) => /^display\s*\/\s*hierarchy order$/i.test(inputContext(item)));
+      const roleInput = inputs.find((item) => /role\s*\/\s*designation/i.test(inputContext(item)));
+      const rankInput = inputs.find((item) => /display\s*\/\s*hierarchy order/i.test(inputContext(item)));
       if (!roleInput || !rankInput || roleInput.hasAttribute(RANK_MARKER)) return;
 
       roleInput.setAttribute(RANK_MARKER, "true");
