@@ -24,8 +24,6 @@ function getAuthToken(endpoint: string) {
   if (memberFirst) {
     return localStorage.getItem("araian_member_token") || sessionStorage.getItem("araian_admin_token") || null;
   }
-  // Admin operations prefer the admin token. Member token remains a fallback for
-  // endpoints that explicitly permit members.
   return sessionStorage.getItem("araian_admin_token") || localStorage.getItem("araian_member_token") || null;
 }
 
@@ -39,16 +37,12 @@ function expireAdminSession() {
 function needsNestedProxy(endpoint: string) {
   const pathname = endpoint.split("?")[0];
 
-  // These routes have dedicated Vercel functions because they perform safe
-  // post-submit synchronization (including payment-proof queue creation) after
-  // the Express handler succeeds. They must not be routed through the generic
-  // catch-all proxy or that finalization step would be skipped.
-  if (["/members/register", "/businesses/submit", "/matrimonial/submit"].includes(pathname)) return false;
+  // Membership registration already has a long-standing dedicated Vercel
+  // function that finalizes the saved form and payment-verification queue.
+  // Business and matrimonial submissions stay inside the consolidated Express
+  // catch-all so the Hobby deployment remains within its function-count limit.
+  if (pathname === "/members/register") return false;
 
-  // Vercel can resolve the single-segment API handlers directly, but nested
-  // Express routes are not reliably matched as filesystem functions. Send every
-  // other multi-segment route through the catch-all proxy so forms, admin lists
-  // and other nested endpoints behave consistently.
   return pathname.split("/").filter(Boolean).length > 1;
 }
 
@@ -84,63 +78,33 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     ...(options.headers as Record<string, string> || {}),
   };
 
-  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  if (options.body instanceof FormData) {
-    delete headers["Content-Type"];
-  }
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (options.body instanceof FormData) delete headers["Content-Type"];
 
   const requestUrl = buildRequestUrl(endpoint);
   let response: Response;
   try {
-    response = await fetch(requestUrl, {
-      ...options,
-      headers,
-    });
+    response = await fetch(requestUrl, { ...options, headers });
   } catch {
-    throw new ApiError(
-      "Unable to reach the server. Check your internet connection and try again.",
-      undefined,
-      0,
-    );
+    throw new ApiError("Unable to reach the server. Check your internet connection and try again.", undefined, 0);
   }
 
   if (!response.ok) {
-    // Never leave the admin UI in a half-signed-in state. If the token actually
-    // used for this request is the stored admin token and the backend rejects it,
-    // clear both the token and its cached role immediately. AdminContext listens
-    // for this event and returns the user to the login screen.
-    if (response.status === 401 && adminToken && token === adminToken) {
-      expireAdminSession();
-    }
+    if (response.status === 401 && adminToken && token === adminToken) expireAdminSession();
 
     let errorMessage = friendlyStatusMessage(response.status, requestUrl);
     let details: Record<string, string[]> | undefined;
     try {
       const errorData = await response.json();
-      if (typeof errorData?.error === "string" && errorData.error.trim()) {
-        errorMessage = errorData.error;
-      }
+      if (typeof errorData?.error === "string" && errorData.error.trim()) errorMessage = errorData.error;
       if (errorData?.details) details = errorData.details;
-    } catch {
-      // Keep the safe, user-facing status message above when the backend did not
-      // return JSON (for example a platform error page or stale deployment).
-    }
+    } catch {}
     throw new ApiError(errorMessage, details, response.status);
   }
 
   const text = await response.text();
   if (!text) return {} as T;
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return text as any as T;
-  }
+  try { return JSON.parse(text) as T; }
+  catch { return text as any as T; }
 }
