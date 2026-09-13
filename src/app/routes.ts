@@ -15,6 +15,8 @@ import { MediaPage } from "./pages/MediaPage";
 import { OverseasPage } from "./pages/OverseasPage";
 import { ContactPage } from "./pages/ContactPage";
 import { MatrimonialMemberOnlyPage } from "./pages/MatrimonialMemberOnlyPage";
+import { MatrimonialPage } from "./pages/MatrimonialPage";
+import { MatrimonialMatchesPage } from "./pages/MatrimonialMatchesPage";
 import { MatrimonialRequestsPage } from "./pages/MatrimonialRequestsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminMemberCenterPage } from "./pages/AdminMemberCenterPage";
@@ -67,6 +69,8 @@ export const router = createBrowserRouter([
       { path: "overseas", Component: OverseasPage },
       { path: "contact", Component: ContactPage },
       { path: "matrimonial", Component: MatrimonialMemberOnlyPage },
+      { path: "matrimonial/new", Component: MatrimonialPage },
+      { path: "matrimonial/matches", Component: MatrimonialMatchesPage },
       { path: "matrimonial/requests", Component: MatrimonialRequestsPage },
       { path: "business", Component: BusinessPage },
       { path: "business/submit", Component: BusinessSubmitVerifiedPage },
