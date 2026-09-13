@@ -93,18 +93,56 @@ function enhanceBusinessPanel() {
     "businessCenterLinked",
   );
 
+  const heading = Array.from(document.querySelectorAll<HTMLElement>("h1,h2,h3"))
+    .find((el) => (el.textContent || "").toLowerCase().includes("business directory submissions"));
+  if (!heading) return;
+
+  // The legacy Businesses tab must never directly turn an uploaded receipt into
+  // a finance-verified payment. Approval is intentionally routed to the Business
+  // Control Center, where the slip/profile are reviewed and payment is only marked
+  // "received". Final verification and ledger posting stay in Finance Verification.
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+  for (const button of buttons) {
+    const label = (button.textContent || "").trim().toLowerCase();
+    if (label !== "approve" && label !== "approve listing") continue;
+    if (button.dataset.businessReviewRouted === "1") continue;
+    button.dataset.businessReviewRouted = "1";
+    button.textContent = "Review";
+    button.title = "Review profile and payment slip in Business Control Center before approval";
+    button.setAttribute("aria-label", "Review business before approval");
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      window.location.assign("/admin/businesses");
+    }, true);
+  }
+
   // The original inline business detail modal predates the "submitted" status.
-  // Keep it readable for admins who use the legacy View action while the full
-  // Business Control Center remains the preferred workflow.
+  // Keep the current value readable, but disable manual Verified selection here
+  // so finance verification cannot be bypassed from the legacy screen.
   const selects = Array.from(document.querySelectorAll<HTMLSelectElement>("select"));
   for (const select of selects) {
-    if (select.value !== "submitted" || select.querySelector('option[value="submitted"]')) continue;
-    const option = document.createElement("option");
-    option.value = "submitted";
-    option.textContent = "Slip Submitted";
-    const received = select.querySelector('option[value="received"]');
-    if (received) select.insertBefore(option, received);
-    else select.appendChild(option);
+    if (select.value === "submitted" && !select.querySelector('option[value="submitted"]')) {
+      const option = document.createElement("option");
+      option.value = "submitted";
+      option.textContent = "Slip Submitted";
+      const received = select.querySelector('option[value="received"]');
+      if (received) select.insertBefore(option, received);
+      else select.appendChild(option);
+    }
+
+    const hasPaymentStates = Boolean(
+      select.querySelector('option[value="pending"]') &&
+      select.querySelector('option[value="received"]') &&
+      select.querySelector('option[value="verified"]') &&
+      select.querySelector('option[value="rejected"]'),
+    );
+    if (!hasPaymentStates) continue;
+    select.disabled = true;
+    select.title = "Use Business Control Center for slip review and Finance Verification for final payment verification.";
+    select.style.cursor = "not-allowed";
+    select.style.opacity = "0.72";
   }
 }
 
