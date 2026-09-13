@@ -45,18 +45,18 @@ function enhanceCards() {
   }
 }
 
-function enhanceMatrimonialPanel() {
+function addCenterLink(headingText: string, href: string, label: string, title: string, datasetKey: string) {
   if (window.location.pathname !== "/admin") return;
   const heading = Array.from(document.querySelectorAll<HTMLElement>("h1,h2,h3"))
-    .find((el) => (el.textContent || "").toLowerCase().includes("matrimonial submissions"));
+    .find((el) => (el.textContent || "").toLowerCase().includes(headingText.toLowerCase()));
   if (!heading) return;
   const row = heading.parentElement;
-  if (!row || row.dataset.matrimonialCenterLinked === "1") return;
-  row.dataset.matrimonialCenterLinked = "1";
+  if (!row || row.dataset[datasetKey] === "1") return;
+  row.dataset[datasetKey] = "1";
   const link = document.createElement("a");
-  link.href = "/admin/matrimonial";
-  link.textContent = "Open Matrimonial Control Center";
-  link.title = "Edit profiles, control privacy and review requirement-based match requests";
+  link.href = href;
+  link.textContent = label;
+  link.title = title;
   Object.assign(link.style, {
     display: "inline-flex",
     alignItems: "center",
@@ -74,9 +74,30 @@ function enhanceMatrimonialPanel() {
   row.appendChild(link);
 }
 
+function enhanceMatrimonialPanel() {
+  addCenterLink(
+    "matrimonial submissions",
+    "/admin/matrimonial",
+    "Open Matrimonial Control Center",
+    "Edit profiles, control privacy and review requirement-based match requests",
+    "matrimonialCenterLinked",
+  );
+}
+
+function enhanceBusinessPanel() {
+  addCenterLink(
+    "business directory submissions",
+    "/admin/businesses",
+    "Open Business Control Center",
+    "Review payment slips, approve listings and manually manage business profiles",
+    "businessCenterLinked",
+  );
+}
+
 function enhanceAdminUi() {
   enhanceCards();
   enhanceMatrimonialPanel();
+  enhanceBusinessPanel();
 }
 
 export function AdminDashboardNavigation() {
