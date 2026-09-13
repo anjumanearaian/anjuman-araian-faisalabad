@@ -19,19 +19,19 @@ const optionalStoredFileUrl = z.preprocess(
 );
 
 const BusinessSchema = z.object({
-  businessName: z.string().min(2).max(150),
-  ownerName: z.string().min(2).max(100),
-  category: z.string().min(1).max(100),
-  city: z.string().min(2).max(100),
-  address: z.string().min(5).max(300),
-  phone: z.string().regex(/^\+?[0-9\s-]{10,20}$/, "Invalid phone number"),
-  whatsapp: z.string().optional().default(""),
-  email: z.string().email().optional().or(z.literal("")).default(""),
-  website: z.string().url().optional().or(z.literal("")).default(""),
-  socialLinks: z.string().optional().default(""),
-  productsServices: z.string().max(1000).optional().default(""),
-  discountOffer: z.string().max(500).optional().default(""),
-  description: z.string().max(2000).optional().default(""),
+  businessName: z.string().trim().min(2).max(150),
+  ownerName: z.string().trim().min(2).max(100),
+  category: z.string().trim().min(1).max(100),
+  city: z.string().trim().min(2).max(100),
+  address: z.string().trim().min(5).max(300),
+  phone: z.string().trim().regex(/^\+?[0-9\s-]{10,20}$/, "Invalid phone number"),
+  whatsapp: z.string().trim().optional().default(""),
+  email: z.string().trim().email().optional().or(z.literal("")).default(""),
+  website: z.string().trim().url().optional().or(z.literal("")).default(""),
+  socialLinks: z.string().trim().optional().default(""),
+  productsServices: z.string().trim().max(1000).optional().default(""),
+  discountOffer: z.string().trim().max(500).optional().default(""),
+  description: z.string().trim().max(2000).optional().default(""),
   sponsorshipPackage: z.enum(["basic", "premium", "vip"]).optional().default("basic"),
   logoUrl: optionalStoredFileUrl,
   paymentProofUrl: optionalStoredFileUrl,
@@ -65,6 +65,37 @@ function financeGuardMessage(error: any) {
   return "";
 }
 
+function clientIp(req: Request) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (Array.isArray(forwarded)) return forwarded[0]?.split(",")[0]?.trim() || req.ip || null;
+  if (typeof forwarded === "string") return forwarded.split(",")[0]?.trim() || req.ip || null;
+  return req.ip || null;
+}
+
+async function auditBusiness(
+  tx: any,
+  req: Request,
+  businessId: string,
+  action: string,
+  beforeData?: any,
+  afterData?: any,
+) {
+  const user = (req as any).user || null;
+  const actorId = user?.id ? String(user.id) : null;
+  const actorRole = user?.role ? String(user.role) : "public";
+  const actorName = user ? `Admin (${actorRole})` : "Public submitter";
+  const beforeJson = beforeData ? JSON.stringify(beforeData) : null;
+  const afterJson = afterData ? JSON.stringify(afterData) : null;
+  await tx.$executeRaw`
+    INSERT INTO "BusinessAuditLog" (
+      "businessId", "action", "actorId", "actorName", "actorRole", "ipAddress", "userAgent", "beforeData", "afterData"
+    ) VALUES (
+      ${businessId}, ${action}, ${actorId}, ${actorName}, ${actorRole}, ${clientIp(req)}, ${req.get("user-agent") || null},
+      ${beforeJson}::jsonb, ${afterJson}::jsonb
+    )
+  `;
+}
+
 async function syncBusinessPaymentSubmission(tx: any, business: any, params: {
   paymentSenderName?: string;
   paymentMethod?: string;
@@ -90,7 +121,7 @@ async function syncBusinessPaymentSubmission(tx: any, business: any, params: {
         "sourceType", "sourceRecordId", "sourceKey", "payerName", "senderName", "category", "amount", "currency",
         "paymentMethod", "transactionReference", "proofUrl", "supportingDocuments", "description", "status"
       ) VALUES (
-        'business', ${business.id}, ${sourceKey}, ${business.ownerName}, ${senderName},
+        'business', ${business.id}, ${sourceKey}, ${business.businessName}, ${senderName},
         ${`Business Directory ${business.sponsorshipPackage} Listing`}, ${amount}, 'PKR', ${params.paymentMethod || null}, ${params.paymentReference || null},
         ${business.paymentProofUrl}, ${documents}, 'Business Directory payment proof awaiting Finance Verification.', 'pending'
       )
@@ -104,7 +135,7 @@ async function syncBusinessPaymentSubmission(tx: any, business: any, params: {
 
   await tx.$executeRaw`
     UPDATE "PaymentSubmission"
-    SET "payerName" = ${business.ownerName},
+    SET "payerName" = ${business.businessName},
         "senderName" = ${senderName},
         "category" = ${`Business Directory ${business.sponsorshipPackage} Listing`},
         "amount" = ${amount},
@@ -153,6 +184,22 @@ router.get("/published", async (req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err); }
 });
 
+router.get("/:id/audit", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const exists = await prisma.business.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) return void res.status(404).json({ error: "Business not found" });
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT "id", "businessId", "action", "actorId", "actorName", "actorRole", "ipAddress", "userAgent", "beforeData", "afterData", "createdAt"
+      FROM "BusinessAuditLog"
+      WHERE "businessId" = ${id}
+      ORDER BY "createdAt" DESC
+      LIMIT 200
+    `;
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 router.post("/submit", validate(BusinessSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
@@ -173,6 +220,7 @@ router.post("/submit", validate(BusinessSchema), async (req: Request, res: Respo
         },
       });
       await syncBusinessPaymentSubmission(tx, newBusiness, { paymentSenderName, paymentMethod, paymentReference, supportingDocuments: additionalPhotos });
+      await auditBusiness(tx, req, newBusiness.id, "public_submitted", null, newBusiness);
       return newBusiness;
     });
 
@@ -190,7 +238,7 @@ router.post("/admin", requireWelfareAdmin, validate(AdminBusinessSchema), async 
 
     const effectivePaymentStatus = paymentStatus === "verified" ? "received" : paymentStatus;
     if (status === "approved" && effectivePaymentStatus !== "received") {
-      return void res.status(409).json({ error: "For an approved listing, mark payment as Received / Admin Checked. Finance verification remains separate." });
+      return void res.status(409).json({ error: "For an approved listing, payment must be Received / Admin Checked. Finance verification remains separate." });
     }
     if (status === "approved" && !paymentProofUrl) {
       return void res.status(409).json({ error: "Upload a payment slip, receipt or cash receipt before approving the listing so Accounts can verify it." });
@@ -208,6 +256,7 @@ router.post("/admin", requireWelfareAdmin, validate(AdminBusinessSchema), async 
         },
       });
       await syncBusinessPaymentSubmission(tx, newBusiness, { paymentSenderName, paymentMethod, paymentReference, supportingDocuments: additionalPhotos });
+      await auditBusiness(tx, req, newBusiness.id, "admin_created", null, newBusiness);
       return newBusiness;
     });
 
@@ -245,7 +294,11 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
       return void res.status(409).json({ error: "A payment slip/receipt is required before approving this listing so it remains linked to Finance Verification." });
     }
 
-    const updated = await prisma.business.update({ where: { id }, data: { status, paymentStatus: nextPaymentStatus, adminNote } });
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const row = await tx.business.update({ where: { id }, data: { status, paymentStatus: nextPaymentStatus, adminNote } });
+      await auditBusiness(tx, req, id, "status_changed", current, row);
+      return row;
+    });
     res.json({ ...updated, additionalPhotos: parsePhotos(updated.additionalPhotos) });
   } catch (err: any) {
     if (err.code === "P2025") return void res.status(404).json({ error: "Business not found" });
@@ -260,7 +313,7 @@ router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), asyn
     const id = String(req.params.id);
     const previous = await prisma.business.findUnique({ where: { id } });
     if (!previous) return void res.status(404).json({ error: "Business not found" });
-    const before = [previous.logoUrl, previous.paymentProofUrl, ...parsePhotos(previous.additionalPhotos)];
+    const beforeFiles = [previous.logoUrl, previous.paymentProofUrl, ...parsePhotos(previous.additionalPhotos)];
     const { paymentSenderName, paymentMethod, paymentReference, ...editable } = req.body as any;
     const data = { ...editable } as any;
     if (Array.isArray(data.additionalPhotos)) data.additionalPhotos = JSON.stringify(data.additionalPhotos);
@@ -286,11 +339,12 @@ router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), asyn
         supportingDocuments: parsePhotos(row.additionalPhotos),
         resubmitRejected: Boolean(proofChanged || paymentSenderName || paymentMethod || paymentReference),
       });
+      await auditBusiness(tx, req, id, "profile_updated", previous, row);
       return row;
     });
 
-    const after = [updated.logoUrl, updated.paymentProofUrl, ...parsePhotos(updated.additionalPhotos)];
-    await cleanupRemovedFiles(before, after);
+    const afterFiles = [updated.logoUrl, updated.paymentProofUrl, ...parsePhotos(updated.additionalPhotos)];
+    await cleanupRemovedFiles(beforeFiles, afterFiles);
     res.json({ ...updated, additionalPhotos: parsePhotos(updated.additionalPhotos) });
   } catch (err: any) {
     if (err.code === "P2025") return void res.status(404).json({ error: "Business not found" });
@@ -303,6 +357,9 @@ router.put("/:id", requireWelfareAdmin, validate(BusinessSchema.partial()), asyn
 router.delete("/:id", requireWelfareAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
+    const existing = await prisma.business.findUnique({ where: { id } });
+    if (!existing) return void res.status(404).json({ error: "Business not found" });
+
     const paymentRows = await prisma.$queryRaw<Array<{ status: string }>>`
       SELECT "status" FROM "PaymentSubmission"
       WHERE "sourceType" = 'business' AND "sourceRecordId" = ${id}
@@ -312,6 +369,7 @@ router.delete("/:id", requireWelfareAdmin, async (req: Request, res: Response, n
     }
 
     const removed = await prisma.$transaction(async (tx: any) => {
+      await auditBusiness(tx, req, id, "business_deleted", existing, null);
       await tx.$executeRaw`
         DELETE FROM "PaymentSubmission"
         WHERE "sourceType" = 'business' AND "sourceRecordId" = ${id} AND "status" <> 'approved'
