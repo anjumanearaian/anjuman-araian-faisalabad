@@ -41,7 +41,9 @@ export function MemberProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem("araian_member_token");
+    localStorage.removeItem("araian_business_draft_v2");
     setMember(null);
+    window.dispatchEvent(new Event("araian-member-logout"));
   }, []);
 
   const acceptSession = useCallback((session: { token: string; member?: Member | null }) => {
