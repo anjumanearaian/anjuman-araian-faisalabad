@@ -93,11 +93,11 @@ export async function manualMatrimonialFlow(req: any, res: any) {
       if (existing.length) return res.status(409).json({ error: "An active interest already exists between these profiles." });
       const c = matrimonialCompatibility(requester, target), actorId = requester.authUserId || null;
       const created = await prisma.$queryRaw<any[]>`
-        INSERT INTO "MatrimonialMatchRequest" ("id","requesterAuthUserId","requesterProfileId","targetProfileId","requesterMessage","status","requesterToTargetScore","targetToRequesterScore","mutualScore","scoreConfidence","scoreBreakdown","createdAt","updatedAt")
-        VALUES (gen_random_uuid()::text,${actorId},${requester.id},${target.id},${note || null},'pending_admin',${c.requesterToTargetScore},${c.targetToRequesterScore},${c.mutualScore},${c.scoreConfidence},${JSON.stringify(c.breakdown)}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        INSERT INTO "MatrimonialMatchRequest" ("id","requesterAuthUserId","requesterProfileId","targetProfileId","requesterMessage","status","adminNote","adminApprovedAt","requesterToTargetScore","targetToRequesterScore","mutualScore","scoreConfidence","scoreBreakdown","createdAt","updatedAt")
+        VALUES (gen_random_uuid()::text,${actorId},${requester.id},${target.id},${note || null},'awaiting_target','Manager-assisted introduction reviewed and forwarded for candidate/guardian consent.',CURRENT_TIMESTAMP,${c.requesterToTargetScore},${c.targetToRequesterScore},${c.mutualScore},${c.scoreConfidence},${JSON.stringify(c.breakdown)}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
         RETURNING *`;
-      await audit(user, "manager_manual_interest_created", requester.id, created[0]?.id, { targetProfileId: target.id, mutualScore: c.mutualScore, requesterCode: code(requester.id), targetCode: code(target.id), categoryScores: c.breakdown.categoryScores });
-      return res.status(201).json({ request: created[0], compatibility: c });
+      await audit(user, "manager_manual_interest_created_and_forwarded", requester.id, created[0]?.id, { targetProfileId: target.id, mutualScore: c.mutualScore, requesterCode: code(requester.id), targetCode: code(target.id), categoryScores: c.breakdown.categoryScores });
+      return res.status(201).json({ request: created[0], compatibility: c, forwarded: true });
     }
 
     if (action === "record_consent") {
