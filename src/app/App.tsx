@@ -8,6 +8,7 @@ import { AdminDashboardNavigation } from "./components/admin/AdminDashboardNavig
 import { OperationsFinanceRedirect } from "./components/admin/OperationsFinanceRedirect";
 import { AdminSmartMemberSelectors } from "./components/admin/AdminSmartMemberSelectors";
 import { AdminRoleAssignmentEditor } from "./components/admin/AdminRoleAssignmentEditor";
+import { MatrimonialPrivateImageHydrator } from "./components/MatrimonialPrivateImageHydrator";
 
 function ScopedAdminRedirect() {
   const { isAdmin, role } = useAdmin();
@@ -39,6 +40,16 @@ function AdminMemberCenterShortcut() {
   );
 }
 
+function MatrimonialMatchingShortcut() {
+  const { isAdmin, role } = useAdmin();
+  const path = typeof window !== "undefined" ? window.location.pathname : "";
+  const allowed = ["admin", "super_admin", "welfare_manager", "matrimonial_manager"].includes(String(role || ""));
+  if (!isAdmin || !allowed || !path.startsWith("/admin/matrimonial") || path === "/admin/matrimonial/matching") return null;
+  return (
+    <a href="/admin/matrimonial/matching" style={{ position: "fixed", left: 18, bottom: 18, zIndex: 9999, background: "#1a4d2e", color: "white", border: "2px solid #c8a04a", borderRadius: 10, padding: "11px 15px", textDecoration: "none", fontFamily: "Lato, sans-serif", fontSize: 12, fontWeight: 800, boxShadow: "0 8px 24px rgba(0,0,0,.22)" }} title="Open the two-way compatibility and manager-assisted consent workflow">Matching Desk</a>
+  );
+}
+
 export default function App() {
   return (
     <AdminProvider>
@@ -49,6 +60,8 @@ export default function App() {
       <AdminRoleAssignmentEditor />
       <AdminBusinessShortcut />
       <AdminMemberCenterShortcut />
+      <MatrimonialMatchingShortcut />
+      <MatrimonialPrivateImageHydrator />
       <MemberProvider>
         <RouterProvider router={router} />
       </MemberProvider>
