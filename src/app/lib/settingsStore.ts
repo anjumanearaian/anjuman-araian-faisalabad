@@ -51,10 +51,9 @@ const defaultSettings: SiteSettings = {
   twitterUrl: "https://twitter.com",
   instagramUrl: "https://instagram.com",
   linkedinUrl: "https://linkedin.com",
-  paymentMethods: [
-    { id: "p1", bankName: "Meezan Bank", accountTitle: "Anjuman-e-Araian", accountNo: "0123456789" },
-    { id: "p2", bankName: "EasyPaisa", accountTitle: "Admin", accountNo: "0300 000 0000" }
-  ],
+  // Never fall back to demo bank/wallet details. If official payment details are
+  // not configured, the public forms ask the applicant to contact the office.
+  paymentMethods: [],
   membershipTiers: [
     { id: "t1", type: "ordinary", name: "Regular / Annual Member", fee: "Rs. 1,000 / year", description: "Voting rights, welfare access and member directory" },
     { id: "t2", type: "life", name: "Life Member", fee: "Rs. 3,000 once", description: "Permanent membership with all regular-member benefits" },
@@ -71,10 +70,30 @@ let cachedSettings: SiteSettings = defaultSettings;
 
 import { apiClient } from "./apiClient";
 
+const DEMO_PAYMENT_NUMBERS = new Set([
+  "0123456789",
+  "03000000000",
+]);
+
+function normalizeAccountNo(value: string) {
+  return String(value || "").replace(/[^0-9a-z]/gi, "").toLowerCase();
+}
+
+function publicSafePaymentMethods(methods: unknown): PaymentMethod[] {
+  if (!Array.isArray(methods)) return [];
+  return methods.filter((method: any) => {
+    const bankName = String(method?.bankName || "").trim();
+    const accountTitle = String(method?.accountTitle || "").trim();
+    const accountNo = String(method?.accountNo || "").trim();
+    if (!bankName || !accountTitle || !accountNo) return false;
+    return !DEMO_PAYMENT_NUMBERS.has(normalizeAccountNo(accountNo));
+  });
+}
+
 export async function fetchSiteSettings(): Promise<SiteSettings> {
   try {
     const data = await apiClient("/settings") as any;
-    if (!data.paymentMethods) data.paymentMethods = defaultSettings.paymentMethods;
+    data.paymentMethods = publicSafePaymentMethods(data.paymentMethods);
     if (!data.membershipTiers) data.membershipTiers = defaultSettings.membershipTiers;
     if (!data.matrimonialPackages) data.matrimonialPackages = defaultSettings.matrimonialPackages;
     cachedSettings = data as SiteSettings;
@@ -90,7 +109,7 @@ export async function updateSiteSettings(settings: Partial<SiteSettings>): Promi
     method: "PUT",
     body: JSON.stringify(settings),
   }) as SiteSettings;
-  cachedSettings = { ...cachedSettings, ...data };
+  cachedSettings = { ...cachedSettings, ...data, paymentMethods: publicSafePaymentMethods(data.paymentMethods ?? settings.paymentMethods ?? cachedSettings.paymentMethods) };
   return cachedSettings;
 }
 
@@ -99,5 +118,5 @@ export function getSiteSettings(): SiteSettings {
 }
 
 export function saveSiteSettings(settings: SiteSettings) {
-  cachedSettings = settings;
+  cachedSettings = { ...settings, paymentMethods: publicSafePaymentMethods(settings.paymentMethods) };
 }
