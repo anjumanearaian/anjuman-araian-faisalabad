@@ -46,8 +46,8 @@ export function AdminBusinessCreatePage() {
       setError("Business name, owner name, city, address and phone are required.");
       return;
     }
-    if (form.status === "approved" && !["received", "verified"].includes(form.paymentStatus)) {
-      setError("For an approved paid listing, mark payment as Received or Verified first.");
+    if (form.status === "approved" && form.paymentStatus !== "received") {
+      setError("For an approved listing, mark payment as Received / Admin Checked. Final verification is completed separately in the Finance Center.");
       return;
     }
     setSaving(true); setError("");
@@ -63,10 +63,10 @@ export function AdminBusinessCreatePage() {
     <div style={{ minHeight: "100vh", background: "#f8f5ef", padding: 30 }}>
       <div style={{ maxWidth: 680, margin: "70px auto", background: "white", borderRadius: 16, padding: 36, textAlign: "center", boxShadow: "0 6px 28px rgba(0,0,0,.08)" }}>
         <CheckCircle size={48} color={GREEN}/><h2 style={{ color: GREEN }}>Business profile created</h2>
-        <p style={{ color: "#666" }}>The business has been saved with the selected listing and payment status.</p>
+        <p style={{ color: "#666" }}>The business has been saved with the selected listing and admin payment-review status. Finance verification remains separate.</p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={() => { setDone(false); setForm((f) => ({ ...f, businessName: "", ownerName: "", phone: "", whatsapp: "", email: "", website: "", address: "", description: "", productsServices: "", discountOffer: "", logoUrl: "", paymentProofUrl: "", additionalPhotos: [], paymentSenderName: "", paymentMethod: "", paymentReference: "" })); }} style={primary}>Add Another Business</button>
-          <button onClick={() => navigate("/admin")} style={secondary}>Back to Admin</button>
+          <button onClick={() => { setDone(false); setForm((f) => ({ ...f, businessName: "", ownerName: "", phone: "", whatsapp: "", email: "", website: "", address: "", description: "", productsServices: "", discountOffer: "", logoUrl: "", paymentProofUrl: "", additionalPhotos: [], paymentSenderName: "", paymentMethod: "", paymentReference: "", status: "pending", paymentStatus: "pending" })); }} style={primary}>Add Another Business</button>
+          <button onClick={() => navigate("/admin/businesses")} style={secondary}>Business Control Center</button>
         </div>
       </div>
     </div>
@@ -77,7 +77,7 @@ export function AdminBusinessCreatePage() {
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, gap: 12, flexWrap: "wrap" }}>
           <div><h1 style={{ margin: 0, color: GREEN, fontFamily: "'Playfair Display', serif" }}>Add Business Manually</h1><p style={{ color: "#666", margin: "5px 0 0" }}>Create a complete business profile from the admin panel.</p></div>
-          <Link to="/admin" style={{ color: GREEN, fontWeight: 800, textDecoration: "none" }}>← Back to Admin</Link>
+          <Link to="/admin/businesses" style={{ color: GREEN, fontWeight: 800, textDecoration: "none" }}>← Business Control Center</Link>
         </div>
 
         <form onSubmit={submit} style={{ background: "white", borderRadius: 16, padding: 28, boxShadow: "0 5px 24px rgba(0,0,0,.06)" }}>
@@ -99,13 +99,14 @@ export function AdminBusinessCreatePage() {
           </div>
 
           <Section title="Listing & Approval"/>
+          <p style={{ margin: "-4px 0 14px", color: "#777", fontSize: 12, lineHeight: 1.6 }}>“Received / Admin Checked” means the office has reviewed the payment information for directory approval. “Finance Verified” is not set here; it is created by the Finance Verification workflow after ledger review.</p>
           <div className="admin-business-grid" style={grid}>
             <Field title="Listing Package"><select style={input} value={form.sponsorshipPackage} onChange={e=>set("sponsorshipPackage",e.target.value)}>{Object.entries(sponsorshipPackages).map(([key,p])=><option key={key} value={key}>{p.name} - {p.price}</option>)}</select></Field>
             <Field title="Business Status"><select style={input} value={form.status} onChange={e=>set("status",e.target.value)}><option value="pending">Pending Review</option><option value="approved">Approved / Publish</option><option value="rejected">Rejected</option></select></Field>
-            <Field title="Payment Status"><select style={input} value={form.paymentStatus} onChange={e=>set("paymentStatus",e.target.value)}><option value="pending">Pending</option><option value="submitted">Slip Submitted</option><option value="received">Received</option><option value="verified">Verified</option><option value="rejected">Rejected</option></select></Field>
+            <Field title="Payment Review Status"><select style={input} value={form.paymentStatus} onChange={e=>set("paymentStatus",e.target.value)}><option value="pending">Pending</option><option value="submitted">Slip Submitted</option><option value="received">Received / Admin Checked</option><option value="rejected">Rejected</option></select></Field>
             <Field title="Payment Method (optional)"><select style={input} value={form.paymentMethod} onChange={e=>set("paymentMethod",e.target.value)}><option value="">Not specified</option><option>Bank Transfer</option><option>JazzCash</option><option>Easypaisa</option><option>Cheque</option><option>Cash</option><option>Other</option></select></Field>
             <Field title="Sender / Account Name (optional)"><input style={input} value={form.paymentSenderName} onChange={e=>set("paymentSenderName",e.target.value)}/></Field>
-            <Field title="Transaction / Reference ID (optional)"><input style={input} value={form.paymentReference} onChange={e=>set("paymentReference",e.target.value)}/></Field>
+            <Field title="Transaction / Reference ID (optional)"><input style={input} value={form.paymentReference} onChange={e=>set("paymentReference",e.target.value)} placeholder="Not required"/></Field>
             <div style={{ gridColumn: "span 2" }}><Field title="Admin Note"><textarea rows={3} style={{ ...input, resize: "vertical" }} value={form.adminNote} onChange={e=>set("adminNote",e.target.value)}/></Field></div>
           </div>
 
@@ -117,7 +118,7 @@ export function AdminBusinessCreatePage() {
           <MultiImageUpload label="Business Photos / Supporting Documents" images={form.additionalPhotos} onChange={images=>set("additionalPhotos",images)}/>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24, flexWrap: "wrap" }}>
-            <Link to="/admin" style={{ ...secondary, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Cancel</Link>
+            <Link to="/admin/businesses" style={{ ...secondary, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Cancel</Link>
             <button type="submit" disabled={saving||uploading} style={{ ...primary, opacity: saving||uploading ? .6 : 1 }}>{saving ? "Saving..." : "Save Business Profile"}</button>
           </div>
         </form>
