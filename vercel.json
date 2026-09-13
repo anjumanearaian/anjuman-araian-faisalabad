@@ -16,6 +16,22 @@
   ],
   "rewrites": [
     {
+      "source": "/api/auth/admin",
+      "destination": "/api/__proxy__auth__admin"
+    },
+    {
+      "source": "/api/auth/admin/list",
+      "destination": "/api/__proxy__auth__admin__list"
+    },
+    {
+      "source": "/api/auth/admin/reset-password",
+      "destination": "/api/__proxy__auth__admin__reset-password"
+    },
+    {
+      "source": "/api/auth/admin/:id/role",
+      "destination": "/api/__proxy__auth__admin__:id__role"
+    },
+    {
       "source": "/((?!api/|uploads/).*)",
       "destination": "/index.html"
     }
