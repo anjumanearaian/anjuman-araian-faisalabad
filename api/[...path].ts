@@ -5,6 +5,8 @@ const backendModule = require("../backend/dist/index.js");
 const app = backendModule.default ?? backendModule;
 const prismaModule = require("../backend/dist/lib/prisma.js");
 const prisma = prismaModule.default ?? prismaModule.prisma;
+const manualFlowModule = require("../backend/dist/serverless/manualMatrimonialFlow.js");
+const manualMatrimonialFlow = manualFlowModule.manualMatrimonialFlow;
 const jwt = require("jsonwebtoken");
 
 function bodyOf(req: any) {
@@ -299,6 +301,10 @@ export default async function handler(req: any, res: any) {
   restoreNestedApiPath(req);
   const pathname = String(req.url || "").split("?")[0];
   const method = String(req.method || "").toUpperCase();
+
+  if (pathname === "/api/matrimonial/manual-flow" && (method === "GET" || method === "POST")) {
+    return manualMatrimonialFlow(req, res);
+  }
 
   if (pathname === "/api/matrimonial/published" && method === "GET") {
     try {
