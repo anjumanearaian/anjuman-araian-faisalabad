@@ -12,7 +12,10 @@
     "prisma:generate": "cd backend && prisma generate",
     "prisma:push": "prisma db push --schema=backend/prisma/schema.prisma",
     "db:setup": "prisma db push --schema=backend/prisma/schema.prisma && prisma generate --schema=backend/prisma/schema.prisma",
+    "stability:check": "node scripts/stability-guard.mjs",
+    "test:auth": "node tests/auth-regression.cjs",
     "check": "tsc --noEmit && tsc -p backend/tsconfig.json --noEmit && vite build",
+    "verify:locked": "npm run stability:check && npm run test:auth && npm run build",
     "db:migrate:deploy": "prisma migrate deploy --schema=backend/prisma/schema.prisma",
     "db:migrate:status": "prisma migrate status --schema=backend/prisma/schema.prisma"
   },
