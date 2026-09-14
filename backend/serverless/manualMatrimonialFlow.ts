@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
 import { matrimonialCompatibility } from "../lib/matrimonialCompatibility";
+import { emailFrame, sendEmail } from "../lib/email";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin", "welfare_manager", "matrimonial_manager"]);
 
@@ -11,7 +12,6 @@ function bodyOf(req: any) {
   }
   return req.body;
 }
-
 function authenticate(req: any) {
   const header = String(req.headers?.authorization || "");
   if (!header.startsWith("Bearer ")) throw Object.assign(new Error("Authentication required"), { status: 401 });
@@ -21,38 +21,28 @@ function authenticate(req: any) {
   if (!ADMIN_ROLES.has(String(decoded?.role || ""))) throw Object.assign(new Error("Matrimonial manager access required"), { status: 403 });
   return decoded;
 }
-
 function clean(v: any) { return String(v ?? "").trim(); }
 function object(v: any) { return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }
 function code(id: string) { return `AAF-MAT-${String(id).replace(/-/g, "").slice(0, 8).toUpperCase()}`; }
+function originOf(req:any){const configured=clean(process.env.PUBLIC_SITE_URL||process.env.SITE_URL).replace(/\/$/,"");if(configured)return configured;const proto=clean(req.headers?.["x-forwarded-proto"]||"https").split(",")[0],host=clean(req.headers?.["x-forwarded-host"]||req.headers?.host);return host?`${proto}://${host}`:"";}
+async function authEmail(id?:string|null){if(!id)return "";const u=await prisma.authUser.findUnique({where:{id},select:{email:true}}).catch(()=>null);return clean(u?.email);}
 
 async function getProfile(id: string) {
   const rows = await prisma.$queryRaw<any[]>`SELECT * FROM "Matrimonial" WHERE "id"=${id} LIMIT 1`;
   return rows[0] || null;
 }
-
 async function audit(user: any, action: string, profileId?: string | null, requestId?: string | null, details?: any) {
   await prisma.$executeRaw`INSERT INTO "MatrimonialAuditLog" ("profileId","requestId","action","actorId","actorName","actorRole","details") VALUES (${profileId || null},${requestId || null},${action},${user.id || null},${user.username || user.email || null},${user.role || "admin"},${JSON.stringify(details || {})}::jsonb)`;
 }
-
 async function previewBatch(requesterProfileId: string) {
   const requester = await getProfile(requesterProfileId);
   if (!requester) throw Object.assign(new Error("Requester profile not found"), { status: 404 });
   if (requester.status !== "approved" || requester.showOnPortal !== true || requester.isActive === false) throw Object.assign(new Error("Requester must be approved and enabled for matching"), { status: 409 });
   const targets = await prisma.$queryRaw<any[]>`SELECT * FROM "Matrimonial" WHERE "id"<>${requester.id} AND "gender"<>${requester.gender} AND "status"='approved' AND "showOnPortal"=true AND "isActive"=true ORDER BY "isFeatured" DESC,"updatedAt" DESC LIMIT 250`;
   return targets.map((target) => ({
-    id: target.id,
-    profileCode: code(target.id),
-    name: target.name,
-    gender: target.gender,
-    age: target.age,
-    city: target.city,
-    country: target.country || "Pakistan",
-    education: target.education,
-    profession: target.profession,
-    maritalStatus: target.maritalStatus,
-    verificationStatus: target.verificationStatus,
-    ...matrimonialCompatibility(requester, target),
+    id: target.id, profileCode: code(target.id), name: target.name, gender: target.gender, age: target.age, city: target.city,
+    country: target.country || "Pakistan", education: target.education, profession: target.profession, maritalStatus: target.maritalStatus,
+    verificationStatus: target.verificationStatus, ...matrimonialCompatibility(requester, target),
   })).sort((a, b) => b.mutualScore - a.mutualScore || b.scoreConfidence - a.scoreConfidence).slice(0, 50);
 }
 
@@ -91,12 +81,16 @@ export async function manualMatrimonialFlow(req: any, res: any) {
       for (const p of [requester, target]) if (p.status !== "approved" || p.showOnPortal !== true || p.isActive === false) return res.status(409).json({ error: `${code(p.id)} must be approved and enabled for matching first.` });
       const existing = await prisma.$queryRaw<any[]>`SELECT "id","status" FROM "MatrimonialMatchRequest" WHERE (("requesterProfileId"=${requester.id} AND "targetProfileId"=${target.id}) OR ("requesterProfileId"=${target.id} AND "targetProfileId"=${requester.id})) AND "status" IN ('pending_admin','awaiting_target','accepted') LIMIT 1`;
       if (existing.length) return res.status(409).json({ error: "An active interest already exists between these profiles." });
-      const c = matrimonialCompatibility(requester, target), actorId = requester.authUserId || null;
+      const c = matrimonialCompatibility(requester, target);
+      if(c.eligible===false)return res.status(409).json({error:"This match has a must-have conflict and cannot be forwarded."});
+      const actorId = requester.authUserId || null;
       const created = await prisma.$queryRaw<any[]>`
         INSERT INTO "MatrimonialMatchRequest" ("id","requesterAuthUserId","requesterProfileId","targetProfileId","requesterMessage","status","adminNote","adminApprovedAt","requesterToTargetScore","targetToRequesterScore","mutualScore","scoreConfidence","scoreBreakdown","createdAt","updatedAt")
-        VALUES (gen_random_uuid()::text,${actorId},${requester.id},${target.id},${note || null},'awaiting_target','Manager-assisted introduction reviewed and forwarded for candidate/guardian consent.',CURRENT_TIMESTAMP,${c.requesterToTargetScore},${c.targetToRequesterScore},${c.mutualScore},${c.scoreConfidence},${JSON.stringify(c.breakdown)}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        VALUES (gen_random_uuid()::text,${actorId},${requester.id},${target.id},${note || null},'awaiting_target','Office-assisted introduction reviewed and forwarded for candidate/guardian consent.',CURRENT_TIMESTAMP,${c.requesterToTargetScore},${c.targetToRequesterScore},${c.mutualScore},${c.scoreConfidence},${JSON.stringify(c.breakdown)}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
         RETURNING *`;
       await audit(user, "manager_manual_interest_created_and_forwarded", requester.id, created[0]?.id, { targetProfileId: target.id, mutualScore: c.mutualScore, requesterCode: code(requester.id), targetCode: code(target.id), categoryScores: c.breakdown.categoryScores });
+      const targetEmail=await authEmail(target.authUserId),origin=originOf(req),url=origin?`${origin}/matrimonial/requests`:"";
+      if(targetEmail)void sendEmail(targetEmail,"A private matrimonial interest is waiting for your consent",emailFrame("Private interest received",`<p>An authorized matrimonial manager has forwarded a private introduction for <strong>${code(target.id)}</strong>.</p><p>Compatibility: <strong>${c.mutualScore}%</strong>. Review the anonymized basics before deciding. No private contact is released before consent.</p>${url?`<p><a href="${url}">Review Matrimonial Interests</a></p>`:""}`)).catch(console.error);
       return res.status(201).json({ request: created[0], compatibility: c, forwarded: true });
     }
 
@@ -105,14 +99,18 @@ export async function manualMatrimonialFlow(req: any, res: any) {
       if (!requestId || !["accept", "decline"].includes(decision)) return res.status(400).json({ error: "Request and consent decision are required" });
       if (!["office_visit", "phone", "signed_form", "family_meeting", "other"].includes(consentMethod)) return res.status(400).json({ error: "Select how consent was recorded" });
       if (note.length < 5) return res.status(400).json({ error: "Add a short consent note for the audit trail" });
-      const rows = await prisma.$queryRaw<any[]>`SELECT mr.*, t."privacyData", t."authUserId" AS "targetAuthUserId" FROM "MatrimonialMatchRequest" mr JOIN "Matrimonial" t ON t."id"=mr."targetProfileId" WHERE mr."id"=${requestId} LIMIT 1`;
+      const rows = await prisma.$queryRaw<any[]>`SELECT mr.*, t."privacyData", t."authUserId" AS "targetAuthUserId", r."privacyData" AS "requesterPrivacyData", r."authUserId" AS "requesterAuthUserId" FROM "MatrimonialMatchRequest" mr JOIN "Matrimonial" t ON t."id"=mr."targetProfileId" JOIN "Matrimonial" r ON r."id"=mr."requesterProfileId" WHERE mr."id"=${requestId} LIMIT 1`;
       const row = rows[0]; if (!row) return res.status(404).json({ error: "Interest request not found" });
       if (row.status !== "awaiting_target") return res.status(409).json({ error: "This request is not waiting for target consent" });
       if (row.targetAuthUserId) return res.status(409).json({ error: "This target has a verified portal account. Consent should normally be given from the candidate account, not recorded manually." });
-      const accepted = decision === "accept", privacy = object(row.privacyData), photoRelease = accepted && privacy.photoVisibility !== "admin_only", contactRelease = accepted && privacy.contactVisibility !== "admin_only";
+      const accepted = decision === "accept", targetPrivacy = object(row.privacyData), requesterPrivacy=object(row.requesterPrivacyData);
+      const photoRelease = accepted && targetPrivacy.photoVisibility !== "admin_only" && requesterPrivacy.photoVisibility!=="admin_only";
+      const contactRelease = accepted && targetPrivacy.contactVisibility !== "admin_only" && requesterPrivacy.contactVisibility!=="admin_only";
       await prisma.$executeRaw`
         UPDATE "MatrimonialMatchRequest" SET "status"=${accepted ? "accepted" : "declined"},"targetRespondedAt"=CURRENT_TIMESTAMP,"contactReleasedAt"=${contactRelease ? new Date() : null},"fullProfileReleasedAt"=${accepted ? new Date() : null},"photoReleasedAt"=${photoRelease ? new Date() : null},"photoAccessStatus"=${photoRelease ? "released" : "locked"},"contactAccessStatus"=${contactRelease ? "released" : "locked"},"consentRecordedByAdminId"=${user.id || null},"consentRecordedByName"=${user.username || user.email || null},"consentRecordedAt"=CURRENT_TIMESTAMP,"consentMethod"=${consentMethod},"adminNote"=${note},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${requestId}`;
       await audit(user, accepted ? "manager_manual_consent_accepted" : "manager_manual_consent_declined", row.targetProfileId, requestId, { consentMethod, note, photoReleased: photoRelease, contactReleased: contactRelease });
+      const requesterEmail=await authEmail(row.requesterAuthUserId),origin=originOf(req),url=origin?`${origin}/matrimonial/requests`:"";
+      if(requesterEmail)void sendEmail(requesterEmail,accepted?"Your matrimonial introduction was accepted":"Update on your matrimonial introduction",emailFrame(accepted?"Introduction accepted":"Introduction declined",accepted?`<p>The other side accepted the private introduction.</p><p>Open your interests to see any details released under both profiles' privacy settings.</p>${url?`<p><a href="${url}">Open Matrimonial Interests</a></p>`:""}`:`<p>The other side declined the private introduction. No private details were released.</p>`)).catch(console.error);
       return res.json({ success: true, status: accepted ? "accepted" : "declined", photoReleased: photoRelease, contactReleased: contactRelease });
     }
 
