@@ -1,0 +1,22 @@
+# Default owner for production code and configuration
+* @anjumanearaian
+
+# Security-sensitive backend, database and API surfaces
+/backend/ @anjumanearaian
+/api/ @anjumanearaian
+/backend/prisma/ @anjumanearaian
+/backend/middleware/ @anjumanearaian
+
+# Locked client integration and privacy surfaces
+/src/app/lib/apiClient.ts @anjumanearaian
+/src/app/lib/displayFormat.ts @anjumanearaian
+/src/app/lib/memberStore.ts @anjumanearaian
+/src/app/lib/memberDirectoryStore.ts @anjumanearaian
+/src/app/lib/matrimonialStore.ts @anjumanearaian
+/src/app/context/MemberContext.tsx @anjumanearaian
+/src/app/components/SecureMatrimonialImage.tsx @anjumanearaian
+
+# Release controls
+/.github/workflows/ @anjumanearaian
+/vercel.json @anjumanearaian
+/package.json @anjumanearaian
