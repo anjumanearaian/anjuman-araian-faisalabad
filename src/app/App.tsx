@@ -1,5 +1,5 @@
 import "../styles/fonts.css";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { RouterProvider } from "react-router";
 import { router } from "./routes";
 import { AdminProvider, useAdmin } from "./context/AdminContext";
@@ -49,6 +49,19 @@ function MatrimonialMatchingShortcut() {
 }
 
 export default function App() {
+  const [, setObservedPath] = useState(() => typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let last = `${window.location.pathname}${window.location.search}`;
+    const check = () => {
+      const next = `${window.location.pathname}${window.location.search}`;
+      if (next !== last) { last = next; setObservedPath(next); }
+    };
+    const timer = window.setInterval(check, 250);
+    window.addEventListener("popstate", check);
+    return () => { window.clearInterval(timer); window.removeEventListener("popstate", check); };
+  }, []);
+
   return (
     <AdminProvider>
       <ScopedAdminRedirect />
