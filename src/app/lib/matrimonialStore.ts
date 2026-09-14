@@ -103,6 +103,11 @@ export interface MatrimonialPublicStats {
 
 import { apiClient } from "./apiClient";
 
+function emitSaved(profile: MatrimonialProfile, source: "admin" | "self") {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("araian-matrimonial-profile-saved", { detail: { profile, source } }));
+}
+
 export const matrimonialStatusColors: Record<MatrimonialStatus, { bg: string; text: string; label: string }> = {
   pending:  { bg: "#fef9c3", text: "#854d0e", label: "Pending Review" },
   approved: { bg: "#dcfce7", text: "#15803d", label: "Approved" },
@@ -119,7 +124,7 @@ export async function fetchPublicMatrimonialStats() {
 }
 
 export async function claimMatrimonialProfilesByEmail() {
-  return apiClient<{ claimed: number; profileIds: string[] }>("/matrimonial-lifecycle", { method: "POST", body: JSON.stringify({ action: "claim_profile" }) });
+  return apiClient<{ claimed: number; profileIds: string[]; email?: string }>("/matrimonial-lifecycle", { method: "POST", body: JSON.stringify({ action: "claim_profile" }) });
 }
 
 export async function fetchMyMatrimonialProfiles() {
@@ -129,15 +134,21 @@ export async function fetchMyMatrimonialProfiles() {
 }
 
 export async function createMatrimonial(data: Record<string, unknown>) {
-  return apiClient<MatrimonialProfile>("/matrimonial/submit", { method: "POST", body: JSON.stringify(data) });
+  const profile = await apiClient<MatrimonialProfile>("/matrimonial/submit", { method: "POST", body: JSON.stringify(data) });
+  emitSaved(profile, "self");
+  return profile;
 }
 
 export async function createMatrimonialAdmin(data: Record<string, unknown>) {
-  return apiClient<MatrimonialProfile>("/matrimonial/admin", { method: "POST", body: JSON.stringify(data) });
+  const profile = await apiClient<MatrimonialProfile>("/matrimonial/admin", { method: "POST", body: JSON.stringify(data) });
+  emitSaved(profile, "admin");
+  return profile;
 }
 
 export async function updateMyMatrimonial(id: string, data: Record<string, unknown>) {
-  return apiClient<MatrimonialProfile>(`/matrimonial/mine/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  const profile = await apiClient<MatrimonialProfile>(`/matrimonial/mine/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  emitSaved(profile, "self");
+  return profile;
 }
 
 export async function updateMatrimonialStatus(id: string, status: MatrimonialStatus, paymentStatus?: MatrimonialPaymentStatus, adminNote?: string, verificationStatus?: string) {
@@ -145,7 +156,9 @@ export async function updateMatrimonialStatus(id: string, status: MatrimonialSta
 }
 
 export async function updateMatrimonial(id: string, partial: Partial<MatrimonialProfile>) {
-  return apiClient<MatrimonialProfile>(`/matrimonial/${id}`, { method: "PUT", body: JSON.stringify(partial) });
+  const profile = await apiClient<MatrimonialProfile>(`/matrimonial/${id}`, { method: "PUT", body: JSON.stringify(partial) });
+  if (typeof window !== "undefined" && window.location.pathname.includes("/admin/matrimonial/edit/")) emitSaved(profile, "admin");
+  return profile;
 }
 
 export async function deleteMatrimonial(id: string) {
