@@ -1,10 +1,11 @@
+import type { ComponentType } from "react";
 import { createBrowserRouter, redirect } from "react-router";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
 
 const lazyPage = <T extends Record<string, any>>(loader: () => Promise<T>, exportName: keyof T) => async () => {
   const mod = await loader();
-  return { Component: mod[exportName] as React.ComponentType };
+  return { Component: mod[exportName] as ComponentType };
 };
 
 export const router = createBrowserRouter([
