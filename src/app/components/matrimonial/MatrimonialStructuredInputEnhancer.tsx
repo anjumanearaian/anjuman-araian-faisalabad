@@ -62,13 +62,13 @@ function findLabelText(input: HTMLInputElement) {
 
 function findPreferenceTitle(input: HTMLInputElement) {
   let node: HTMLElement | null = input.parentElement;
-  for (let i = 0; i < 5 && node; i++, node = node.parentElement) {
+  for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
     const primary = node.querySelector<HTMLInputElement>('input[placeholder^="Primary"]');
     const secondary = node.querySelector<HTMLInputElement>('input[placeholder^="Secondary"]');
     const acceptable = node.querySelector<HTMLInputElement>('input[placeholder^="Acceptable"]');
     if (primary && secondary && acceptable) {
       const strong = node.querySelector("strong");
-      return clean(strong?.textContent);
+      if (strong) return clean(strong.textContent);
     }
   }
   return "";
@@ -176,8 +176,8 @@ function enhanceMulti(input: HTMLInputElement, options: string[]) {
       event.preventDefault();
       if (!select.value) return;
       if (select.value === "__other__") { showOther = true; render(); return; }
-      commit([...current, select.value]);
       showOther = false;
+      commit([...current, select.value]);
     };
     row.append(select, add);
     wrapper.appendChild(row);
@@ -208,8 +208,8 @@ function enhanceMulti(input: HTMLInputElement, options: string[]) {
       const addCustom = () => {
         const value = clean(custom.value);
         if (!value) return;
-        commit([...current, value]);
         showOther = false;
+        commit([...current, value]);
       };
       customAdd.onclick = (event) => { event.preventDefault(); addCustom(); };
       custom.onkeydown = (event) => { if (event.key === "Enter") { event.preventDefault(); addCustom(); } };
@@ -245,13 +245,15 @@ function enhanceSingle(input: HTMLInputElement, options: string[]) {
   input.style.display = "none";
   input.insertAdjacentElement("afterend", wrapper);
   const known = optionList(options);
+  let showOther = false;
 
   const render = () => {
     wrapper.dataset.lastValue = input.value;
     wrapper.replaceChildren();
     const current = clean(input.value);
     const isKnown = known.some((item) => key(item) === key(current));
-    const row = makeEl("div", { display: "grid", gridTemplateColumns: current && !isKnown ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: "6px" });
+    const customMode = showOther || Boolean(current && !isKnown);
+    const row = makeEl("div", { display: "grid", gridTemplateColumns: customMode ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: "6px" });
     const select = makeEl("select", {
       width: "100%",
       boxSizing: "border-box",
@@ -265,14 +267,20 @@ function enhanceSingle(input: HTMLInputElement, options: string[]) {
     const blank = document.createElement("option"); blank.value = ""; blank.textContent = "Select · منتخب کریں"; select.appendChild(blank);
     known.forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; select.appendChild(option); });
     const other = document.createElement("option"); other.value = "__other__"; other.textContent = "Other / Add new · دیگر"; select.appendChild(other);
-    select.value = isKnown ? known.find((item) => key(item) === key(current)) || "" : current ? "__other__" : "";
+    select.value = customMode ? "__other__" : isKnown ? known.find((item) => key(item) === key(current)) || "" : "";
     select.onchange = () => {
-      if (select.value === "__other__") { if (isKnown || !current) setReactInputValue(input, ""); render(); return; }
+      if (select.value === "__other__") {
+        showOther = true;
+        if (isKnown) setReactInputValue(input, "");
+        else render();
+        return;
+      }
+      showOther = false;
       setReactInputValue(input, select.value);
     };
     row.appendChild(select);
 
-    if (select.value === "__other__") {
+    if (customMode) {
       const custom = makeEl("input", {
         width: "100%",
         boxSizing: "border-box",
@@ -298,7 +306,8 @@ function enhanceSingle(input: HTMLInputElement, options: string[]) {
 function enhance() {
   if (typeof window === "undefined" || !window.location.pathname.includes("matrimonial")) return;
 
-  document.querySelectorAll<HTMLInputElement>('input[type="text"]:not([data-matrimonial-structured-skip])').forEach((input) => {
+  document.querySelectorAll<HTMLInputElement>('input:not([type]), input[type="text"]').forEach((input) => {
+    if (input.hasAttribute("data-matrimonial-structured-skip")) return;
     const label = findLabelText(input);
     if (label === "Languages") return enhanceMulti(input, MATRIMONIAL_LANGUAGE_OPTIONS);
     if (label === "Hobbies" || label === "Hobbies / Interests") return enhanceMulti(input, MATRIMONIAL_HOBBY_OPTIONS);
