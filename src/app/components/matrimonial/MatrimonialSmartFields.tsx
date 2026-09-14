@@ -1,4 +1,4 @@
-import { BarChart3, Brain, CalendarClock, CheckCircle2, Gauge, Info } from "lucide-react";
+import { BarChart3, Brain, CalendarClock, Gauge, Info } from "lucide-react";
 import {
   BEHAVIOR_QUESTIONS,
   BehaviorAnswers,
@@ -12,7 +12,6 @@ import {
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
-const BLUE = "#2563eb";
 const TEAL = "#0f766e";
 const SLATE = "#64748b";
 
@@ -80,7 +79,7 @@ export function ScoreRing({ value, size = 84, label = "Match" }: { value:number;
   const color = safe >= 80 ? GREEN : safe >= 70 ? TEAL : safe >= 55 ? GOLD : SLATE;
   const inner = Math.max(46, size - 16);
   return <div aria-label={`${label} ${safe}%`} style={{ width:size, height:size, borderRadius:"50%", background:`conic-gradient(${color} ${safe * 3.6}deg,#edf1ee 0deg)`, display:"grid", placeItems:"center", flexShrink:0, boxShadow:"0 3px 12px rgba(0,0,0,.08)" }}>
-    <div style={{ width:inner, height:inner, borderRadius:"50%", background:"white", display:"grid", placeItems:"center", textAlign:"center", border:"1px solid #f1f3f1" }}><div><strong style={{ display:"block", color, fontSize:size >= 80 ? 20 : 16, lineHeight:1 }}>{safe}%</strong><span style={{ display:"block", color:"#7b857f", fontSize:size >= 80 ? 8 : 7, marginTop:3, textTransform:"uppercase", fontWeight:800, letterSpacing:”.04em” }}>{label}</span></div></div>
+    <div style={{ width:inner, height:inner, borderRadius:"50%", background:"white", display:"grid", placeItems:"center", textAlign:"center", border:"1px solid #f1f3f1" }}><div><strong style={{ display:"block", color, fontSize:size >= 80 ? 20 : 16, lineHeight:1 }}>{safe}%</strong><span style={{ display:"block", color:"#7b857f", fontSize:size >= 80 ? 8 : 7, marginTop:3, textTransform:"uppercase", fontWeight:800, letterSpacing:"0.04em" }}>{label}</span></div></div>
   </div>;
 }
 
