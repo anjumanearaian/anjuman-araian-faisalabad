@@ -1,11 +1,69 @@
-import type { ComponentType } from "react";
+import { createElement, type ComponentType } from "react";
 import { createBrowserRouter, redirect } from "react-router";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
 
+const CHUNK_RELOAD_KEY = "araian_chunk_reload_once";
+
+function isChunkLoadError(error: unknown) {
+  const message = String((error as any)?.message || error || "");
+  return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk .* failed/i.test(message);
+}
+
+function ChunkLoadRecoveryPage() {
+  const reload = () => {
+    try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch {}
+    window.location.reload();
+  };
+  const home = () => window.location.assign("/");
+  return createElement(
+    "main",
+    {
+      style: {
+        minHeight: "100vh", display: "grid", placeItems: "center", padding: 24,
+        background: "#f7f4ee", fontFamily: "Lato, sans-serif", boxSizing: "border-box",
+      },
+    },
+    createElement(
+      "section",
+      {
+        style: {
+          width: "min(560px, 100%)", background: "white", border: "1px solid #e7e1d7",
+          borderRadius: 16, padding: 28, boxShadow: "0 16px 44px rgba(26,77,46,.10)", textAlign: "center",
+        },
+      },
+      createElement("div", { style: { width: 54, height: 54, margin: "0 auto 14px", borderRadius: "50%", display: "grid", placeItems: "center", background: "#eef7f1", color: "#1a4d2e", fontSize: 24, fontWeight: 900 } }, "↻"),
+      createElement("h1", { style: { margin: 0, color: "#1a4d2e", fontFamily: "'Playfair Display', serif", fontSize: 26 } }, "A newer version is available"),
+      createElement("p", { style: { margin: "10px auto 18px", color: "#66736b", fontSize: 14, lineHeight: 1.65, maxWidth: 460 } }, "The website was updated while this page was open. Refresh once to load the latest secure application files. Your saved database records are not affected."),
+      createElement("div", { style: { display: "flex", justifyContent: "center", gap: 9, flexWrap: "wrap" } },
+        createElement("button", { type: "button", onClick: reload, style: { border: 0, borderRadius: 9, background: "#1a4d2e", color: "white", padding: "11px 17px", fontSize: 13, fontWeight: 800, cursor: "pointer" } }, "Refresh Now"),
+        createElement("button", { type: "button", onClick: home, style: { border: "1px solid #c8a04a", borderRadius: 9, background: "white", color: "#1a4d2e", padding: "10px 17px", fontSize: 13, fontWeight: 800, cursor: "pointer" } }, "Go to Home")
+      )
+    )
+  );
+}
+
 const lazyPage = <T extends Record<string, any>>(loader: () => Promise<T>, exportName: keyof T) => async () => {
-  const mod = await loader();
-  return { Component: mod[exportName] as ComponentType };
+  try {
+    const mod = await loader();
+    try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch {}
+    return { Component: mod[exportName] as ComponentType };
+  } catch (error) {
+    if (typeof window !== "undefined" && isChunkLoadError(error)) {
+      const now = Date.now();
+      let previous: { path?: string; at?: number } | null = null;
+      try { previous = JSON.parse(sessionStorage.getItem(CHUNK_RELOAD_KEY) || "null"); } catch {}
+      const sameRecentAttempt = previous?.path === window.location.pathname && now - Number(previous?.at || 0) < 30000;
+      if (!sameRecentAttempt) {
+        try { sessionStorage.setItem(CHUNK_RELOAD_KEY, JSON.stringify({ path: window.location.pathname, at: now })); } catch {}
+        window.location.reload();
+        return await new Promise<{ Component: ComponentType }>(() => {});
+      }
+      console.error("Lazy route chunk remained unavailable after one refresh", error);
+      return { Component: ChunkLoadRecoveryPage as ComponentType };
+    }
+    throw error;
+  }
 };
 
 export const router = createBrowserRouter([
