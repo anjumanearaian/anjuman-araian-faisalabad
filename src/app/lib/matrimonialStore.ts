@@ -1,3 +1,6 @@
+import { apiClient } from "./apiClient";
+import { normalizeMatrimonialDisplay, normalizeMatrimonialPayload, normalizeMatrimonialReference } from "./displayFormat";
+
 export type MatrimonialStatus = "pending" | "approved" | "rejected";
 export type MatrimonialPaymentStatus = "pending" | "received" | "verified" | "rejected" | "submitted";
 export type MatchRequestStatus = "pending_admin" | "awaiting_target" | "accepted" | "declined" | "rejected" | "closed";
@@ -101,7 +104,25 @@ export interface MatrimonialPublicStats {
   privacy: string;
 }
 
-import { apiClient } from "./apiClient";
+function normalizeProfile<T extends MatrimonialProfile | null | undefined>(profile: T): T {
+  return profile ? normalizeMatrimonialDisplay(profile as any) as T : profile;
+}
+
+function normalizeMatchRequest<T extends MatchRequestView>(request: T): T {
+  return { ...request, counterpart: normalizeProfile(request.counterpart) } as T;
+}
+
+function normalizeAdminRequest(request: any) {
+  if (!request || typeof request !== "object") return request;
+  return {
+    ...request,
+    counterpart: request.counterpart ? normalizeProfile(request.counterpart) : request.counterpart,
+    requester: request.requester ? normalizeProfile(request.requester) : request.requester,
+    target: request.target ? normalizeProfile(request.target) : request.target,
+    requesterProfile: request.requesterProfile ? normalizeProfile(request.requesterProfile) : request.requesterProfile,
+    targetProfile: request.targetProfile ? normalizeProfile(request.targetProfile) : request.targetProfile,
+  };
+}
 
 function emitSaved(profile: MatrimonialProfile, source: "admin" | "self") {
   if (typeof window === "undefined") return;
@@ -116,7 +137,7 @@ export const matrimonialStatusColors: Record<MatrimonialStatus, { bg: string; te
 
 export async function fetchAllMatrimonials(page: number = 1, limit: number = 10) {
   const res = (await apiClient(`/matrimonial?page=${page}&limit=${limit}`)) as any;
-  return { data: (res.profiles || []) as MatrimonialProfile[], total: res.pagination?.total || 0, totalPages: res.pagination?.totalPages || 0 };
+  return { data: (res.profiles || []).map((profile: MatrimonialProfile) => normalizeProfile(profile)), total: res.pagination?.total || 0, totalPages: res.pagination?.totalPages || 0 };
 }
 
 export async function fetchPublicMatrimonialStats() {
@@ -130,33 +151,37 @@ export async function claimMatrimonialProfilesByEmail() {
 export async function fetchMyMatrimonialProfiles() {
   await claimMatrimonialProfilesByEmail().catch(() => null);
   const res = await apiClient<{ profiles: MatrimonialProfile[]; profile?: MatrimonialProfile | null }>("/matrimonial/mine");
-  return res.profiles || [];
+  return (res.profiles || []).map((profile) => normalizeProfile(profile));
 }
 
 export async function createMatrimonial(data: Record<string, unknown>) {
-  const profile = await apiClient<MatrimonialProfile>("/matrimonial/submit", { method: "POST", body: JSON.stringify(data) });
+  const payload = normalizeMatrimonialPayload(data as Record<string, any>);
+  const profile = normalizeProfile(await apiClient<MatrimonialProfile>("/matrimonial/submit", { method: "POST", body: JSON.stringify(payload) })) as MatrimonialProfile;
   emitSaved(profile, "self");
   return profile;
 }
 
 export async function createMatrimonialAdmin(data: Record<string, unknown>) {
-  const profile = await apiClient<MatrimonialProfile>("/matrimonial/admin", { method: "POST", body: JSON.stringify(data) });
+  const payload = normalizeMatrimonialPayload(data as Record<string, any>);
+  const profile = normalizeProfile(await apiClient<MatrimonialProfile>("/matrimonial/admin", { method: "POST", body: JSON.stringify(payload) })) as MatrimonialProfile;
   emitSaved(profile, "admin");
   return profile;
 }
 
 export async function updateMyMatrimonial(id: string, data: Record<string, unknown>) {
-  const profile = await apiClient<MatrimonialProfile>(`/matrimonial/mine/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  const payload = normalizeMatrimonialPayload(data as Record<string, any>);
+  const profile = normalizeProfile(await apiClient<MatrimonialProfile>(`/matrimonial/mine/${id}`, { method: "PUT", body: JSON.stringify(payload) })) as MatrimonialProfile;
   emitSaved(profile, "self");
   return profile;
 }
 
 export async function updateMatrimonialStatus(id: string, status: MatrimonialStatus, paymentStatus?: MatrimonialPaymentStatus, adminNote?: string, verificationStatus?: string) {
-  return apiClient<MatrimonialProfile>(`/matrimonial/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, paymentStatus, adminNote, verificationStatus }) });
+  return normalizeProfile(await apiClient<MatrimonialProfile>(`/matrimonial/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, paymentStatus, adminNote, verificationStatus }) })) as MatrimonialProfile;
 }
 
 export async function updateMatrimonial(id: string, partial: Partial<MatrimonialProfile>) {
-  const profile = await apiClient<MatrimonialProfile>(`/matrimonial/${id}`, { method: "PUT", body: JSON.stringify(partial) });
+  const payload = normalizeMatrimonialPayload(partial as Record<string, any>);
+  const profile = normalizeProfile(await apiClient<MatrimonialProfile>(`/matrimonial/${id}`, { method: "PUT", body: JSON.stringify(payload) })) as MatrimonialProfile;
   if (typeof window !== "undefined" && window.location.pathname.includes("/admin/matrimonial/edit/")) emitSaved(profile, "admin");
   return profile;
 }
@@ -166,10 +191,16 @@ export async function deleteMatrimonial(id: string) {
 }
 
 export async function syncMatrimonialProfileLifecycle(profileId: string, email: string, references: MatrimonialReference[], sendProfileEmail = true) {
-  return apiClient<{ profile: MatrimonialProfile; references: MatrimonialReference[]; email: { sent: boolean; reason?: string }; matching: { checked: number; notifications: number } }>("/matrimonial-lifecycle", {
+  const cleanReferences = references.map((reference) => normalizeMatrimonialReference(reference as any));
+  const result = await apiClient<{ profile: MatrimonialProfile; references: MatrimonialReference[]; email: { sent: boolean; reason?: string }; matching: { checked: number; notifications: number } }>("/matrimonial-lifecycle", {
     method: "POST",
-    body: JSON.stringify({ action: "sync_profile", profileId, email, references, sendEmail: sendProfileEmail }),
+    body: JSON.stringify({ action: "sync_profile", profileId, email, references: cleanReferences, sendEmail: sendProfileEmail }),
   });
+  return {
+    ...result,
+    profile: normalizeProfile(result.profile) as MatrimonialProfile,
+    references: (result.references || []).map((reference) => normalizeMatrimonialReference(reference as any)) as MatrimonialReference[],
+  };
 }
 
 export async function emailMatrimonialProfile(profileId: string) {
@@ -178,7 +209,7 @@ export async function emailMatrimonialProfile(profileId: string) {
 
 export async function fetchSuccessfulMatrimonialConnections() {
   const res = await apiClient<{ connections: any[] }>("/matrimonial-lifecycle?action=list_connections");
-  return res.connections || [];
+  return (res.connections || []).map(normalizeAdminRequest);
 }
 
 export async function completeMatrimonialConnection(data: { requestId: string; requesterRating?: number | null; targetRating?: number | null; managerRating: number; successNote?: string }) {
@@ -187,19 +218,20 @@ export async function completeMatrimonialConnection(data: { requestId: string; r
 
 export async function fetchMatrimonialMatches(profileId: string) {
   const res = await apiClient<{ profile: MatrimonialProfile; matches: MatrimonialProfile[] }>(`/matrimonial/matches?profileId=${encodeURIComponent(profileId)}`);
-  return res;
+  return { ...res, profile: normalizeProfile(res.profile) as MatrimonialProfile, matches: (res.matches || []).map((profile) => normalizeProfile(profile)) as MatrimonialProfile[] };
 }
 
 export async function requestMatrimonialMatch(requesterProfileId: string, targetProfileId: string, requesterMessage?: string) {
-  return apiClient<{ id: string; status: MatchRequestStatus; target: MatrimonialProfile; mutualScore?: number }>("/matrimonial/match-requests", {
+  const result = await apiClient<{ id: string; status: MatchRequestStatus; target: MatrimonialProfile; mutualScore?: number }>("/matrimonial/match-requests", {
     method: "POST",
     body: JSON.stringify({ requesterProfileId, targetProfileId, requesterMessage }),
   });
+  return { ...result, target: normalizeProfile(result.target) as MatrimonialProfile };
 }
 
 export async function fetchMyMatchRequests() {
   const res = await apiClient<{ requests: MatchRequestView[] }>("/matrimonial/match-requests/mine");
-  return res.requests || [];
+  return (res.requests || []).map(normalizeMatchRequest);
 }
 
 export async function respondToMatchRequest(id: string, decision: "accept" | "decline") {
@@ -208,7 +240,7 @@ export async function respondToMatchRequest(id: string, decision: "accept" | "de
 
 export async function fetchAdminMatchRequests() {
   const res = await apiClient<{ requests: any[] }>("/matrimonial/match-requests/admin/all");
-  return res.requests || [];
+  return (res.requests || []).map(normalizeAdminRequest);
 }
 
 export async function adminReviewMatchRequest(id: string, action: "forward" | "reject" | "close", adminNote?: string) {
