@@ -14,7 +14,11 @@ const db = {
     update: async ({where, data}) => {const r = records.find(r => r.id === where.id); const {attempts, ...rest} = data; Object.assign(r, rest); if(attempts) r.attempts += attempts.increment; return r;},
   },
   authUser: {upsert: async ({where}) => ({id: 'applicant-test', email: where.email, name: null})},
-  member: {findUnique: async () => null},
+  member: {
+    findUnique: async () => null,
+    findFirst: async () => null,
+    update: async ({where, data}) => ({id: where.id, ...data}),
+  },
 };
 db.$transaction = async fn => fn(db);
 global.__authDb = db;
