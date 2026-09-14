@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { Member, blankFamily } from "./memberStore";
+import { normalizeMemberDisplay } from "./displayFormat";
 
 export type MemberExportFormat = "xlsx" | "csv";
 
@@ -9,7 +10,8 @@ function cleanDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? String(value) : date.toISOString().slice(0, 10);
 }
 
-function memberRow(m: Member) {
+function memberRow(member: Member) {
+  const m = normalizeMemberDisplay(member);
   const family = m.familyInfo || m.family || blankFamily();
   const children = m.children || [];
   return {
