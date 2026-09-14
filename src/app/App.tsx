@@ -14,6 +14,7 @@ import { AdminMatrimonialIdentityReferences } from "./components/admin/AdminMatr
 import { AdminMatrimonialSuccessCenter } from "./components/admin/AdminMatrimonialSuccessCenter";
 import { AdminSessionHandoff } from "./components/admin/AdminSessionHandoff";
 import { MatrimonialSelfReferences } from "./components/matrimonial/MatrimonialSelfReferences";
+import { MatrimonialStructuredInputEnhancer } from "./components/matrimonial/MatrimonialStructuredInputEnhancer";
 import { MatrimonialPrivateImageHydrator } from "./components/MatrimonialPrivateImageHydrator";
 
 function ScopedAdminRedirect() {
@@ -87,6 +88,7 @@ export default function App() {
       <AdminMemberCenterShortcut />
       <MatrimonialMatchingShortcut />
       <MatrimonialSelfReferences />
+      <MatrimonialStructuredInputEnhancer />
       <MatrimonialPrivateImageHydrator />
       <MemberProvider><ExistingMemberRegistrationRedirect /><RouterProvider router={router} /></MemberProvider>
     </AdminProvider>
