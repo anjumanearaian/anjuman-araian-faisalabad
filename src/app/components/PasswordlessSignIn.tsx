@@ -24,6 +24,7 @@ export function PasswordlessSignIn({ onAuthenticated, compact = false }: { onAut
   const finish = (session: Session) => {
     localStorage.setItem("araian_member_token", session.token);
     localStorage.setItem("araian_verified_email", session.user.email);
+    window.dispatchEvent(new CustomEvent("araian-member-session", { detail: session }));
     onAuthenticated(session);
   };
 
