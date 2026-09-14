@@ -11,6 +11,7 @@ import { AdminRoleAssignmentEditor } from "./components/admin/AdminRoleAssignmen
 import { AdminMatrimonialRoleOption } from "./components/admin/AdminMatrimonialRoleOption";
 import { AdminMatrimonialUrduHints } from "./components/admin/AdminMatrimonialUrduHints";
 import { AdminMatrimonialIdentityReferences } from "./components/admin/AdminMatrimonialIdentityReferences";
+import { AdminMatrimonialSuccessCenter } from "./components/admin/AdminMatrimonialSuccessCenter";
 import { AdminSessionHandoff } from "./components/admin/AdminSessionHandoff";
 import { MatrimonialPrivateImageHydrator } from "./components/MatrimonialPrivateImageHydrator";
 
@@ -57,6 +58,7 @@ export default function App() {
       <AdminMatrimonialRoleOption />
       <AdminMatrimonialUrduHints />
       <AdminMatrimonialIdentityReferences />
+      <AdminMatrimonialSuccessCenter />
       <AdminSessionHandoff />
       <AdminBusinessShortcut />
       <AdminMemberCenterShortcut />
