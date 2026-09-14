@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { Member } from "../lib/memberStore";
-
+import { normalizeMemberDisplay } from "../lib/displayFormat";
 import { ApiError, apiClient } from "../lib/apiClient";
 
 interface MemberContextType {
@@ -30,7 +30,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       });
       if (data.token) {
         localStorage.setItem("araian_member_token", data.token);
-        setMember(data.member);
+        setMember(data.member ? normalizeMemberDisplay(data.member) : null);
         return { ok: true };
       }
       return { ok: false, error: "Invalid response from server" };
@@ -48,7 +48,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
 
   const acceptSession = useCallback((session: { token: string; member?: Member | null }) => {
     localStorage.setItem("araian_member_token", session.token);
-    setMember(session.member || null);
+    setMember(session.member ? normalizeMemberDisplay(session.member) : null);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -56,7 +56,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     if (!token) { setMember(null); return; }
     try {
       const data = await apiClient<Member>("/members/me");
-      setMember(data);
+      setMember(normalizeMemberDisplay(data));
     } catch (e) {
       setMember(null);
       if (e instanceof ApiError && e.status === 401) localStorage.removeItem("araian_member_token");
