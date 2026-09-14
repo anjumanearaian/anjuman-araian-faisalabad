@@ -83,12 +83,13 @@ export async function manualMatrimonialFlow(req: any, res: any) {
       if (existing.length) return res.status(409).json({ error: "An active interest already exists between these profiles." });
       const c = matrimonialCompatibility(requester, target);
       if(c.eligible===false)return res.status(409).json({error:"This match has a must-have conflict and cannot be forwarded."});
-      const actorId = requester.authUserId || null;
+      const actorId = requester.authUserId || user.id || null;
+      if (!actorId) return res.status(409).json({ error: "The assisted request could not be linked to an authorized account." });
       const created = await prisma.$queryRaw<any[]>`
         INSERT INTO "MatrimonialMatchRequest" ("id","requesterAuthUserId","requesterProfileId","targetProfileId","requesterMessage","status","adminNote","adminApprovedAt","requesterToTargetScore","targetToRequesterScore","mutualScore","scoreConfidence","scoreBreakdown","createdAt","updatedAt")
         VALUES (gen_random_uuid()::text,${actorId},${requester.id},${target.id},${note || null},'awaiting_target','Office-assisted introduction reviewed and forwarded for candidate/guardian consent.',CURRENT_TIMESTAMP,${c.requesterToTargetScore},${c.targetToRequesterScore},${c.mutualScore},${c.scoreConfidence},${JSON.stringify(c.breakdown)}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
         RETURNING *`;
-      await audit(user, "manager_manual_interest_created_and_forwarded", requester.id, created[0]?.id, { targetProfileId: target.id, mutualScore: c.mutualScore, requesterCode: code(requester.id), targetCode: code(target.id), categoryScores: c.breakdown.categoryScores });
+      await audit(user, "manager_manual_interest_created_and_forwarded", requester.id, created[0]?.id, { targetProfileId: target.id, mutualScore: c.mutualScore, requesterCode: code(requester.id), targetCode: code(target.id), categoryScores: c.breakdown.categoryScores, assistedForOfflineRequester: !requester.authUserId });
       const targetEmail=await authEmail(target.authUserId),origin=originOf(req),url=origin?`${origin}/matrimonial/requests`:"";
       if(targetEmail)void sendEmail(targetEmail,"A private matrimonial interest is waiting for your consent",emailFrame("Private interest received",`<p>An authorized matrimonial manager has forwarded a private introduction for <strong>${code(target.id)}</strong>.</p><p>Compatibility: <strong>${c.mutualScore}%</strong>. Review the anonymized basics before deciding. No private contact is released before consent.</p>${url?`<p><a href="${url}">Review Matrimonial Interests</a></p>`:""}`)).catch(console.error);
       return res.status(201).json({ request: created[0], compatibility: c, forwarded: true });
