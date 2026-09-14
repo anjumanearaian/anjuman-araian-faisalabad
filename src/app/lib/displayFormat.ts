@@ -28,7 +28,7 @@ const PLACE_ALIASES: Record<string, string> = {
   "united states": "United States", usa: "USA", canada: "Canada", australia: "Australia", germany: "Germany",
 };
 
-const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with", "&"]);
+const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"]);
 
 export function normalizeSpaces(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -36,6 +36,10 @@ export function normalizeSpaces(value: unknown) {
 
 function keyOf(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function hasOwn(record: Record<string, any>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 function titleSegment(segment: string, person = false) {
@@ -79,7 +83,9 @@ function formatWords(value: unknown, options?: { person?: boolean; smallWords?: 
   const words = raw.split(" ");
   return words.map((word, index) => {
     const cleanKey = keyOf(word);
-    if (options?.smallWords && index > 0 && SMALL_WORDS.has(cleanKey)) return cleanKey === "" ? word : cleanKey;
+    if (options?.smallWords && index > 0 && SMALL_WORDS.has(cleanKey)) {
+      return word.replace(/[A-Za-z]+/, (part) => part.toLowerCase());
+    }
     return titleSegment(word, Boolean(options?.person));
   }).join(" ");
 }
@@ -104,52 +110,57 @@ export function formatOrganizationName(value: unknown) {
   return formatWords(value, { smallWords: true });
 }
 
+function setFormatted(target: Record<string, any>, source: Record<string, any>, key: string, formatter: (value: unknown) => string) {
+  if (hasOwn(source, key)) target[key] = formatter(source[key]);
+}
+
 function normalizeFamily(value: any) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-  return {
-    ...value,
-    fatherName: formatPersonName(value.fatherName),
-    spouseName: formatPersonName(value.spouseName),
-    familyContactName: formatPersonName(value.familyContactName),
-    emergencyContactName: formatPersonName(value.emergencyContactName),
-    familyCity: formatPlaceName(value.familyCity),
-    familyBranch: formatProfessionalLabel(value.familyBranch),
-    caste: formatProfessionalLabel(value.caste),
-    religiousSect: formatProfessionalLabel(value.religiousSect),
-    emergencyRelationship: formatProfessionalLabel(value.emergencyRelationship),
-  };
+  const next = { ...value };
+  setFormatted(next, value, "fatherName", formatPersonName);
+  setFormatted(next, value, "spouseName", formatPersonName);
+  setFormatted(next, value, "familyContactName", formatPersonName);
+  setFormatted(next, value, "emergencyContactName", formatPersonName);
+  setFormatted(next, value, "familyCity", formatPlaceName);
+  setFormatted(next, value, "familyBranch", formatProfessionalLabel);
+  setFormatted(next, value, "caste", formatProfessionalLabel);
+  setFormatted(next, value, "religiousSect", formatProfessionalLabel);
+  setFormatted(next, value, "emergencyRelationship", formatProfessionalLabel);
+  return next;
 }
 
 function normalizeChild(value: any) {
   if (!value || typeof value !== "object") return value;
-  return { ...value, fullName: formatPersonName(value.fullName), education: formatProfessionalLabel(value.education) };
+  const next = { ...value };
+  setFormatted(next, value, "fullName", formatPersonName);
+  setFormatted(next, value, "education", formatProfessionalLabel);
+  return next;
 }
 
 export function normalizeMemberDisplay<T extends Record<string, any>>(record: T): T {
   if (!record || typeof record !== "object") return record;
-  const familyInfo = normalizeFamily(record.familyInfo);
-  const family = normalizeFamily(record.family);
-  const referrerMember = record.referrerMember && typeof record.referrerMember === "object"
-    ? { ...record.referrerMember, fullName: formatPersonName(record.referrerMember.fullName), city: formatPlaceName(record.referrerMember.city) }
-    : record.referrerMember;
-  return {
-    ...record,
-    fullName: formatPersonName(record.fullName),
-    fatherName: formatPersonName(record.fatherName),
-    city: formatPlaceName(record.city),
-    district: formatPlaceName(record.district),
-    province: formatPlaceName(record.province),
-    localArea: formatPlaceName(record.localArea),
-    occupation: formatProfessionalLabel(record.occupation),
-    education: formatProfessionalLabel(record.education),
-    designation: formatProfessionalLabel(record.designation),
-    institutionName: formatOrganizationName(record.institutionName),
-    businessName: formatOrganizationName(record.businessName),
-    familyInfo,
-    family,
-    children: Array.isArray(record.children) ? record.children.map(normalizeChild) : record.children,
-    referrerMember,
-  } as T;
+  const next: Record<string, any> = { ...record };
+  setFormatted(next, record, "fullName", formatPersonName);
+  setFormatted(next, record, "fatherName", formatPersonName);
+  setFormatted(next, record, "city", formatPlaceName);
+  setFormatted(next, record, "district", formatPlaceName);
+  setFormatted(next, record, "province", formatPlaceName);
+  setFormatted(next, record, "localArea", formatPlaceName);
+  setFormatted(next, record, "occupation", formatProfessionalLabel);
+  setFormatted(next, record, "education", formatProfessionalLabel);
+  setFormatted(next, record, "designation", formatProfessionalLabel);
+  setFormatted(next, record, "institutionName", formatOrganizationName);
+  setFormatted(next, record, "businessName", formatOrganizationName);
+  if (hasOwn(record, "familyInfo")) next.familyInfo = normalizeFamily(record.familyInfo);
+  if (hasOwn(record, "family")) next.family = normalizeFamily(record.family);
+  if (hasOwn(record, "children") && Array.isArray(record.children)) next.children = record.children.map(normalizeChild);
+  if (hasOwn(record, "referrerMember") && record.referrerMember && typeof record.referrerMember === "object") {
+    const referrer = { ...record.referrerMember };
+    setFormatted(referrer, record.referrerMember, "fullName", formatPersonName);
+    setFormatted(referrer, record.referrerMember, "city", formatPlaceName);
+    next.referrerMember = referrer;
+  }
+  return next as T;
 }
 
 export function normalizeMemberPayload<T extends Record<string, any>>(record: T): T {
@@ -158,59 +169,60 @@ export function normalizeMemberPayload<T extends Record<string, any>>(record: T)
 
 function normalizeLayer(layer: any, formatter: (value: unknown) => string) {
   if (!layer || typeof layer !== "object" || Array.isArray(layer)) return layer;
+  const next = { ...layer };
   const mapList = (value: any) => Array.isArray(value) ? value.map(formatter).filter(Boolean) : value;
-  return { ...layer, primary: mapList(layer.primary), secondary: mapList(layer.secondary), acceptable: mapList(layer.acceptable) };
+  if (hasOwn(layer, "primary")) next.primary = mapList(layer.primary);
+  if (hasOwn(layer, "secondary")) next.secondary = mapList(layer.secondary);
+  if (hasOwn(layer, "acceptable")) next.acceptable = mapList(layer.acceptable);
+  return next;
 }
 
 function normalizePreferenceData(value: any) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-  return {
-    ...value,
-    education: normalizeLayer(value.education, formatProfessionalLabel),
-    profession: normalizeLayer(value.profession, formatProfessionalLabel),
-    country: normalizeLayer(value.country, formatPlaceName),
-    city: normalizeLayer(value.city, formatPlaceName),
-    maritalStatus: normalizeLayer(value.maritalStatus, formatProfessionalLabel),
-    familySetup: normalizeLayer(value.familySetup, formatProfessionalLabel),
-    residenceStatus: normalizeLayer(value.residenceStatus, formatProfessionalLabel),
-    relocation: normalizeLayer(value.relocation, formatProfessionalLabel),
-  };
+  const next = { ...value };
+  if (hasOwn(value, "education")) next.education = normalizeLayer(value.education, formatProfessionalLabel);
+  if (hasOwn(value, "profession")) next.profession = normalizeLayer(value.profession, formatProfessionalLabel);
+  if (hasOwn(value, "country")) next.country = normalizeLayer(value.country, formatPlaceName);
+  if (hasOwn(value, "city")) next.city = normalizeLayer(value.city, formatPlaceName);
+  if (hasOwn(value, "maritalStatus")) next.maritalStatus = normalizeLayer(value.maritalStatus, formatProfessionalLabel);
+  if (hasOwn(value, "familySetup")) next.familySetup = normalizeLayer(value.familySetup, formatProfessionalLabel);
+  if (hasOwn(value, "residenceStatus")) next.residenceStatus = normalizeLayer(value.residenceStatus, formatProfessionalLabel);
+  if (hasOwn(value, "relocation")) next.relocation = normalizeLayer(value.relocation, formatProfessionalLabel);
+  return next;
 }
 
 function normalizeProfileData(value: any) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-  return {
-    ...value,
-    familySetup: formatProfessionalLabel(value.familySetup),
-    sect: formatProfessionalLabel(value.sect),
-    languages: Array.isArray(value.languages) ? value.languages.map(formatProfessionalLabel).filter(Boolean) : value.languages,
-    relocation: formatProfessionalLabel(value.relocation),
-    employmentType: formatProfessionalLabel(value.employmentType),
-    employerType: formatProfessionalLabel(value.employerType),
-    nationality: formatProfessionalLabel(value.nationality),
-    residenceStatus: formatProfessionalLabel(value.residenceStatus),
-  };
+  const next = { ...value };
+  setFormatted(next, value, "familySetup", formatProfessionalLabel);
+  setFormatted(next, value, "sect", formatProfessionalLabel);
+  setFormatted(next, value, "relocation", formatProfessionalLabel);
+  setFormatted(next, value, "employmentType", formatProfessionalLabel);
+  setFormatted(next, value, "employerType", formatProfessionalLabel);
+  setFormatted(next, value, "nationality", formatProfessionalLabel);
+  setFormatted(next, value, "residenceStatus", formatProfessionalLabel);
+  if (hasOwn(value, "languages") && Array.isArray(value.languages)) next.languages = value.languages.map(formatProfessionalLabel).filter(Boolean);
+  return next;
 }
 
 export function normalizeMatrimonialDisplay<T extends Record<string, any>>(record: T): T {
   if (!record || typeof record !== "object") return record;
-  return {
-    ...record,
-    name: formatPersonName(record.name),
-    city: formatPlaceName(record.city),
-    country: formatPlaceName(record.country),
-    province: formatPlaceName(record.province),
-    nationality: formatProfessionalLabel(record.nationality),
-    education: formatProfessionalLabel(record.education),
-    profession: formatProfessionalLabel(record.profession),
-    maritalStatus: formatProfessionalLabel(record.maritalStatus),
-    residenceStatus: formatProfessionalLabel(record.residenceStatus),
-    employmentType: formatProfessionalLabel(record.employmentType),
-    employerType: formatProfessionalLabel(record.employerType),
-    relationToCandidate: formatProfessionalLabel(record.relationToCandidate),
-    profileData: normalizeProfileData(record.profileData),
-    preferenceData: normalizePreferenceData(record.preferenceData),
-  } as T;
+  const next: Record<string, any> = { ...record };
+  setFormatted(next, record, "name", formatPersonName);
+  setFormatted(next, record, "city", formatPlaceName);
+  setFormatted(next, record, "country", formatPlaceName);
+  setFormatted(next, record, "province", formatPlaceName);
+  setFormatted(next, record, "nationality", formatProfessionalLabel);
+  setFormatted(next, record, "education", formatProfessionalLabel);
+  setFormatted(next, record, "profession", formatProfessionalLabel);
+  setFormatted(next, record, "maritalStatus", formatProfessionalLabel);
+  setFormatted(next, record, "residenceStatus", formatProfessionalLabel);
+  setFormatted(next, record, "employmentType", formatProfessionalLabel);
+  setFormatted(next, record, "employerType", formatProfessionalLabel);
+  setFormatted(next, record, "relationToCandidate", formatProfessionalLabel);
+  if (hasOwn(record, "profileData")) next.profileData = normalizeProfileData(record.profileData);
+  if (hasOwn(record, "preferenceData")) next.preferenceData = normalizePreferenceData(record.preferenceData);
+  return next as T;
 }
 
 export function normalizeMatrimonialPayload<T extends Record<string, any>>(record: T): T {
@@ -219,12 +231,11 @@ export function normalizeMatrimonialPayload<T extends Record<string, any>>(recor
 
 export function normalizeMatrimonialReference<T extends Record<string, any>>(record: T): T {
   if (!record || typeof record !== "object") return record;
-  return {
-    ...record,
-    name: formatPersonName(record.name),
-    profession: formatProfessionalLabel(record.profession),
-    city: formatPlaceName(record.city),
-    memberName: formatPersonName(record.memberName),
-    memberCity: formatPlaceName(record.memberCity),
-  } as T;
+  const next: Record<string, any> = { ...record };
+  setFormatted(next, record, "name", formatPersonName);
+  setFormatted(next, record, "profession", formatProfessionalLabel);
+  setFormatted(next, record, "city", formatPlaceName);
+  setFormatted(next, record, "memberName", formatPersonName);
+  setFormatted(next, record, "memberCity", formatPlaceName);
+  return next as T;
 }
