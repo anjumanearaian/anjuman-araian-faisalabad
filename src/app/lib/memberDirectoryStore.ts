@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient";
+import { normalizeMemberDisplay } from "./displayFormat";
 import type { Member } from "./memberStore";
 
 export interface MemberDirectorySummary {
@@ -30,7 +31,8 @@ export interface MemberDirectoryResponse {
 }
 
 export async function fetchMemberDirectory(page = 1, limit = 500) {
-  return apiClient<MemberDirectoryResponse>(`/homepage/member-directory?page=${page}&limit=${limit}`);
+  const response = await apiClient<MemberDirectoryResponse>(`/homepage/member-directory?page=${page}&limit=${limit}`);
+  return { ...response, members: (response.members || []).map((member) => normalizeMemberDisplay(member as any) as DirectoryMember) };
 }
 
 export async function fetchHomepageStatistics() {
