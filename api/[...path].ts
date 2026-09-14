@@ -61,6 +61,22 @@ function restoreNestedApiPath(req: any) {
   } catch {}
 }
 
+function normalizeSameOriginRequest(req: any) {
+  try {
+    const origin = String(req.headers?.origin || "").trim();
+    if (!origin) return;
+    const forwardedHost = String(req.headers?.["x-forwarded-host"] || req.headers?.host || "").split(",")[0].trim();
+    if (!forwardedHost) return;
+    const originUrl = new URL(origin);
+    if (originUrl.host.toLowerCase() === forwardedHost.toLowerCase()) {
+      // This request came from the same browser origin. The Vercel catch-all is
+      // only an internal route adapter, so do not make Express re-run CORS
+      // against a deployment-specific hostname/alias.
+      delete req.headers.origin;
+    }
+  } catch {}
+}
+
 function tokenUser(req: any) {
   try {
     const authHeader = String(req.headers?.authorization || "");
@@ -302,6 +318,7 @@ async function saveAdminRelations(req: any, res: any, memberId: string) {
 
 export default async function handler(req: any, res: any) {
   restoreNestedApiPath(req);
+  normalizeSameOriginRequest(req);
   const pathname = String(req.url || "").split("?")[0];
   const method = String(req.method || "").toUpperCase();
   const requestBody = bodyOf(req);
@@ -347,13 +364,7 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  const statusMatch = pathname.match(/\/api\/members\/([^/]+)\/status\/?$/);
-  if (statusMatch && method === "PATCH" && String(bodyOf(req)?.status || "") === "approved") {
-    try {
-      const user = welfareAdminUser(req);
-      if (user) await prisma.member.update({ where: { id: decodeURIComponent(statusMatch[1]) }, data: { paymentStatus: "verified" } });
-    } catch {}
-  }
-
+  // Do not auto-mark payment as verified when approving a member here. Final
+  // payment verification belongs to the Finance workflow and database guard.
   return app(req, res);
 }
