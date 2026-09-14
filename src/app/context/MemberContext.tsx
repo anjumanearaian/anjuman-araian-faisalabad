@@ -65,6 +65,17 @@ export function MemberProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  useEffect(() => {
+    const handleSession = (event: Event) => {
+      const session = (event as CustomEvent<{ token?: string; member?: Member | null }>).detail;
+      if (!session?.token) return;
+      acceptSession({ token: session.token, member: session.member || null });
+      if (!session.member) void refresh();
+    };
+    window.addEventListener("araian-member-session", handleSession as EventListener);
+    return () => window.removeEventListener("araian-member-session", handleSession as EventListener);
+  }, [acceptSession, refresh]);
+
   return (
     <MemberContext.Provider value={{ member, login, acceptSession, logout, refresh }}>
       {children}
