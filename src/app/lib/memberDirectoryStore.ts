@@ -16,6 +16,10 @@ export interface DirectoryMember extends Pick<Member,
   phone?: string;
   whatsapp?: string;
   email?: string;
+  leadershipRole?: string | null;
+  leadershipRank?: number | null;
+  leadershipTier?: number | null;
+  leadershipUnit?: string | null;
 }
 
 export interface MemberDirectoryResponse {
