@@ -65,6 +65,13 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+// Authentication responses must never be cached by browsers or intermediaries.
+app.use("/api/auth", (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Pragma", "no-cache");
+  next();
+});
+
 // ─── Global Rate Limiter ─────────────────────────────────────────────────────
 app.use("/api/", apiLimiter);
 
@@ -178,7 +185,7 @@ app.get("/api/health", async (req, res) => {
   const ok = database === "connected" && authConfigured && authTables === "ready";
   res.status(ok ? 200 : 503).json({
     status: ok ? "ok" : "setup_required",
-    version: "5.0.1-auth-fix",
+    version: "5.1.1-audit-hardening",
     database,
     authTables,
     authentication: authConfigured ? "configured" : "not_configured",
@@ -192,16 +199,17 @@ app.get("/api/health", async (req, res) => {
 // ─── Auth — Admin Login ───────────────────────────────────────────────────────
 app.post("/api/auth/admin/login", loginLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      res.status(400).json({ error: "Email/Username and password are required" });
+    const username = String(req.body?.username || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
+    if (!username || !username.includes("@") || username.length > 254 || !password || password.length > 128) {
+      res.status(400).json({ error: "A valid admin email and password are required" });
       return;
     }
 
     // Ensure first-deployment credentials are created before the initial login.
     await seedAdmin();
 
-    // Look up admin from DB by username
+    // Look up admin from DB by normalized username.
     const admin = await prisma.admin.findFirst({
       where: { username }
     });
@@ -228,7 +236,7 @@ app.post("/api/auth/admin/login", loginLimiter, async (req: Request, res: Respon
   }
 });
 
-const ADMIN_ROLE_OPTIONS = ["super_admin", "admin", "content_manager", "welfare_manager", "finance_secretary", "assistant_finance_secretary"] as const;
+const ADMIN_ROLE_OPTIONS = ["super_admin", "admin", "content_manager", "welfare_manager", "matrimonial_manager", "finance_secretary", "assistant_finance_secretary"] as const;
 
 // ─── Create Admin User (Super Admin Only) ─────────────────────────────────────
 app.post("/api/auth/admin", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
@@ -236,8 +244,8 @@ app.post("/api/auth/admin", requireSuperAdmin, async (req: Request, res: Respons
     const username = String(req.body?.username || "").trim().toLowerCase();
     const password = String(req.body?.password || "");
     const role = String(req.body?.role || "admin");
-    if (!username || !username.includes("@")) return void res.status(400).json({ error: "A valid admin email/username is required" });
-    if (password.length < 8) return void res.status(400).json({ error: "Password must be at least 8 characters" });
+    if (!username || !username.includes("@") || username.length > 254) return void res.status(400).json({ error: "A valid admin email/username is required" });
+    if (password.length < 12 || password.length > 128) return void res.status(400).json({ error: "Admin password must be 12 to 128 characters" });
     if (!ADMIN_ROLE_OPTIONS.includes(role as any)) return void res.status(400).json({ error: "Invalid admin role" });
     const exists = await prisma.admin.findUnique({ where: { username } });
     if (exists) return void res.status(409).json({ error: "An admin account with this email already exists" });
@@ -283,11 +291,10 @@ app.get("/api/auth/admin/list", requireSuperAdmin, async (req: Request, res: Res
 // ─── Reset Admin Password (Super Admin Only) ──────────────────────────────────
 app.put("/api/auth/admin/reset-password", requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { targetAdminId, newPassword } = req.body;
-    if (!targetAdminId || !newPassword) {
-      res.status(400).json({ error: "targetAdminId and newPassword are required" });
-      return;
-    }
+    const targetAdminId = String(req.body?.targetAdminId || "");
+    const newPassword = String(req.body?.newPassword || "");
+    if (!targetAdminId) return void res.status(400).json({ error: "targetAdminId is required" });
+    if (newPassword.length < 12 || newPassword.length > 128) return void res.status(400).json({ error: "New admin password must be 12 to 128 characters" });
 
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
@@ -471,7 +478,8 @@ app.get("/api/files/:id", async (req: Request, res: Response, next: NextFunction
     res.setHeader("Content-Type", file.mimeType);
     res.setHeader("Content-Length", String(file.size));
     res.setHeader("Content-Disposition", `inline; filename="${file.originalName.replace(/[\"\r\n]/g, "")}"`);
-    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Robots-Tag", "noindex, noarchive, nosnippet");
     res.send(Buffer.from(file.data));
   } catch (error) { next(error); }
 });
@@ -539,7 +547,7 @@ async function seedAdmin() {
       const hashedPassword = await bcrypt.hash(password, salt);
 
       await prisma.admin.create({
-        data: { username, password: hashedPassword, role: "super_admin" },
+        data: { username: username.trim().toLowerCase(), password: hashedPassword, role: "super_admin" },
       });
 
       console.log(`[SETUP] Admin account created. Username: "${username}"`);
