@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient";
+import { formatPersonName, formatPlaceName, formatProfessionalLabel } from "./displayFormat";
 
 export type OrganizationUnitType = "cabinet" | "committee" | "zone" | "area" | "working_group" | "chapter" | "other";
 
@@ -65,21 +66,61 @@ export interface GovernanceSummary {
   heldMeetings: number;
 }
 
+function normalizeGovernanceMember<T extends Record<string, any> | null | undefined>(member: T): T {
+  if (!member || typeof member !== "object") return member;
+  return {
+    ...member,
+    ...(Object.prototype.hasOwnProperty.call(member, "fullName") ? { fullName: formatPersonName(member.fullName) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(member, "city") ? { city: formatPlaceName(member.city) } : {}),
+  } as T;
+}
+
+function normalizeAssignment<T extends OrganizationAssignment>(assignment: T): T {
+  return {
+    ...assignment,
+    role: formatProfessionalLabel(assignment.role),
+    member: normalizeGovernanceMember(assignment.member),
+  } as T;
+}
+
+function normalizeAttendance<T extends MeetingAttendance>(entry: T): T {
+  return { ...entry, member: normalizeGovernanceMember(entry.member) } as T;
+}
+
 export const fetchGovernanceSummary = () => apiClient<GovernanceSummary>("/governance/summary");
 export const fetchOrganizationUnits = () => apiClient<OrganizationUnit[]>("/governance/units");
 export const createOrganizationUnit = (data: Partial<OrganizationUnit>) => apiClient<OrganizationUnit>("/governance/units", { method: "POST", body: JSON.stringify(data) });
 export const updateOrganizationUnit = (id: string, data: Partial<OrganizationUnit>) => apiClient<OrganizationUnit>(`/governance/units/${id}`, { method: "PUT", body: JSON.stringify(data) });
 export const archiveOrganizationUnit = (id: string) => apiClient(`/governance/units/${id}`, { method: "DELETE" });
 
-export const fetchOrganizationAssignments = () => apiClient<OrganizationAssignment[]>("/governance/assignments");
-export const createOrganizationAssignment = (data: Partial<OrganizationAssignment>) => apiClient<OrganizationAssignment>("/governance/assignments", { method: "POST", body: JSON.stringify(data) });
-export const updateOrganizationAssignment = (id: string, data: Partial<OrganizationAssignment>) => apiClient<OrganizationAssignment>(`/governance/assignments/${id}`, { method: "PUT", body: JSON.stringify(data) });
+export async function fetchOrganizationAssignments() {
+  const rows = await apiClient<OrganizationAssignment[]>("/governance/assignments");
+  return (rows || []).map(normalizeAssignment);
+}
+
+export async function createOrganizationAssignment(data: Partial<OrganizationAssignment>) {
+  const payload = { ...data, ...(Object.prototype.hasOwnProperty.call(data, "role") ? { role: formatProfessionalLabel(data.role) } : {}) };
+  const result = await apiClient<OrganizationAssignment>("/governance/assignments", { method: "POST", body: JSON.stringify(payload) });
+  return normalizeAssignment(result);
+}
+
+export async function updateOrganizationAssignment(id: string, data: Partial<OrganizationAssignment>) {
+  const payload = { ...data, ...(Object.prototype.hasOwnProperty.call(data, "role") ? { role: formatProfessionalLabel(data.role) } : {}) };
+  const result = await apiClient<OrganizationAssignment>(`/governance/assignments/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  return normalizeAssignment(result);
+}
+
 export const archiveOrganizationAssignment = (id: string) => apiClient(`/governance/assignments/${id}`, { method: "DELETE" });
 
 export const fetchGovernanceMeetings = () => apiClient<GovernanceMeeting[]>("/governance/meetings");
 export const createGovernanceMeeting = (data: Partial<GovernanceMeeting>) => apiClient<GovernanceMeeting>("/governance/meetings", { method: "POST", body: JSON.stringify(data) });
 export const updateGovernanceMeeting = (id: string, data: Partial<GovernanceMeeting>) => apiClient<GovernanceMeeting>(`/governance/meetings/${id}`, { method: "PUT", body: JSON.stringify(data) });
-export const fetchMeetingAttendance = (meetingId: string) => apiClient<MeetingAttendance[]>(`/governance/meetings/${meetingId}/attendance`);
+
+export async function fetchMeetingAttendance(meetingId: string) {
+  const rows = await apiClient<MeetingAttendance[]>(`/governance/meetings/${meetingId}/attendance`);
+  return (rows || []).map(normalizeAttendance);
+}
+
 export const saveMeetingAttendance = (meetingId: string, entries: MeetingAttendance[]) => apiClient<{ message: string; count: number }>(`/governance/meetings/${meetingId}/attendance`, { method: "PUT", body: JSON.stringify({ entries: entries.map(({ memberId, status, remarks }) => ({ memberId, status, remarks: remarks || null })) }) });
 
 export const bootstrapLegacyLeadership = () => apiClient<{ imported: number; skipped: number; message: string }>("/governance/bootstrap-legacy", { method: "POST" });
