@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient";
+import { formatPersonName, formatPlaceName, formatProfessionalLabel, normalizeMemberDisplay, normalizeMemberPayload } from "./displayFormat";
 
 export type MemberStatus = "pending" | "approved" | "rejected" | "inactive" | "suspended" | "deceased";
 export type MemberVisibility = "public" | "private";
@@ -44,7 +45,7 @@ export function canonicalDesignation(value?: string | null) {
     svp: "Senior Vice President", "senior vice president": "Senior Vice President", vp: "Vice President", "vice president": "Vice President",
     "gen sec": "General Secretary", "general secretary": "General Secretary", owner: "Owner / Proprietor", proprietor: "Owner / Proprietor", "owner proprietor": "Owner / Proprietor",
   };
-  return aliases[key] || raw;
+  return aliases[key] || formatProfessionalLabel(raw);
 }
 
 export const relationships = ["Father", "Mother", "Brother", "Sister", "Son", "Daughter", "Spouse", "Uncle", "Aunt", "Friend", "Other"];
@@ -66,7 +67,8 @@ function showActionError(error: any, fallback: string) {
 }
 
 async function fetchMembersPage(page: number, limit: number, archived: "active" | "only" | "all" = "active") {
-  return apiClient<any>(`/members?page=${page}&limit=${limit}&archived=${archived}`);
+  const response = await apiClient<any>(`/members?page=${page}&limit=${limit}&archived=${archived}`);
+  return { ...response, members: (response.members || []).map((member: Member) => normalizeMemberDisplay(member)) };
 }
 
 async function fetchEveryAdminMember(archived: "active" | "only" | "all" = "active") {
@@ -101,12 +103,23 @@ export async function fetchArchivedMembers() {
   return (await fetchEveryAdminMember("only")).data;
 }
 
-export async function searchReferralMembers(query: string) { const q = query.trim(); if (q.length < 2) return [] as ReferralCandidate[]; const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`); return data.members || []; }
-export async function createAdminMember(data: Partial<Member> & Record<string, unknown>) { return apiClient<Member>("/members/admin-create", { method: "POST", body: JSON.stringify(data) }); }
+export async function searchReferralMembers(query: string) {
+  const q = query.trim();
+  if (q.length < 2) return [] as ReferralCandidate[];
+  const data = await apiClient<{ members: ReferralCandidate[] }>(`/members/referral-search?q=${encodeURIComponent(q)}`);
+  return (data.members || []).map((member) => ({ ...member, fullName: formatPersonName(member.fullName), city: formatPlaceName(member.city) }));
+}
+
+export async function createAdminMember(data: Partial<Member> & Record<string, unknown>) {
+  const payload = normalizeMemberPayload(data as Record<string, any>);
+  const member = await apiClient<Member>("/members/admin-create", { method: "POST", body: JSON.stringify(payload) });
+  return normalizeMemberDisplay(member);
+}
 
 export async function updateMemberStatus(id: string, status: MemberStatus, rejectionReason?: string, adminNote?: string) {
   try {
-    return await apiClient(`/members/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, rejectionReason, adminNote }) });
+    const member = await apiClient<any>(`/members/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, rejectionReason, adminNote }) });
+    return member && typeof member === "object" ? normalizeMemberDisplay(member) : member;
   } catch (error: any) {
     showActionError(error, status === "approved" ? "Member approval failed." : "Member status update failed.");
     throw error;
@@ -115,9 +128,10 @@ export async function updateMemberStatus(id: string, status: MemberStatus, rejec
 
 export async function updateMember(id: string, partial: Partial<Member> & Record<string, unknown>) {
   try {
-    const payload = { ...partial } as Record<string, unknown>;
+    const payload = normalizeMemberPayload({ ...partial } as Record<string, any>);
     if (typeof payload.designation === "string") payload.designation = canonicalDesignation(payload.designation);
-    return await apiClient<Member>(`/members/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    const member = await apiClient<Member>(`/members/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    return normalizeMemberDisplay(member);
   } catch (error: any) {
     showActionError(error, "Member changes could not be saved.");
     throw error;
