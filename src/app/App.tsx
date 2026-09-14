@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { RouterProvider } from "react-router";
 import { router } from "./routes";
 import { AdminProvider, useAdmin } from "./context/AdminContext";
-import { MemberProvider } from "./context/MemberContext";
+import { MemberProvider, useMember } from "./context/MemberContext";
 import { AdminDashboardNavigation } from "./components/admin/AdminDashboardNavigation";
 import { OperationsFinanceRedirect } from "./components/admin/OperationsFinanceRedirect";
 import { AdminSmartMemberSelectors } from "./components/admin/AdminSmartMemberSelectors";
@@ -48,6 +48,15 @@ function MatrimonialMatchingShortcut() {
   return <a href="/admin/matrimonial/matching" style={{ position:"fixed",left:18,bottom:18,zIndex:9999,background:"#1a4d2e",color:"white",border:"2px solid #c8a04a",borderRadius:10,padding:"11px 15px",textDecoration:"none",fontFamily:"Lato, sans-serif",fontSize:12,fontWeight:800,boxShadow:"0 8px 24px rgba(0,0,0,.22)" }} title="Open the private two-way compatibility, manager review and consent workflow">Private Matching Desk</a>;
 }
 
+function ExistingMemberRegistrationRedirect() {
+  const { member } = useMember();
+  useEffect(() => {
+    if (!member || typeof window === "undefined") return;
+    if (window.location.pathname === "/member/register") window.location.replace("/member/portal");
+  }, [member]);
+  return null;
+}
+
 export default function App() {
   const [, setObservedPath] = useState(() => typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "");
   useEffect(() => {
@@ -79,7 +88,7 @@ export default function App() {
       <MatrimonialMatchingShortcut />
       <MatrimonialSelfReferences />
       <MatrimonialPrivateImageHydrator />
-      <MemberProvider><RouterProvider router={router} /></MemberProvider>
+      <MemberProvider><ExistingMemberRegistrationRedirect /><RouterProvider router={router} /></MemberProvider>
     </AdminProvider>
   );
 }
