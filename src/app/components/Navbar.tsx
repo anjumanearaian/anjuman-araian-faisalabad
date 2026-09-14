@@ -32,7 +32,6 @@ const navLinks = [
       { label: "Women's Wing", to: "/members?cell=women" },
       { label: "Lifetime Members", to: "/members?type=life" },
       { label: "Executive Council", to: "/cabinet" },
-      { label: "Executive Committee Members", to: "/executive-members" },
       { label: "Advisory Board", to: "/advisory-board" },
       { label: "Founders and Patrons", to: "/founders" },
       { label: "Ex-Presidents", to: "/ex-presidents" },
