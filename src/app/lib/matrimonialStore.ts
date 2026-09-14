@@ -2,10 +2,27 @@ export type MatrimonialStatus = "pending" | "approved" | "rejected";
 export type MatrimonialPaymentStatus = "pending" | "received" | "verified" | "rejected" | "submitted";
 export type MatchRequestStatus = "pending_admin" | "awaiting_target" | "accepted" | "declined" | "rejected" | "closed";
 
+export interface MatrimonialReference {
+  name: string;
+  profession: string;
+  phone: string;
+  city: string;
+  address: string;
+  isMember?: boolean;
+  memberId?: string | null;
+  memberNo?: string | null;
+  memberName?: string | null;
+  memberPhone?: string | null;
+  memberCity?: string | null;
+  memberVerified?: boolean;
+  verifiedAt?: string | null;
+}
+
 export interface MatrimonialProfile {
   id: string;
   profileCode?: string;
   name?: string;
+  email?: string;
   gender: string;
   age: string;
   city: string;
@@ -53,6 +70,8 @@ export interface MatrimonialProfile {
   scoreConfidence?: number;
   eligible?: boolean;
   breakdown?: Record<string, any>;
+  lastProfileEmailAt?: string | null;
+  lastMatchNotificationAt?: string | null;
 }
 
 export interface MatchRequestView {
@@ -99,7 +118,12 @@ export async function fetchPublicMatrimonialStats() {
   return apiClient<MatrimonialPublicStats>("/matrimonial/public-stats");
 }
 
+export async function claimMatrimonialProfilesByEmail() {
+  return apiClient<{ claimed: number; profileIds: string[] }>("/matrimonial-lifecycle", { method: "POST", body: JSON.stringify({ action: "claim_profile" }) });
+}
+
 export async function fetchMyMatrimonialProfiles() {
+  await claimMatrimonialProfilesByEmail().catch(() => null);
   const res = await apiClient<{ profiles: MatrimonialProfile[]; profile?: MatrimonialProfile | null }>("/matrimonial/mine");
   return res.profiles || [];
 }
@@ -126,6 +150,26 @@ export async function updateMatrimonial(id: string, partial: Partial<Matrimonial
 
 export async function deleteMatrimonial(id: string) {
   return apiClient(`/matrimonial/${id}`, { method: "DELETE" });
+}
+
+export async function syncMatrimonialProfileLifecycle(profileId: string, email: string, references: MatrimonialReference[], sendProfileEmail = true) {
+  return apiClient<{ profile: MatrimonialProfile; references: MatrimonialReference[]; email: { sent: boolean; reason?: string }; matching: { checked: number; notifications: number } }>("/matrimonial-lifecycle", {
+    method: "POST",
+    body: JSON.stringify({ action: "sync_profile", profileId, email, references, sendEmail: sendProfileEmail }),
+  });
+}
+
+export async function emailMatrimonialProfile(profileId: string) {
+  return apiClient<{ email: { sent: boolean; reason?: string } }>("/matrimonial-lifecycle", { method: "POST", body: JSON.stringify({ action: "email_profile", profileId }) });
+}
+
+export async function fetchSuccessfulMatrimonialConnections() {
+  const res = await apiClient<{ connections: any[] }>("/matrimonial-lifecycle?action=list_connections");
+  return res.connections || [];
+}
+
+export async function completeMatrimonialConnection(data: { requestId: string; requesterRating?: number | null; targetRating?: number | null; managerRating: number; successNote?: string }) {
+  return apiClient<{ connection: any; emails: Array<{ sent: boolean; reason?: string }> }>("/matrimonial-lifecycle", { method: "POST", body: JSON.stringify({ action: "complete_connection", ...data }) });
 }
 
 export async function fetchMatrimonialMatches(profileId: string) {
