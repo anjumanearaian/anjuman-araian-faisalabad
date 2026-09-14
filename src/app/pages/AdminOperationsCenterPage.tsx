@@ -11,7 +11,7 @@ import {
   createOrganizationAssignment, createOrganizationUnit, fetchGovernanceMeetings,
   fetchGovernanceSummary, fetchOrganizationAssignments, fetchOrganizationUnits,
   GovernanceMeeting, GovernanceSummary, MeetingAttendance, OrganizationAssignment, OrganizationUnit,
-  OrganizationUnitType, fetchMeetingAttendance, saveMeetingAttendance, updateGovernanceMeeting, updateOrganizationUnit,
+  OrganizationUnitType, fetchMeetingAttendance, saveMeetingAttendance, updateGovernanceMeeting, updateOrganizationAssignment, updateOrganizationUnit,
 } from "../lib/governanceStore";
 import { createOverseasChapter, deleteOverseasChapter, fetchOverseasChapters, OverseasChapter, updateOverseasChapter } from "../lib/overseasStore";
 import { createFinanceTransaction, fetchFinanceLedger, fetchFinanceMembers, fetchFinanceSummary, financeReceiptUrl, FinanceLedgerRow, FinanceSummary, voidFinanceTransaction } from "../lib/financeStore";
@@ -27,10 +27,35 @@ const BORDER = "#e8e2d7";
 type CenterTab = "overview" | "members" | "structure" | "meetings" | "overseas" | "finance";
 
 const roleSuggestions = [
-  "President", "Senior Vice President", "Vice President", "General Secretary", "Joint Secretary",
+  "President", "Chairman", "Senior Vice President", "Vice President", "General Secretary", "Joint Secretary",
   "Finance Secretary", "Assistant Finance Secretary", "Information Secretary", "Welfare Secretary",
-  "Executive Member", "Committee Convener", "Committee Secretary", "Coordinator", "Member",
+  "Chief Election Commissioner", "Election Commissioner", "Media Coordinator", "Media Executive",
+  "Executive Member", "Committee Convener", "Committee Co-Convener", "Committee Secretary", "Coordinator", "Member",
 ];
+const roleRanks: Record<string, number> = {
+  President: 10,
+  Chairman: 15,
+  "Senior Vice President": 20,
+  "Vice President": 30,
+  "General Secretary": 40,
+  "Finance Secretary": 50,
+  "Joint Secretary": 60,
+  "Assistant Finance Secretary": 65,
+  "Information Secretary": 70,
+  "Welfare Secretary": 80,
+  "Chief Election Commissioner": 85,
+  "Election Commissioner": 90,
+  "Committee Convener": 100,
+  "Committee Co-Convener": 105,
+  "Committee Secretary": 110,
+  "Media Coordinator": 120,
+  "Media Executive": 130,
+  Coordinator: 140,
+  "Executive Member": 150,
+  Member: 200,
+};
+const defaultRoleRank = (role: string) => roleRanks[role] ?? 180;
+const blankAssignment = () => ({ id: "", memberId: "", organizationId: "", role: "", rank: 150, period: "", notes: "" });
 const unitTypes: { value: OrganizationUnitType; label: string }[] = [
   { value: "cabinet", label: "Cabinet / Executive Council" }, { value: "committee", label: "Committee" },
   { value: "working_group", label: "Working Group / Task Committee" }, { value: "zone", label: "Zone" },
@@ -69,7 +94,7 @@ export function AdminOperationsCenterPage() {
   const [ledger, setLedger] = useState<FinanceLedgerRow[]>([]);
 
   const [unitForm, setUnitForm] = useState({ id: "", name: "", type: "committee" as OrganizationUnitType, parentId: "", areaName: "", displayOrder: 0, tenureStart: "", tenureEnd: "", description: "", isActive: true });
-  const [assignmentForm, setAssignmentForm] = useState({ memberId: "", organizationId: "", role: "", rank: 10, period: "", notes: "" });
+  const [assignmentForm, setAssignmentForm] = useState(blankAssignment());
   const [meetingForm, setMeetingForm] = useState({ id: "", organizationId: "", title: "", meetingType: "meeting" as GovernanceMeeting["meetingType"], date: "", time: "", venue: "", status: "announced" as GovernanceMeeting["status"], notice: "", agenda: "", minutes: "", images: [] as string[], published: false });
   const [attendanceMeetingId, setAttendanceMeetingId] = useState("");
   const [attendanceMeetingTitle, setAttendanceMeetingTitle] = useState("");
@@ -82,6 +107,7 @@ export function AdminOperationsCenterPage() {
 
   const approvedMembers = useMemo(() => members.filter((m) => m.status === "approved").sort((a, b) => a.fullName.localeCompare(b.fullName)), [members]);
   const activeUnits = useMemo(() => units.filter((u) => u.isActive), [units]);
+  const selectedRoleIsStandard = roleSuggestions.includes(assignmentForm.role);
 
   const loadAll = async () => {
     setLoading(true); setError("");
@@ -139,10 +165,41 @@ export function AdminOperationsCenterPage() {
   async function saveAssignment() {
     setError("");
     try {
-      await createOrganizationAssignment({ ...assignmentForm, period: assignmentForm.period || null, notes: assignmentForm.notes || null });
-      setAssignmentForm({ memberId: "", organizationId: "", role: "", rank: 10, period: "", notes: "" });
-      await loadAll(); flash("Member assignment saved.");
+      const editingId = assignmentForm.id;
+      const payload = {
+        memberId: assignmentForm.memberId,
+        organizationId: assignmentForm.organizationId,
+        role: assignmentForm.role.trim(),
+        rank: assignmentForm.rank,
+        period: assignmentForm.period.trim() || null,
+        notes: assignmentForm.notes.trim() || null,
+        isActive: true,
+      };
+      if (editingId) await updateOrganizationAssignment(editingId, payload);
+      else await createOrganizationAssignment(payload);
+      setAssignmentForm(blankAssignment());
+      await loadAll(); flash(editingId ? "Member role assignment updated." : "Member role assignment saved.");
     } catch (e: any) { setError(e.message || "Could not save assignment."); }
+  }
+  function editAssignment(a: OrganizationAssignment) {
+    setAssignmentForm({
+      id: a.id,
+      memberId: a.memberId,
+      organizationId: a.organizationId,
+      role: a.role,
+      rank: a.rank,
+      period: a.period || "",
+      notes: a.notes || "",
+    });
+    setTab("members");
+    setError("");
+    window.scrollTo({ top: 180, behavior: "smooth" });
+  }
+  function addAnotherRole(a: OrganizationAssignment) {
+    setAssignmentForm({ ...blankAssignment(), memberId: a.memberId, rank: 150 });
+    setTab("members");
+    setError("");
+    window.scrollTo({ top: 180, behavior: "smooth" });
   }
   async function openAttendance(meeting: GovernanceMeeting) {
     setError("");
@@ -238,26 +295,26 @@ export function AdminOperationsCenterPage() {
 
       {!loading && tab === "overview" && <div style={{ display: "grid", gap: 18 }}>
         <div className="ops-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12 }}>
-          {[ ["Approved Members", approvedMembers.length, Users], ["Active Units", summary.units, Building2], ["Role Assignments", summary.activeAssignments, Crown], ["Meetings Recorded", summary.meetings, CalendarDays] ].map(([text, value, Icon]: any) => <div key={text} style={panel}><Icon size={20} color={GOLD}/><p style={{ margin: "10px 0 3px", color: "#777", fontSize: 11, textTransform: "uppercase", fontWeight: 800 }}>{text}</p><strong style={{ color: GREEN, fontFamily: "Playfair Display,serif", fontSize: 27 }}>{value}</strong></div>)}
+          {[ ["Approved Members", approvedMembers.length, Users], ["Active Units", summary.units, Building2], ["Active Role Assignments", summary.activeAssignments, Crown], ["Meetings Recorded", summary.meetings, CalendarDays] ].map(([text, value, Icon]: any) => <div key={text} style={panel}><Icon size={20} color={GOLD}/><p style={{ margin: "10px 0 3px", color: "#777", fontSize: 11, textTransform: "uppercase", fontWeight: 800 }}>{text}</p><strong style={{ color: GREEN, fontFamily: "Playfair Display,serif", fontSize: 27 }}>{value}</strong></div>)}
         </div>
         <div className="ops-grid3" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
-          <div style={panel}><h3 style={{ color: GREEN, marginTop: 0 }}>Member administration</h3><p style={{ color: "#666", fontSize: 12 }}>Approve, add and edit member records in the existing master registry. Role assignments always link back to one approved member ID.</p><div style={{display:"flex",gap:7,flexWrap:"wrap"}}><button style={primary} onClick={() => location.assign("/admin/members")}><Users size={14}/> Open Member Center</button><button style={secondary} disabled={!databaseReady} onClick={async()=>{try{const result=await bootstrapLegacyLeadership(); await loadAll(); flash(`${result.imported} linked legacy leadership role(s) imported; ${result.skipped} skipped.`);}catch(e:any){setError(e.message||"Legacy leadership import failed.");}}}><RefreshCw size={13}/> Import Linked Legacy Roles</button></div></div>
+          <div style={panel}><h3 style={{ color: GREEN, marginTop: 0 }}>Member administration</h3><p style={{ color: "#666", fontSize: 12 }}>Approve, add and edit member records in the existing master registry. Role assignments always link back to one approved member ID, so multiple posts never create duplicate people.</p><div style={{display:"flex",gap:7,flexWrap:"wrap"}}><button style={primary} onClick={() => location.assign("/admin/members")}><Users size={14}/> Open Member Center</button><button style={secondary} disabled={!databaseReady} onClick={async()=>{try{const result=await bootstrapLegacyLeadership(); await loadAll(); flash(`${result.imported} linked legacy leadership role(s) imported; ${result.skipped} skipped.`);}catch(e:any){setError(e.message||"Legacy leadership import failed.");}}}><RefreshCw size={13}/> Import Linked Legacy Roles</button></div></div>
           <div style={panel}><h3 style={{ color: GREEN, marginTop: 0 }}>Create any committee or zone</h3><p style={{ color: "#666", fontSize: 12 }}>Admin can create a cabinet, committee, working group, zone, area or chapter and place it under a parent unit without creating duplicate people.</p><button style={primary} onClick={() => setTab("structure")}><Building2 size={14}/> Manage Structure</button></div>
           <div style={panel}><h3 style={{ color: GREEN, marginTop: 0 }}>Ledger with audit trail</h3><p style={{ color: "#666", fontSize: 12 }}>Existing revenue remains visible. New receipts, expenses and adjustments receive ledger serials and preserve the issuing administrator.</p><button style={primary} onClick={() => setTab("finance")}><BadgeDollarSign size={14}/> Open Finance</button></div>
         </div>
       </div>}
 
       {!loading && tab === "members" && <div style={{ display: "grid", gap: 18 }}>
-        <div style={{ ...panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><h2 style={{ color: GREEN, margin: 0, fontFamily: "Playfair Display,serif" }}>Assign an Existing Approved Member</h2><p style={{ fontSize: 12, color: "#777", marginBottom: 0 }}>No duplicate person is created. One member can legitimately hold multiple roles in different committees.</p></div><button style={secondary} onClick={() => location.assign("/admin/members")}><Plus size={14}/> Add / Edit Member</button></div>
+        <div style={{ ...panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><h2 style={{ color: GREEN, margin: 0, fontFamily: "Playfair Display,serif" }}>{assignmentForm.id ? "Edit Member Role Assignment" : "Assign an Existing Approved Member"}</h2><p style={{ fontSize: 12, color: "#777", marginBottom: 0 }}>One person stays one member record. The same member can hold multiple roles, including roles in different cabinets, committees, zones or chapters.</p></div><button style={secondary} onClick={() => location.assign("/admin/members")}><Plus size={14}/> Add / Edit Member</button></div>
         <div style={panel}><div className="ops-grid3" style={{ display: "grid", gridTemplateColumns: "1.4fr 1.2fr 1fr", gap: 12 }}>
           <div><label style={label}>Approved member</label><select style={field} value={assignmentForm.memberId} onChange={(e) => setAssignmentForm({ ...assignmentForm, memberId: e.target.value })}><option value="">Select member</option>{approvedMembers.map((m) => <option key={m.id} value={m.id}>{m.fullName} · {m.memberNo}</option>)}</select></div>
           <div><label style={label}>Cabinet / committee / zone</label><select style={field} value={assignmentForm.organizationId} onChange={(e) => setAssignmentForm({ ...assignmentForm, organizationId: e.target.value })}><option value="">Select unit</option>{activeUnits.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.type.replace(/_/g," ")})</option>)}</select></div>
-          <div><label style={label}>Role / designation</label><input list="ops-role-options" style={field} value={assignmentForm.role} onChange={(e) => setAssignmentForm({ ...assignmentForm, role: e.target.value })}/><datalist id="ops-role-options">{roleSuggestions.map((x) => <option value={x} key={x}/>)}</datalist></div>
-          <div><label style={label}>Display / hierarchy order</label><input type="number" min="0" max="999" style={field} value={assignmentForm.rank} onChange={(e) => setAssignmentForm({ ...assignmentForm, rank: Number(e.target.value) })}/></div>
+          <div><label style={label}>Role / designation</label><select style={field} value={selectedRoleIsStandard ? assignmentForm.role : ""} onChange={(e) => { const nextRole = e.target.value; setAssignmentForm({ ...assignmentForm, role: nextRole, rank: nextRole ? defaultRoleRank(nextRole) : assignmentForm.rank }); }}><option value="">Select standard role</option>{roleSuggestions.map((x) => <option value={x} key={x}>{x}</option>)}</select><input style={{ ...field, marginTop: 6 }} placeholder="Or type a custom role / designation" value={selectedRoleIsStandard ? "" : assignmentForm.role} onChange={(e) => setAssignmentForm({ ...assignmentForm, role: e.target.value })}/></div>
+          <div><label style={label}>Display / hierarchy order</label><input type="number" min="0" max="999" style={field} value={assignmentForm.rank} onChange={(e) => setAssignmentForm({ ...assignmentForm, rank: Number(e.target.value) })}/><small style={{ display:"block",color:"#888",fontSize:10,marginTop:4 }}>Lower number appears higher. Standard roles set a sensible default automatically.</small></div>
           <div><label style={label}>Tenure / period</label><input style={field} placeholder="2026–2028" value={assignmentForm.period} onChange={(e) => setAssignmentForm({ ...assignmentForm, period: e.target.value })}/></div>
           <div><label style={label}>Assignment note</label><input style={field} placeholder="Purpose or responsibility" value={assignmentForm.notes} onChange={(e) => setAssignmentForm({ ...assignmentForm, notes: e.target.value })}/></div>
-        </div><div style={{ marginTop: 14 }}><button disabled={!databaseReady || !assignmentForm.memberId || !assignmentForm.organizationId || !assignmentForm.role.trim()} style={{ ...primary, opacity: !databaseReady ? .5 : 1 }} onClick={() => void saveAssignment()}><UserCog size={14}/> Save Assignment</button></div></div>
-        <DataTable headers={["Member","Role","Unit","Tenure","Status","Action"]}>{assignments.map((a) => <tr key={a.id}><Td><strong>{a.member?.fullName || "Member"}</strong><small>{a.member?.memberNo}</small></Td><Td>{a.role}</Td><Td>{a.organization?.name || "-"}<small>{a.organization?.type?.replace(/_/g," ")}</small></Td><Td>{a.period || "-"}</Td><Td>{a.isActive ? <Status text="Active" good/> : <Status text="Archived"/>}</Td><Td>{a.isActive && <button style={secondary} onClick={async () => { if (confirm("Archive this assignment? The historical record will remain.")) { await archiveOrganizationAssignment(a.id); await loadAll(); } }}>Archive</button>}</Td></tr>)}</DataTable>
+        </div><div style={{ marginTop: 14, display:"flex", gap:8, flexWrap:"wrap" }}><button disabled={!databaseReady || !assignmentForm.memberId || !assignmentForm.organizationId || !assignmentForm.role.trim()} style={{ ...primary, opacity: !databaseReady ? .5 : 1 }} onClick={() => void saveAssignment()}><UserCog size={14}/> {assignmentForm.id ? "Update Assignment" : "Save Assignment"}</button>{assignmentForm.id && <button style={secondary} onClick={() => setAssignmentForm(blankAssignment())}>Cancel Edit</button>}</div></div>
+        <DataTable headers={["Member","Role","Unit","Tenure","Status","Action"]}>{assignments.map((a) => <tr key={a.id}><Td><strong>{a.member?.fullName || "Member"}</strong><small>{a.member?.memberNo}</small></Td><Td>{a.role}</Td><Td>{a.organization?.name || "-"}<small>{a.organization?.type?.replace(/_/g," ")}</small></Td><Td>{a.period || "-"}</Td><Td>{a.isActive ? <Status text="Active" good/> : <Status text="Archived"/>}</Td><Td><div style={{ display:"flex",gap:5,flexWrap:"wrap" }}><button style={secondary} onClick={() => editAssignment(a)}><Edit2 size={12}/> Edit</button><button style={secondary} onClick={() => addAnotherRole(a)}><Plus size={12}/> Add Role</button>{a.isActive && <button style={secondary} onClick={async () => { if (confirm("Archive this assignment? The historical record will remain.")) { await archiveOrganizationAssignment(a.id); await loadAll(); } }}>Archive</button>}</div></Td></tr>)}</DataTable>
       </div>}
 
       {!loading && tab === "structure" && <div style={{ display: "grid", gap: 18 }}>
@@ -269,7 +326,7 @@ export function AdminOperationsCenterPage() {
           <Field labelText="Display order"><input style={field} type="number" value={unitForm.displayOrder} onChange={(e) => setUnitForm({ ...unitForm, displayOrder: Number(e.target.value) })}/></Field>
           <Field labelText="Tenure"><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}><input style={field} placeholder="Start" value={unitForm.tenureStart} onChange={(e) => setUnitForm({ ...unitForm, tenureStart: e.target.value })}/><input style={field} placeholder="End" value={unitForm.tenureEnd} onChange={(e) => setUnitForm({ ...unitForm, tenureEnd: e.target.value })}/></div></Field>
         </div><Field labelText="Purpose / description"><textarea style={{ ...field, minHeight: 74 }} value={unitForm.description} onChange={(e) => setUnitForm({ ...unitForm, description: e.target.value })}/></Field><div style={{ display: "flex", gap: 8 }}><button disabled={!databaseReady || unitForm.name.trim().length < 2} style={primary} onClick={() => void saveUnit()}><Save size={14}/> {unitForm.id ? "Update Unit" : "Create Unit"}</button>{unitForm.id && <button style={secondary} onClick={() => setUnitForm({ id: "", name: "", type: "committee", parentId: "", areaName: "", displayOrder: 0, tenureStart: "", tenureEnd: "", description: "", isActive: true })}>Cancel</button>}</div></div>
-        <DataTable headers={["Unit","Type","Parent / Area","Roles","Meetings","Action"]}>{units.map((u) => <tr key={u.id}><Td><strong>{u.name}</strong><small>{u.isActive ? "Active" : "Archived"}</small></Td><Td>{u.type.replace(/_/g," ")}</Td><Td>{u.parent?.name || u.areaName || "Top level"}</Td><Td>{u._count?.assignments ?? 0}</Td><Td>{u._count?.meetings ?? 0}</Td><Td><div style={{ display:"flex",gap:6 }}><button style={secondary} onClick={() => setUnitForm({ id:u.id,name:u.name,type:u.type,parentId:u.parentId||"",areaName:u.areaName||"",displayOrder:u.displayOrder,tenureStart:u.tenureStart||"",tenureEnd:u.tenureEnd||"",description:u.description||"",isActive:u.isActive })}><Edit2 size={12}/> Edit</button>{u.isActive && <button style={secondary} onClick={async () => { if(confirm("Archive or delete this unit? Linked historical records will never be deleted.")){ await archiveOrganizationUnit(u.id); await loadAll(); } }}><Trash2 size={12}/> Archive</button>}</div></Td></tr>)}</DataTable>
+        <DataTable headers={["Unit","Type","Parent / Area","Active Roles","Meetings","Action"]}>{units.map((u) => <tr key={u.id}><Td><strong>{u.name}</strong><small>{u.isActive ? "Active" : "Archived"}</small></Td><Td>{u.type.replace(/_/g," ")}</Td><Td>{u.parent?.name || u.areaName || "Top level"}</Td><Td>{assignments.filter((a) => a.organizationId === u.id && a.isActive).length}</Td><Td>{u._count?.meetings ?? 0}</Td><Td><div style={{ display:"flex",gap:6 }}><button style={secondary} onClick={() => setUnitForm({ id:u.id,name:u.name,type:u.type,parentId:u.parentId||"",areaName:u.areaName||"",displayOrder:u.displayOrder,tenureStart:u.tenureStart||"",tenureEnd:u.tenureEnd||"",description:u.description||"",isActive:u.isActive })}><Edit2 size={12}/> Edit</button>{u.isActive && <button style={secondary} onClick={async () => { if(confirm("Archive or delete this unit? Linked historical records will never be deleted.")){ await archiveOrganizationUnit(u.id); await loadAll(); } }}><Trash2 size={12}/> Archive</button>}</div></Td></tr>)}</DataTable>
       </div>}
 
       {!loading && tab === "meetings" && <div style={{ display: "grid", gap: 18 }}>
@@ -281,8 +338,8 @@ export function AdminOperationsCenterPage() {
           <Field labelText="Status"><select style={field} value={meetingForm.status} onChange={(e)=>setMeetingForm({...meetingForm,status:e.target.value as any})}><option value="announced">Announced / Upcoming</option><option value="held">Held / Completed</option><option value="postponed">Postponed</option><option value="cancelled">Cancelled</option></select></Field>
           <Field labelText="Publish"><select style={field} value={meetingForm.published ? "yes":"no"} onChange={(e)=>setMeetingForm({...meetingForm,published:e.target.value==="yes"})}><option value="no">Internal / Draft</option><option value="yes">Public</option></select></Field>
         </div><div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}><Field labelText="Meeting notice"><textarea style={{...field,minHeight:105}} value={meetingForm.notice} onChange={(e)=>setMeetingForm({...meetingForm,notice:e.target.value})}/></Field><Field labelText="Agenda"><textarea style={{...field,minHeight:105}} value={meetingForm.agenda} onChange={(e)=>setMeetingForm({...meetingForm,agenda:e.target.value})}/></Field><Field labelText="Minutes / decisions"><textarea style={{...field,minHeight:105}} value={meetingForm.minutes} onChange={(e)=>setMeetingForm({...meetingForm,minutes:e.target.value})} placeholder="Complete after the meeting"/></Field></div><div style={{marginTop:12}}><MultiImageUpload label="Meeting Photos" images={meetingForm.images} onChange={(images)=>setMeetingForm({...meetingForm,images})} maxFiles={20}/></div><div style={{display:"flex",gap:8,marginTop:14}}><button disabled={!databaseReady || meetingForm.title.trim().length<3 || !meetingForm.date} style={primary} onClick={()=>void saveMeeting()}><Save size={14}/> {meetingForm.id?"Update Meeting":"Save Meeting"}</button>{meetingForm.id&&<button style={secondary} onClick={()=>setMeetingForm({ id:"",organizationId:"",title:"",meetingType:"meeting",date:"",time:"",venue:"",status:"announced",notice:"",agenda:"",minutes:"",images:[],published:false })}>Cancel</button>}</div></div>
-        {attendanceMeetingId && <div style={panel}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}><div><h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:0}}>Meeting Attendance</h2><p style={{fontSize:12,color:"#777",margin:"4px 0 0"}}>{attendanceMeetingTitle} · {attendanceRows.length} recorded</p></div><button style={secondary} onClick={()=>{setAttendanceMeetingId("");setAttendanceMeetingTitle("");setAttendanceRows([]);}}>Close</button></div><div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1.5fr .7fr 1.5fr",gap:10,alignItems:"end"}}><Field labelText="Approved member"><select style={field} value={attendanceEntry.memberId} onChange={(e)=>setAttendanceEntry({...attendanceEntry,memberId:e.target.value})}><option value="">Select member</option>{approvedMembers.map((m)=><option key={m.id} value={m.id}>{m.fullName} · {m.memberNo}</option>)}</select></Field><Field labelText="Status"><select style={field} value={attendanceEntry.status} onChange={(e)=>setAttendanceEntry({...attendanceEntry,status:e.target.value as MeetingAttendance["status"]})}><option value="present">Present</option><option value="absent">Absent</option><option value="excused">Excused</option></select></Field><Field labelText="Remarks"><input style={field} value={attendanceEntry.remarks} onChange={(e)=>setAttendanceEntry({...attendanceEntry,remarks:e.target.value})}/></Field></div><div style={{display:"flex",gap:8,marginBottom:12}}><button style={secondary} onClick={addAttendanceDraft}><Plus size={13}/> Add / Update Attendee</button><button style={primary} onClick={()=>void persistAttendance()}><Save size={13}/> Save Attendance</button></div><div className="ops-table-wrap"><table className="ops-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#f8f5ef"}}>{["Member","Status","Remarks","Action"].map((h)=><th key={h} style={{padding:"9px",textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{attendanceRows.map((a)=><tr key={a.memberId} style={{borderTop:`1px solid ${BORDER}`}}><td style={{padding:9}}><strong>{a.member?.fullName||approvedMembers.find(m=>m.id===a.memberId)?.fullName||"Member"}</strong><small style={{display:"block",color:"#999"}}>{a.member?.memberNo||approvedMembers.find(m=>m.id===a.memberId)?.memberNo||""}</small></td><td style={{padding:9}}><Status text={a.status} good={a.status==="present"}/></td><td style={{padding:9}}>{a.remarks||"-"}</td><td style={{padding:9}}><button style={secondary} onClick={()=>setAttendanceRows((rows)=>rows.filter((x)=>x.memberId!==a.memberId))}>Remove</button></td></tr>)}{!attendanceRows.length&&<tr><td colSpan={4} style={{padding:20,textAlign:"center",color:"#888"}}>No attendance recorded yet.</td></tr>}</tbody></table></div></div>}
-        <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.status} good={m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}><button style={secondary} onClick={()=>{setMeetingForm({id:m.id,organizationId:m.organizationId||"",title:m.title,meetingType:m.meetingType,date:m.date,time:m.time||"",venue:m.venue||"",status:m.status,notice:m.notice||"",agenda:m.agenda||"",minutes:m.minutes||"",images:m.images||[],published:m.published}); window.scrollTo({top:0,behavior:"smooth"});}}><Edit2 size={12}/> Open</button><button style={secondary} onClick={()=>void openAttendance(m)}><Users size={12}/> Attendance {m._count?.attendance?`(${m._count.attendance})`:""}</button></div></Td></tr>)}</DataTable>
+        {attendanceMeetingId && <div style={panel}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}><div><h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:0}}>Meeting Attendance</h2><p style={{fontSize:12,color:"#777",margin:"4px 0 0"}}>{attendanceMeetingTitle} · {attendanceRows.length} attendance record(s)</p></div><button style={secondary} onClick={()=>{setAttendanceMeetingId("");setAttendanceMeetingTitle("");setAttendanceRows([]);}}>Close</button></div><div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1.5fr .7fr 1.5fr",gap:10,alignItems:"end"}}><Field labelText="Approved member"><select style={field} value={attendanceEntry.memberId} onChange={(e)=>setAttendanceEntry({...attendanceEntry,memberId:e.target.value})}><option value="">Select member</option>{approvedMembers.map((m)=><option key={m.id} value={m.id}>{m.fullName} · {m.memberNo}</option>)}</select></Field><Field labelText="Status"><select style={field} value={attendanceEntry.status} onChange={(e)=>setAttendanceEntry({...attendanceEntry,status:e.target.value as MeetingAttendance["status"]})}><option value="present">Present</option><option value="absent">Absent</option><option value="excused">Excused</option></select></Field><Field labelText="Remarks"><input style={field} value={attendanceEntry.remarks} onChange={(e)=>setAttendanceEntry({...attendanceEntry,remarks:e.target.value})}/></Field></div><div style={{display:"flex",gap:8,marginBottom:12}}><button style={secondary} onClick={addAttendanceDraft}><Plus size={13}/> Add / Update Attendee</button><button style={primary} onClick={()=>void persistAttendance()}><Save size={13}/> Save Attendance</button></div><div className="ops-table-wrap"><table className="ops-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#f8f5ef"}}>{["Member","Status","Remarks","Action"].map((h)=><th key={h} style={{padding:"9px",textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{attendanceRows.map((a)=><tr key={a.memberId} style={{borderTop:`1px solid ${BORDER}`}}><td style={{padding:9}}><strong>{a.member?.fullName||approvedMembers.find(m=>m.id===a.memberId)?.fullName||"Member"}</strong><small style={{display:"block",color:"#999"}}>{a.member?.memberNo||approvedMembers.find(m=>m.id===a.memberId)?.memberNo||""}</small></td><td style={{padding:9}}><Status text={a.status} good={a.status==="present"}/></td><td style={{padding:9}}>{a.remarks||"-"}</td><td style={{padding:9}}><button style={secondary} onClick={()=>setAttendanceRows((rows)=>rows.filter((x)=>x.memberId!==a.memberId))}>Remove</button></td></tr>)}{!attendanceRows.length&&<tr><td colSpan={4} style={{padding:20,textAlign:"center",color:"#888"}}>No attendance recorded yet.</td></tr>}</tbody></table></div></div>}
+        <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.status} good={m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}><button style={secondary} onClick={()=>{setMeetingForm({id:m.id,organizationId:m.organizationId||"",title:m.title,meetingType:m.meetingType,date:m.date,time:m.time||"",venue:m.venue||"",status:m.status,notice:m.notice||"",agenda:m.agenda||"",minutes:m.minutes||"",images:m.images||[],published:m.published}); window.scrollTo({top:0,behavior:"smooth"});}}><Edit2 size={12}/> Open</button><button style={secondary} onClick={()=>void openAttendance(m)}><Users size={12}/> Attendance Records {m._count?.attendance?`(${m._count.attendance})`:""}</button></div></Td></tr>)}</DataTable>
       </div>}
 
       {!loading && tab === "overseas" && <div style={{display:"grid",gap:18}}>
