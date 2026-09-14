@@ -1,0 +1,143 @@
+import { pakistanCitiesByProvince } from "./pakistanLocations";
+import {
+  EDUCATION_OPTIONS,
+  FAMILY_SETUP_OPTIONS,
+  MARITAL_STATUS_OPTIONS,
+  PROFESSION_OPTIONS,
+  RESIDENCE_STATUS_OPTIONS,
+  SECT_OPTIONS,
+} from "./matrimonialOptions";
+
+export const MATRIMONIAL_COUNTRY_OPTIONS = [
+  "Pakistan",
+  "United Arab Emirates",
+  "Saudi Arabia",
+  "Qatar",
+  "Oman",
+  "Bahrain",
+  "Kuwait",
+  "United Kingdom",
+  "United States",
+  "Canada",
+  "Australia",
+  "Germany",
+  "France",
+  "Italy",
+  "Spain",
+  "Netherlands",
+  "Norway",
+  "Sweden",
+  "Denmark",
+  "Switzerland",
+  "Turkey",
+  "Malaysia",
+  "Singapore",
+  "China",
+  "Japan",
+  "South Korea",
+  "Other",
+];
+
+export const MATRIMONIAL_NATIONALITY_OPTIONS = [
+  "Pakistani",
+  "Pakistani / Dual National",
+  "Emirati",
+  "Saudi",
+  "Qatari",
+  "Omani",
+  "Bahraini",
+  "Kuwaiti",
+  "British",
+  "American",
+  "Canadian",
+  "Australian",
+  "German",
+  "European / EU",
+  "Other",
+];
+
+export const MATRIMONIAL_LANGUAGE_OPTIONS = [
+  "Urdu",
+  "Punjabi",
+  "English",
+  "Saraiki",
+  "Sindhi",
+  "Pashto",
+  "Balochi",
+  "Hindko",
+  "Kashmiri",
+  "Potohari",
+  "Arabic",
+  "Persian / Farsi",
+  "Turkish",
+  "Other",
+];
+
+export const MATRIMONIAL_HOBBY_OPTIONS = [
+  "Reading",
+  "Travel",
+  "Cricket",
+  "Sports",
+  "Fitness / Gym",
+  "Walking / Hiking",
+  "Cooking / Baking",
+  "Gardening",
+  "Photography",
+  "Arts / Crafts",
+  "Music",
+  "Technology",
+  "Gaming",
+  "Volunteering / Social Work",
+  "Religious / Community Activities",
+  "Family Activities",
+  "Outdoor Activities",
+  "Other",
+];
+
+export const MATRIMONIAL_EMPLOYER_TYPE_OPTIONS = [
+  "Government Department",
+  "Public Sector / Autonomous Body",
+  "Private Company",
+  "Family Business",
+  "Own Business / Self-employed",
+  "Academic Institution",
+  "Healthcare Institution",
+  "NGO / Nonprofit",
+  "Armed Forces",
+  "Overseas Employer",
+  "Freelance / Remote",
+  "Not Applicable",
+  "Other",
+];
+
+export const MATRIMONIAL_RELOCATION_OPTIONS = [
+  "Not open to relocation",
+  "Same city only",
+  "Within Punjab",
+  "Within Pakistan",
+  "Gulf / GCC",
+  "Middle East",
+  "United Kingdom / Europe",
+  "United States / Canada",
+  "Australia / New Zealand",
+  "Overseas / Any country",
+  "Open to discussion",
+  "Other",
+];
+
+export const MATRIMONIAL_ALL_PAKISTAN_CITIES = Array.from(
+  new Set(Object.values(pakistanCitiesByProvince).flat().filter(Boolean)),
+).sort((a, b) => a.localeCompare(b));
+
+export const MATRIMONIAL_PREFERENCE_OPTIONS: Record<string, string[]> = {
+  Education: EDUCATION_OPTIONS,
+  Profession: PROFESSION_OPTIONS,
+  Country: MATRIMONIAL_COUNTRY_OPTIONS,
+  City: MATRIMONIAL_ALL_PAKISTAN_CITIES,
+  "Marital Status": MARITAL_STATUS_OPTIONS,
+  "Residence Status": RESIDENCE_STATUS_OPTIONS,
+  Residence: RESIDENCE_STATUS_OPTIONS,
+  "Family Setup": FAMILY_SETUP_OPTIONS,
+  Sect: SECT_OPTIONS,
+  Relocation: MATRIMONIAL_RELOCATION_OPTIONS,
+};
