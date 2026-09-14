@@ -48,7 +48,7 @@ router.get("/", async (_req, res, next) => {
   try {
     const [settings, leadership, news, events, statistics] = await Promise.all([
       prisma.siteSettings.findUnique({ where: { id: "settings" } }),
-      prisma.leadershipProfile.findMany({ where: { category: "cabinet" }, take: 6, orderBy: { tier: "asc" } }),
+      prisma.leadershipProfile.findMany({ where: { category: "cabinet" }, take: 6, orderBy: [{ tier: "asc" }, { role: "asc" }] }),
       prisma.content.findMany({ where: { type: "news", status: "published" }, take: 3, orderBy: { date: "desc" } }),
       prisma.content.findMany({ where: { type: "event", status: "published" }, take: 3, orderBy: { date: "asc" } }),
       activeMemberSummary(),
@@ -64,7 +64,7 @@ router.get("/", async (_req, res, next) => {
 router.get("/member-directory", async (req: Request, res, next) => {
   try {
     const role = requestRole(req);
-    const canSeeContacts = ["member", "admin", "super_admin", "welfare_manager", "finance_secretary", "assistant_finance_secretary"].includes(role);
+    const canSeeContacts = ["member", "applicant", "admin", "super_admin", "welfare_manager", "finance_secretary", "assistant_finance_secretary"].includes(role);
     const page = Math.max(1, Number(req.query.page || 1) || 1);
     const limit = Math.min(500, Math.max(1, Number(req.query.limit || 250) || 250));
 
@@ -101,6 +101,22 @@ router.get("/member-directory", async (req: Request, res, next) => {
           isFeaturedPortal: true,
           approvedAt: true,
           createdAt: true,
+          leadershipProfiles: {
+            where: { category: "cabinet" },
+            orderBy: [{ tier: "asc" }, { role: "asc" }],
+            take: 1,
+            select: { role: true, tier: true, category: true },
+          },
+          organizationAssignments: {
+            where: { isActive: true, organization: { type: "cabinet" } },
+            orderBy: { rank: "asc" },
+            take: 1,
+            select: {
+              role: true,
+              rank: true,
+              organization: { select: { name: true, type: true, slug: true } },
+            },
+          },
           ...(canSeeContacts ? { phone: true, whatsapp: true, email: true } : {}),
         },
       }),
@@ -108,12 +124,25 @@ router.get("/member-directory", async (req: Request, res, next) => {
       activeMemberSummary(),
     ]);
 
+    const directoryMembers = members.map((member: any) => {
+      const cabinetAssignment = member.organizationAssignments?.[0] || null;
+      const leadershipProfile = member.leadershipProfiles?.[0] || null;
+      const { organizationAssignments, leadershipProfiles, ...safeMember } = member;
+      return {
+        ...safeMember,
+        leadershipRole: cabinetAssignment?.role || leadershipProfile?.role || null,
+        leadershipRank: cabinetAssignment?.rank ?? (leadershipProfile?.tier != null ? leadershipProfile.tier * 10 : null),
+        leadershipTier: leadershipProfile?.tier ?? null,
+        leadershipUnit: cabinetAssignment?.organization?.name || (leadershipProfile ? "Executive Council / Cabinet" : null),
+      };
+    });
+
     res.json({
-      members,
+      members: directoryMembers,
       summary,
       privacy: {
         contactDetailsVisible: canSeeContacts,
-        publicFields: ["name", "member number", "city", "profession", "designation", "institution/business", "membership type"],
+        publicFields: ["name", "member number", "city", "profession", "designation", "institution/business", "membership type", "official leadership role"],
       },
       pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
