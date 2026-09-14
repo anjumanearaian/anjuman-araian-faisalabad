@@ -1,13 +1,16 @@
+import { apiClient } from "./apiClient";
+import { formatPersonName, formatPlaceName, formatProfessionalLabel } from "./displayFormat";
+
 export interface LeadershipProfile {
   id: string;
   name: string;
   role: string;
   city: string;
-  tier?: number; // For cabinet hierarchy (0 = President, 1 = VP/GenSec, etc)
+  tier?: number;
   category: "cabinet" | "executive" | "advisory" | "founder" | "expresident";
-  image?: string; // Base64
-  period?: string; // For founders and ex-presidents
-  description?: string; // For founders/patrons description or ex-presidents highlight
+  image?: string;
+  period?: string;
+  description?: string;
 }
 
 const defaultProfiles: LeadershipProfile[] = [
@@ -17,19 +20,16 @@ const defaultProfiles: LeadershipProfile[] = [
   { id: "4", name: "Ch. Asif Nawaz", role: "Finance Secretary", city: "Sialkot", tier: 1, category: "cabinet" },
   { id: "5", name: "Ch. Khalid Rana", role: "VP — Punjab North", city: "Rawalpindi", tier: 2, category: "cabinet" },
   { id: "6", name: "Ch. Sajjad Ali", role: "VP — Punjab South", city: "Multan", tier: 2, category: "cabinet" },
-  // Founders
   { id: "f1", name: "Ch. Ghulam Muhammad", role: "Founding President", city: "Lahore", category: "founder", period: "1947–1955", description: "The visionary leader who convened the first gathering of Araian community elders in August 1947 and drafted the founding charter of the organization." },
   { id: "f2", name: "Ch. Abdul Ghafoor", role: "Co-Founder and Secretary", city: "Gujranwala", category: "founder", period: "1947–1960", description: "Served as the first General Secretary, establishing the organizational structure and opening the first three district branches." },
   { id: "f3", name: "Ch. Muhammad Din", role: "Founding Treasurer", city: "Faisalabad", category: "founder", period: "1947–1952", description: "Set up the community welfare fund and introduced the first membership fee structure that sustained the organization in its early years." },
   { id: "f4", name: "Ch. Noor Muhammad", role: "Founding Patron", city: "Sialkot", category: "founder", period: "1947–1965", description: "A prominent agriculturalist and businessman who provided significant financial support to the fledgling organization in its formative years." },
-  // Patrons (handled as founders with Patron role)
   { id: "p1", name: "Ch. Akhtar Hussain", role: "Patron-in-Chief", city: "Lahore", category: "founder", description: "Donated the land for the Anjuman Central Office in 1972." },
   { id: "p2", name: "Ch. Riaz Ahmad", role: "Life Patron", city: "Multan", category: "founder", description: "Established the first scholarship endowment fund of Rs. 10 million." },
   { id: "p3", name: "Ch. Ejaz Butt", role: "Distinguished Patron", city: "Rawalpindi", category: "founder", description: "Funded the construction of the Anjuman Community Centre, Rawalpindi." },
   { id: "p4", name: "Ch. Nasir Iqbal", role: "Life Patron", city: "Karachi", category: "founder", description: "Founded the Sindh chapter and funded the first medical camp in Hyderabad." },
   { id: "p5", name: "Ch. Khalid Mehmood", role: "Distinguished Patron", city: "Faisalabad", category: "founder", description: "Donated the Anjuman library and reading room in Faisalabad." },
   { id: "p6", name: "Ch. Amjad Ali", role: "Life Patron", city: "Gujranwala", category: "founder", description: "Supported over 500 students through his personal scholarship fund." },
-  // Ex-Presidents
   { id: "e1", name: "Ch. Ghulam Muhammad", role: "President", city: "Lahore", category: "expresident", period: "1947–1955", description: "Founded the organization and established its constitutional framework." },
   { id: "e2", name: "Ch. Allah Ditta", role: "President", city: "Gujranwala", category: "expresident", period: "1955–1962", description: "Expanded branches to all districts of West Punjab." },
   { id: "e3", name: "Ch. Fazal Din", role: "President", city: "Faisalabad", category: "expresident", period: "1962–1968", description: "Launched the first community welfare fund." },
@@ -55,44 +55,51 @@ export interface LeadershipMessageData {
   attributes?: MessageAttribute[];
 }
 
-import { apiClient } from "./apiClient";
+function normalizeLeadershipProfile<T extends Partial<LeadershipProfile>>(profile: T): T {
+  const next: any = { ...profile };
+  if (Object.prototype.hasOwnProperty.call(profile, "name")) next.name = formatPersonName(profile.name);
+  if (Object.prototype.hasOwnProperty.call(profile, "role")) next.role = formatProfessionalLabel(profile.role);
+  if (Object.prototype.hasOwnProperty.call(profile, "city")) next.city = formatPlaceName(profile.city);
+  return next as T;
+}
+
+function normalizeLeadershipMessage<T extends Partial<LeadershipMessageData>>(message: T): T {
+  if (!message || typeof message !== "object") return message;
+  const next: any = { ...message };
+  if (Object.prototype.hasOwnProperty.call(message, "name")) next.name = formatPersonName(message.name);
+  return next as T;
+}
 
 export async function fetchLeadershipProfiles(): Promise<LeadershipProfile[]> {
-  return apiClient("/leadership/profiles") as Promise<LeadershipProfile[]>;
+  const profiles = await apiClient<LeadershipProfile[]>("/leadership/profiles");
+  return (profiles || []).map((profile) => normalizeLeadershipProfile(profile));
 }
 
 export async function createLeadershipProfile(data: Partial<LeadershipProfile> | Partial<LeadershipProfile>[]) {
-  return apiClient("/leadership/profiles", {
-    method: "POST",
-    body: JSON.stringify(data)
-  });
+  const payload = Array.isArray(data) ? data.map((profile) => normalizeLeadershipProfile(profile)) : normalizeLeadershipProfile(data);
+  const result = await apiClient<any>("/leadership/profiles", { method: "POST", body: JSON.stringify(payload) });
+  return Array.isArray(result) ? result.map((profile) => normalizeLeadershipProfile(profile)) : normalizeLeadershipProfile(result || {});
 }
 
 export async function updateLeadershipProfile(id: string, data: Partial<LeadershipProfile>) {
-  return apiClient(`/leadership/profiles/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data)
-  });
+  const result = await apiClient<any>(`/leadership/profiles/${id}`, { method: "PUT", body: JSON.stringify(normalizeLeadershipProfile(data)) });
+  return normalizeLeadershipProfile(result || {});
 }
 
 export async function deleteLeadershipProfile(id: string) {
-  return apiClient(`/leadership/profiles/${id}`, {
-    method: "DELETE"
-  });
+  return apiClient(`/leadership/profiles/${id}`, { method: "DELETE" });
 }
 
 export async function fetchLeadershipMessages(): Promise<(LeadershipMessageData & { type: string })[]> {
-  return apiClient("/leadership/messages") as Promise<(LeadershipMessageData & { type: string })[]>;
+  const messages = await apiClient<(LeadershipMessageData & { type: string })[]>("/leadership/messages");
+  return (messages || []).map((message) => normalizeLeadershipMessage(message));
 }
 
 export async function updateLeadershipMessage(type: "president" | "secretary", data: Partial<LeadershipMessageData>) {
-  return apiClient(`/leadership/messages/${type}`, {
-    method: "PUT",
-    body: JSON.stringify(data)
-  });
+  const result = await apiClient<any>(`/leadership/messages/${type}`, { method: "PUT", body: JSON.stringify(normalizeLeadershipMessage(data)) });
+  return normalizeLeadershipMessage(result || {});
 }
 
-// Deprecated synchronous local storage functions
 export function getLeadershipProfiles(): LeadershipProfile[] { return []; }
 export function saveLeadershipProfiles(profiles: LeadershipProfile[]) {}
 export function getPresidentMessage(): LeadershipMessageData { return { name: "President", body: "" }; }
