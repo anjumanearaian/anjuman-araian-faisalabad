@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowRight, BadgePercent, Building2 } from "lucide-react";
+import { ArrowRight, Building2 } from "lucide-react";
 import { Business, fetchAllBusinesses } from "../../lib/businessStore";
 
 function memberBenefit(value?: string) {
@@ -8,6 +8,13 @@ function memberBenefit(value?: string) {
   if (!clean) return "";
   if (/^\d+(?:\.\d+)?%?$/.test(clean)) return `${clean.replace(/%$/, "")}% member discount`;
   return clean;
+}
+
+function discountPercent(value?: string) {
+  const clean = String(value || "").trim();
+  const standalone = clean.match(/^(\d+(?:\.\d+)?)\s*%?$/);
+  if (standalone) return standalone[1];
+  return clean.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || "";
 }
 
 function isPlatinum(business: Business) {
@@ -37,10 +44,17 @@ export default function BusinessSpotlightSection() {
         <div className={`home-partner-track ${display.length > 1 ? "home-partner-track--moving" : ""}`}>
           {sliderItems.map((business, index) => {
             const benefit = memberBenefit(business.discountOffer);
+            const percent = discountPercent(business.discountOffer);
             return <Link to="/business" className="home-partner-card" key={`${business.id}-${index}`} aria-label={`${business.businessName} business listing`}>
+              {percent && <span className="home-partner-discount" aria-label={`${percent}% member discount`}>
+                <b>{percent}%</b>
+                <small>OFF</small>
+              </span>}
               <div className="home-partner-logo">{business.logoUrl ? <img src={business.logoUrl} alt={`${business.businessName} logo`} /> : <Building2 size={32} />}</div>
-              <strong>{business.businessName}</strong>
-              {benefit && <span><BadgePercent size={12} /> {benefit}</span>}
+              <strong className="home-partner-name">{business.businessName}</strong>
+              <div className={`home-partner-benefit ${benefit ? "" : "home-partner-benefit--default"}`} title={benefit || undefined}>
+                {percent ? "Member discount" : benefit || "Platinum member"}
+              </div>
             </Link>;
           })}
         </div>
