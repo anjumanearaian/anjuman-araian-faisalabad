@@ -3,13 +3,6 @@ import { Link } from "react-router";
 import { ArrowRight, Building2 } from "lucide-react";
 import { Business, fetchAllBusinesses } from "../../lib/businessStore";
 
-function memberBenefit(value?: string) {
-  const clean = String(value || "").trim();
-  if (!clean) return "";
-  if (/^\d+(?:\.\d+)?%?$/.test(clean)) return `${clean.replace(/%$/, "")}% member discount`;
-  return clean;
-}
-
 function discountPercent(value?: string) {
   const clean = String(value || "").trim();
   const standalone = clean.match(/^(\d+(?:\.\d+)?)\s*%?$/);
@@ -32,7 +25,7 @@ export default function BusinessSpotlightSection() {
   }, []);
 
   const display = useMemo(() => businesses.filter(isPlatinum).sort((a, b) => a.businessName.localeCompare(b.businessName)), [businesses]);
-  const shouldScroll = display.length > 4;
+  const shouldScroll = display.length > 5;
   const sliderItems = shouldScroll ? [...display, ...display] : display;
 
   return <section className="home-section home-business-section home-business-slider-section">
@@ -44,7 +37,6 @@ export default function BusinessSpotlightSection() {
       {display.length ? <div className="home-partner-slider" aria-label="Platinum business partners">
         <div className={`home-partner-track ${shouldScroll ? "home-partner-track--moving" : "home-partner-track--static"}`}>
           {sliderItems.map((business, index) => {
-            const benefit = memberBenefit(business.discountOffer);
             const percent = discountPercent(business.discountOffer);
             return <Link to="/business" className="home-partner-card" key={`${business.id}-${index}`} aria-label={`${business.businessName} business listing`}>
               <div className="home-partner-logo">
@@ -55,9 +47,6 @@ export default function BusinessSpotlightSection() {
                 </span>}
               </div>
               <strong className="home-partner-name">{business.businessName}</strong>
-              <div className={`home-partner-benefit ${benefit ? "" : "home-partner-benefit--default"}`} title={benefit || undefined}>
-                {percent ? "Discount for Anjuman members" : benefit || "Platinum member"}
-              </div>
             </Link>;
           })}
         </div>
