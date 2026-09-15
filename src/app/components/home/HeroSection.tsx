@@ -15,12 +15,27 @@ const copy = [
 export default function HeroSection() {
   const settings = getSiteSettings();
   const slides = useMemo(() => settings.heroSlides?.length ? settings.heroSlides : [image1, image2, image3], [settings.heroSlides]);
-  const [active, setActive] = useState(0); const [paused, setPaused] = useState(false);
-  useEffect(() => { if (paused || slides.length < 2) return; const timer = window.setInterval(() => setActive(v => (v + 1) % slides.length), 6000); return () => clearInterval(timer); }, [paused, slides.length]);
-  useEffect(() => { if (active >= slides.length) setActive(0); }, [slides.length, active]);
-  const move = (direction: number) => setActive(v => (v + direction + slides.length) % slides.length);
+  const [active, setActive] = useState(0);
+
+  // Keep the homepage carousel moving on desktop and mobile. Hovering the hero
+  // must not pause autoplay, otherwise a desktop pointer can leave it stopped
+  // indefinitely and make the slider appear broken.
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const timer = window.setInterval(() => {
+      setActive((current) => (current + 1) % slides.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [slides.length]);
+
+  useEffect(() => {
+    if (active >= slides.length) setActive(0);
+  }, [slides.length, active]);
+
+  const move = (direction: number) => setActive((current) => (current + direction + slides.length) % slides.length);
   const text = copy[active % copy.length];
-  return <section className="home-hero" aria-roledescription="carousel" aria-label="Community highlights" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} style={{ position: "relative", backgroundImage: `linear-gradient(90deg,rgba(9,48,30,.94),rgba(9,48,30,.62),rgba(9,48,30,.28)),url(${slides[active]})`, transition: "background-image .65s ease" }}>
+
+  return <section className="home-hero" aria-roledescription="carousel" aria-label="Community highlights" style={{ position: "relative", backgroundImage: `linear-gradient(90deg,rgba(9,48,30,.94),rgba(9,48,30,.62),rgba(9,48,30,.28)),url(${slides[active]})`, transition: "background-image .65s ease" }}>
     <div className="home-shell home-hero__content" key={active} style={{ animation: "fadeSlideIn .55s ease" }}>
       <span className="home-eyebrow">{text.eyebrow}</span><h1>{text.title.split(" ").slice(0, 2).join(" ")}<br /><span>{text.title.split(" ").slice(2).join(" ")}</span></h1><p>{text.body}</p>
       <div className="home-actions"><Link className="home-btn home-btn--gold" to="/member/register"><Users size={18} /> Become a Member</Link><Link className="home-btn home-btn--outline" to="/matrimonial">Matrimonial Services <ArrowRight size={18} /></Link></div>
