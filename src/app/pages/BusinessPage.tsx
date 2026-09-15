@@ -269,7 +269,7 @@ export function BusinessPage() {
                         }}
                       >
                         {hasLogo ? (
-                          <img src={b.logoUrl} alt={b.businessName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <img src={b.logoUrl} alt={b.businessName} style={{ width: "100%", height: "100%", objectFit: "contain", padding: 4, boxSizing: "border-box" }} />
                         ) : (
                           <Briefcase size={24} color="#aaa" />
                         )}
@@ -301,7 +301,7 @@ export function BusinessPage() {
                         }}
                       >
                         <p style={{ color: "#854d0e", fontSize: 12, fontWeight: 700, margin: "0 0 2px 0", textTransform: "uppercase" }}>
-                          Exclusive Member Discount
+                          Offer for Anjuman Members
                         </p>
                         <p style={{ color: "#1a1a1a", fontSize: 13, fontWeight: 600, margin: 0 }}>
                           {b.discountOffer}
@@ -343,7 +343,7 @@ export function BusinessPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 48, height: 48, borderRadius: 8, backgroundColor: "white", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", border: `2px solid ${GOLD}` }}>
                   {viewingBusiness.logoUrl ? (
-                    <img src={viewingBusiness.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <img src={viewingBusiness.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", padding: 4, boxSizing: "border-box" }} />
                   ) : (
                     <Briefcase size={20} color={GREEN} />
                   )}
@@ -377,7 +377,7 @@ export function BusinessPage() {
 
               {viewingBusiness.discountOffer && (
                 <div style={{ backgroundColor: "#fff9ef", border: `1px dashed ${GOLD}`, borderRadius: 8, padding: "12px 16px", marginBottom: 20 }}>
-                  <p style={{ color: "#854d0e", fontSize: 11, fontWeight: 700, margin: "0 0 2px 0", textTransform: "uppercase" }}>Exclusive Araian Member Offer</p>
+                  <p style={{ color: "#854d0e", fontSize: 11, fontWeight: 700, margin: "0 0 2px 0", textTransform: "uppercase" }}>Offer for Anjuman Members</p>
                   <p style={{ color: GREEN, fontSize: 14, fontWeight: 700, margin: 0 }}>{viewingBusiness.discountOffer}</p>
                 </div>
               )}
