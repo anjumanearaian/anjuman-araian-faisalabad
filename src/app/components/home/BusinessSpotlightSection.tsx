@@ -32,7 +32,8 @@ export default function BusinessSpotlightSection() {
   }, []);
 
   const display = useMemo(() => businesses.filter(isPlatinum).sort((a, b) => a.businessName.localeCompare(b.businessName)), [businesses]);
-  const sliderItems = display.length > 1 ? [...display, ...display] : display;
+  const shouldScroll = display.length > 4;
+  const sliderItems = shouldScroll ? [...display, ...display] : display;
 
   return <section className="home-section home-business-section home-business-slider-section">
     <div className="home-shell">
@@ -41,19 +42,21 @@ export default function BusinessSpotlightSection() {
         <Link to="/business">View Business Community <ArrowRight size={17} /></Link>
       </div>
       {display.length ? <div className="home-partner-slider" aria-label="Platinum business partners">
-        <div className={`home-partner-track ${display.length > 1 ? "home-partner-track--moving" : ""}`}>
+        <div className={`home-partner-track ${shouldScroll ? "home-partner-track--moving" : "home-partner-track--static"}`}>
           {sliderItems.map((business, index) => {
             const benefit = memberBenefit(business.discountOffer);
             const percent = discountPercent(business.discountOffer);
             return <Link to="/business" className="home-partner-card" key={`${business.id}-${index}`} aria-label={`${business.businessName} business listing`}>
-              {percent && <span className="home-partner-discount" aria-label={`${percent}% member discount`}>
-                <b>{percent}%</b>
-                <small>OFF</small>
-              </span>}
-              <div className="home-partner-logo">{business.logoUrl ? <img src={business.logoUrl} alt={`${business.businessName} logo`} /> : <Building2 size={32} />}</div>
+              <div className="home-partner-logo">
+                {business.logoUrl ? <img src={business.logoUrl} alt={`${business.businessName} logo`} /> : <Building2 size={32} />}
+                {percent && <span className="home-partner-discount" aria-label={`${percent}% discount for Anjuman members`}>
+                  <b>{percent}%</b>
+                  <small>OFF</small>
+                </span>}
+              </div>
               <strong className="home-partner-name">{business.businessName}</strong>
               <div className={`home-partner-benefit ${benefit ? "" : "home-partner-benefit--default"}`} title={benefit || undefined}>
-                {percent ? "Member discount" : benefit || "Platinum member"}
+                {percent ? "Discount for Anjuman members" : benefit || "Platinum member"}
               </div>
             </Link>;
           })}
