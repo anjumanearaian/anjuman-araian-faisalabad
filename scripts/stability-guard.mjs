@@ -37,6 +37,18 @@ for (const file of [".env", ".env.local", ".env.production", ".env.production.lo
   check(!fs.existsSync(full(file)), `secret file is not committed: ${file}`);
 }
 
+// Homepage hero autoplay is an accepted production behavior. It must continue
+// cycling when the pointer is resting over the hero while manual controls remain.
+const heroSection = read("src/app/components/home/HeroSection.tsx");
+check(
+  heroSection.includes("window.setInterval") && heroSection.includes("setActive") && heroSection.includes("slides.length < 2"),
+  "homepage hero autoplay remains enabled",
+);
+check(
+  !heroSection.includes("setPaused(true)") && !heroSection.includes("onMouseEnter={() => setPaused"),
+  "homepage hero autoplay is not disabled by desktop hover",
+);
+
 // Central display normalization is a locked invariant for member/matrimonial consistency.
 contains(
   "src/app/lib/displayFormat.ts",
