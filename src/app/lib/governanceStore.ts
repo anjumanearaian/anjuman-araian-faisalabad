@@ -87,6 +87,16 @@ function normalizeAttendance<T extends MeetingAttendance>(entry: T): T {
   return { ...entry, member: normalizeGovernanceMember(entry.member) } as T;
 }
 
+function compareAssignments(a: OrganizationAssignment, b: OrganizationAssignment) {
+  if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+  const rankA = Number.isFinite(Number(a.rank)) ? Number(a.rank) : 999;
+  const rankB = Number.isFinite(Number(b.rank)) ? Number(b.rank) : 999;
+  if (rankA !== rankB) return rankA - rankB;
+  const unitCompare = String(a.organization?.name || "").localeCompare(String(b.organization?.name || ""), "en", { sensitivity: "base" });
+  if (unitCompare !== 0) return unitCompare;
+  return String(a.member?.fullName || "").localeCompare(String(b.member?.fullName || ""), "en", { sensitivity: "base" });
+}
+
 export const fetchGovernanceSummary = () => apiClient<GovernanceSummary>("/governance/summary");
 export const fetchOrganizationUnits = () => apiClient<OrganizationUnit[]>("/governance/units");
 export const createOrganizationUnit = (data: Partial<OrganizationUnit>) => apiClient<OrganizationUnit>("/governance/units", { method: "POST", body: JSON.stringify(data) });
@@ -95,7 +105,7 @@ export const archiveOrganizationUnit = (id: string) => apiClient(`/governance/un
 
 export async function fetchOrganizationAssignments() {
   const rows = await apiClient<OrganizationAssignment[]>("/governance/assignments");
-  return (rows || []).map(normalizeAssignment);
+  return (rows || []).map(normalizeAssignment).sort(compareAssignments);
 }
 
 export async function createOrganizationAssignment(data: Partial<OrganizationAssignment>) {
