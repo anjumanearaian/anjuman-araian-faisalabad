@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, CalendarDays, Clock3, MapPin, Tag } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, CalendarDays, Clock3, Images, MapPin, Play, Tag } from "lucide-react";
 import { EventItem, NewsItem, fetchPublishedContentHub } from "../lib/contentStore";
 import { excerptFromHtml, stripHtml } from "../lib/contentSeo";
 import { ResponsiveImage } from "../components/ui/ResponsiveImage";
 import { LightboxGallery } from "../components/ui/LightboxGallery";
 import { PageHeader } from "../components/PageHeader";
+import { fetchMediaAlbums, MediaAlbum } from "../lib/mediaStore";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
@@ -65,6 +66,7 @@ export function ContentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
+  const [relatedAlbum, setRelatedAlbum] = useState<MediaAlbum | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +82,27 @@ export function ContentDetailPage() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [id]);
+
+  useEffect(() => {
+    if (!item || item.type === "event" || !String(item.category || "").toLowerCase().includes("report")) {
+      setRelatedAlbum(null);
+      return;
+    }
+    let active = true;
+    fetchMediaAlbums()
+      .then((albums) => {
+        if (!active) return;
+        const images = new Set(item.images || []);
+        let match = albums.find((album) => album.photos.some((photo) => images.has(photo.url)));
+        if (!match) {
+          const sameDate = albums.filter((album) => String(album.date).slice(0, 10) === String(item.date).slice(0, 10));
+          match = sameDate[0];
+        }
+        setRelatedAlbum(match || null);
+      })
+      .catch((error) => console.error("Failed to load related event media", error));
+    return () => { active = false; };
+  }, [item]);
 
   const body = useMemo(() => item ? bodyFor(item) : "", [item]);
 
@@ -185,6 +208,33 @@ export function ContentDetailPage() {
         )}
 
         <div className="content-detail-body" dir="auto" style={{ color: "#3f4741", fontSize: 16, lineHeight: 1.9 }} dangerouslySetInnerHTML={{ __html: body }} />
+
+        {relatedAlbum && (
+          <section style={{ marginTop: 34, padding: 20, border: "1px solid #dfe7e1", borderRadius: 14, background: "#f8fbf9" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div>
+                <p style={{ margin: 0, color: GOLD, fontSize: 11, fontWeight: 900, letterSpacing: ".08em", textTransform: "uppercase" }}>Related Event Media</p>
+                <h2 style={{ margin: "5px 0 6px", color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 23 }}>{relatedAlbum.title}</h2>
+                <p style={{ margin: 0, color: "#69716b", fontSize: 13 }}>
+                  <Images size={14} style={{ verticalAlign: "middle", marginRight: 5 }} /> {relatedAlbum.photos.length} photos
+                  {relatedAlbum.videos.length > 0 && <> &nbsp; <Play size={13} style={{ verticalAlign: "middle", marginRight: 4 }} /> {relatedAlbum.videos.length} video</>}
+                </p>
+              </div>
+              <Link to={`/media?album=${encodeURIComponent(relatedAlbum.key)}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "white", background: GREEN, padding: "9px 13px", borderRadius: 8, textDecoration: "none", fontSize: 12, fontWeight: 800 }}>
+                Open Full Media Album <ArrowUpRight size={14} />
+              </Link>
+            </div>
+            {relatedAlbum.photos.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10, marginTop: 16 }}>
+                {relatedAlbum.photos.slice(0, 2).map((photo) => (
+                  <Link key={photo.id} to={`/media?album=${encodeURIComponent(relatedAlbum.key)}`} style={{ display: "block", borderRadius: 9, overflow: "hidden" }}>
+                    <ResponsiveImage src={photo.url} alt={photo.caption || relatedAlbum.title} widthHint={640} sizes="(max-width: 650px) 50vw, 500px" style={{ width: "100%", aspectRatio: "1200 / 630", objectFit: "cover", display: "block" }} />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {images.length > 1 && (
           <div style={{ marginTop: 34 }}>
