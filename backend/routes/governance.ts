@@ -217,26 +217,17 @@ router.get("/meetings/:id/document.pdf", requireAdmin, async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-router.get("/public/meetings/:id/document.pdf", async (req, res, next) => {
-  try {
-    const id = String(req.params.id);
-    const requested = String(req.query.type || "minutes").toLowerCase() as MeetingDocumentType;
-    const type = DOCUMENT_TYPES.has(requested) ? requested : "minutes";
-    if (type === "attendance") return void res.status(403).json({ error: "The detailed attendance sheet is restricted to authorized users." });
-    const meeting = await meetingForDocument(id);
-    if (!meeting || !meeting.published) return void res.status(404).json({ error: "Published meeting document not found." });
-    const mode = String(req.query.mode || "view").toLowerCase() === "download" ? "download" : "view";
-    return void sendMeetingPdf(res, meeting, type, mode);
-  } catch (error) { next(error); }
+router.get("/public/meetings/:id/document.pdf", (_req, res) => {
+  res.status(404).json({ error: "Meeting records are internal and are not publicly available." });
 });
 
-router.put("/meetings/:id/publish-minutes", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.put("/meetings/:id/finalize-minutes", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
     const current = await prisma.governanceMeeting.findUnique({ where: { id } });
     if (!current) return void res.status(404).json({ error: "Meeting not found." });
     if (!String(current.minutes || "").trim() && !(await prisma.meetingAgendaItem.count({ where: { meetingId: id, decision: { not: null } } }))) {
-      return void res.status(400).json({ error: "Complete the meeting minutes or record agenda decisions before publishing." });
+      return void res.status(400).json({ error: "Complete the meeting minutes or record agenda decisions before finalizing the official record." });
     }
     if (!current.chairName || !current.chairDesignation) {
       return void res.status(400).json({ error: "Confirm the presiding officer before publishing the minutes." });
@@ -257,17 +248,19 @@ router.put("/meetings/:id/publish-minutes", requireAdmin, async (req: Request, r
       where: { id },
       data: {
         status: "held",
-        minutesStatus: "published",
-        published: true,
+        minutesStatus: "finalized",
+        published: false,
         preparedByName,
         approvedByName,
         approvedAt: new Date(),
-        publishedAt: new Date(),
+        publishedAt: null,
       },
       include: { organization: { select: { id: true, name: true, type: true } } },
     });
-    const contentId = await syncPublicMeetingContent(row);
-    res.json({ ...mapMeeting(row), contentId, publishedBy: user.username || user.email || user.role || "Admin" });
+    if (row.contentId) {
+      try { await prisma.content.update({ where: { id: row.contentId }, data: { status: "draft" } }); } catch {}
+    }
+    res.json({ ...mapMeeting(row), finalizedBy: user.username || user.email || user.role || "Admin" });
   } catch (error) { next(error); }
 });
 
@@ -457,16 +450,13 @@ router.post("/meetings", requireAdmin, async (req: Request, res: Response, next:
     let row = await prisma.governanceMeeting.create({
       data: {
         ...data,
+        published: false,
         images: JSON.stringify(data.images || []),
         createdByAdminId: user.id ? String(user.id) : null,
         createdByName: user.username || user.email || user.role || "Admin",
       },
       include: { organization: { select: { id: true, name: true, type: true } } },
     });
-    if (row.published) {
-      const contentId = await syncPublicMeetingContent(row);
-      row = { ...row, contentId } as any;
-    }
     res.status(201).json(mapMeeting(row));
   } catch (error) { next(error); }
 });
@@ -476,12 +466,11 @@ router.put("/meetings/:id", requireAdmin, async (req, res, next) => {
     const data = MeetingSchema.parse(req.body);
     let row = await prisma.governanceMeeting.update({
       where: { id: String(req.params.id) },
-      data: { ...data, images: JSON.stringify(data.images || []) },
+      data: { ...data, published: false, images: JSON.stringify(data.images || []) },
       include: { organization: { select: { id: true, name: true, type: true } } },
     });
-    if (row.published || row.contentId) {
-      const contentId = await syncPublicMeetingContent(row);
-      row = { ...row, contentId } as any;
+    if (row.contentId) {
+      try { await prisma.content.update({ where: { id: row.contentId }, data: { status: "draft" } }); } catch {}
     }
     res.json(mapMeeting(row));
   } catch (error) { next(error); }
