@@ -235,7 +235,16 @@ router.put("/meetings/:id/publish-minutes", requireAdmin, async (req: Request, r
       return void res.status(400).json({ error: "Confirm the presiding officer before publishing the minutes." });
     }
     const user: any = (req as any).user || {};
-    const preparedByName = String(req.body?.preparedByName || current.preparedByName || "").trim() || "General Secretary / Authorized Officer";
+    let defaultSecretaryName = "";
+    if (current.organizationId) {
+      const secretary = await prisma.organizationAssignment.findFirst({
+        where: { organizationId: current.organizationId, isActive: true, role: { equals: "General Secretary", mode: "insensitive" }, member: { status: "approved" } },
+        include: { member: { select: { fullName: true } } },
+        orderBy: [{ rank: "asc" }, { createdAt: "asc" }],
+      });
+      defaultSecretaryName = secretary?.member?.fullName || "";
+    }
+    const preparedByName = String(req.body?.preparedByName || current.preparedByName || defaultSecretaryName).trim() || "General Secretary / Authorized Officer";
     const approvedByName = String(req.body?.approvedByName || current.approvedByName || current.chairName).trim();
     const row = await prisma.governanceMeeting.update({
       where: { id },
