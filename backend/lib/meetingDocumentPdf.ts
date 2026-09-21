@@ -187,7 +187,7 @@ class Composer {
     c.push(textCmd("F1", 8.5, 255, 45, "info@anjumanearaian.org | www.anjumanearaian.org", GREY));
     c.push(textCmd("F1", 8.5, 520, 45, `Page ${this.pageIndex + 1}`, GREY));
   }
-  private newPage() { this.pages.push([]); this.pageIndex++; this.y = TOP; this.header(); }
+  newPage() { this.pages.push([]); this.pageIndex++; this.y = TOP; this.header(); }
   ensure(height: number) { if (this.y - height < BOTTOM) this.newPage(); }
   heading(text: string, level = 1) {
     const size = level === 1 ? 17 : level === 2 ? 12.5 : 10.5;
@@ -362,11 +362,11 @@ export function createMeetingDocumentPdf(data: MeetingPdfData, type: MeetingDocu
   const composer = new Composer(data,type);
   if (type === "package") {
     buildSection(composer,data,"notice");
-    composer["newPage"]();
+    composer.newPage();
     buildSection(composer,data,"attendance");
-    composer["newPage"]();
+    composer.newPage();
     buildSection(composer,data,"minutes");
-    composer["newPage"]();
+    composer.newPage();
     buildSection(composer,data,"decisions");
   } else buildSection(composer,data,type);
 
