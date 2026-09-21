@@ -11,7 +11,7 @@ import {
   createOrganizationAssignment, createOrganizationUnit, fetchGovernanceMeetings,
   fetchGovernanceSummary, fetchOrganizationAssignments, fetchOrganizationUnits,
   GovernanceMeeting, GovernanceSummary, MeetingAttendance, OrganizationAssignment, OrganizationUnit,
-  OrganizationUnitType, fetchMeetingAttendance, saveMeetingAttendance, updateGovernanceMeeting, updateOrganizationAssignment, updateOrganizationUnit,
+  OrganizationUnitType, fetchMeetingAttendance, initializeMeetingAttendance, saveMeetingAttendance, fetchChairSuggestion, confirmMeetingChair, meetingDocumentUrl, finalizeMeetingMinutes, MeetingDocumentType, updateGovernanceMeeting, updateOrganizationAssignment, updateOrganizationUnit,
 } from "../lib/governanceStore";
 import { createOverseasChapter, deleteOverseasChapter, fetchOverseasChapters, OverseasChapter, updateOverseasChapter } from "../lib/overseasStore";
 import { createFinanceTransaction, fetchFinanceLedger, fetchFinanceMembers, fetchFinanceSummary, financeReceiptUrl, FinanceLedgerRow, FinanceSummary, voidFinanceTransaction } from "../lib/financeStore";
@@ -27,31 +27,35 @@ const BORDER = "#e8e2d7";
 type CenterTab = "overview" | "members" | "structure" | "meetings" | "overseas" | "finance";
 
 const roleSuggestions = [
-  "President", "Chairman", "Senior Vice President", "Vice President", "General Secretary", "Joint Secretary",
-  "Finance Secretary", "Assistant Finance Secretary", "Information Secretary", "Welfare Secretary",
-  "Chief Election Commissioner", "Election Commissioner", "Media Coordinator", "Media Executive",
-  "Executive Member", "Committee Convener", "Committee Co-Convener", "Committee Secretary", "Coordinator", "Member",
+  "President", "General Secretary", "Senior Vice President - Overseas", "Senior Vice President - Legal",
+  "Senior Vice President", "Vice President", "Information Secretary", "Finance Secretary", "Joint Secretary",
+  "Deputy Secretary", "Media Coordinator", "Chief Election Commissioner", "Senior Executive Member",
+  "Executive Member", "Chairman", "Assistant Finance Secretary", "Welfare Secretary", "Election Commissioner",
+  "Committee Convener", "Committee Co-Convener", "Committee Secretary", "Coordinator", "Member",
 ];
 const roleRanks: Record<string, number> = {
-  President: 10,
-  Chairman: 15,
-  "Senior Vice President": 20,
-  "Vice President": 30,
-  "General Secretary": 40,
-  "Finance Secretary": 50,
-  "Joint Secretary": 60,
-  "Assistant Finance Secretary": 65,
-  "Information Secretary": 70,
+  President: 1,
+  "General Secretary": 2,
+  "Senior Vice President - Overseas": 3,
+  "Senior Vice President - Legal": 4,
+  "Senior Vice President": 5,
+  "Vice President": 6,
+  "Information Secretary": 9,
+  "Finance Secretary": 10,
+  "Joint Secretary": 11,
+  "Deputy Secretary": 12,
+  "Media Coordinator": 13,
+  "Chief Election Commissioner": 14,
+  "Senior Executive Member": 15,
+  "Executive Member": 16,
+  Chairman: 20,
+  "Assistant Finance Secretary": 50,
   "Welfare Secretary": 80,
-  "Chief Election Commissioner": 85,
   "Election Commissioner": 90,
   "Committee Convener": 100,
   "Committee Co-Convener": 105,
   "Committee Secretary": 110,
-  "Media Coordinator": 120,
-  "Media Executive": 130,
   Coordinator: 140,
-  "Executive Member": 150,
   Member: 200,
 };
 const defaultRoleRank = (role: string) => roleRanks[role] ?? 180;
@@ -99,7 +103,7 @@ export function AdminOperationsCenterPage() {
   const [attendanceMeetingId, setAttendanceMeetingId] = useState("");
   const [attendanceMeetingTitle, setAttendanceMeetingTitle] = useState("");
   const [attendanceRows, setAttendanceRows] = useState<MeetingAttendance[]>([]);
-  const [attendanceEntry, setAttendanceEntry] = useState<{ memberId: string; status: MeetingAttendance["status"]; remarks: string }>({ memberId: "", status: "present", remarks: "" });
+  const [attendanceEntry, setAttendanceEntry] = useState<{ memberId: string; attendeeType: MeetingAttendance["attendeeType"]; guestName: string; guestDesignation: string; status: MeetingAttendance["status"]; remarks: string }>({ memberId: "", attendeeType: "member", guestName: "", guestDesignation: "", status: "present", remarks: "" });
   const [chapterForm, setChapterForm] = useState({ id: "", countryCode: "PK", country: "Pakistan", flag: "🇵🇰", city: "", established: "", coordinator: "", phone: "", email: "", members: 0 });
   const [financeForm, setFinanceForm] = useState({ type: "revenue" as "revenue" | "expense" | "adjustment", direction: "credit" as "credit" | "debit", memberId: "", partyName: "", category: "Membership Fee", amount: "", paymentMethod: "Cash", cashBookNo: "", externalReference: "", description: "", transactionDate: new Date().toISOString().slice(0, 10) });
   const [financeQuery, setFinanceQuery] = useState("");
@@ -208,15 +212,50 @@ export function AdminOperationsCenterPage() {
       setAttendanceMeetingId(meeting.id);
       setAttendanceMeetingTitle(meeting.title);
       setAttendanceRows(rows);
-      setAttendanceEntry({ memberId: "", status: "present", remarks: "" });
+      setAttendanceEntry({ memberId: "", attendeeType: "member", guestName: "", guestDesignation: "", status: "present", remarks: "" });
     } catch (e: any) { setError(e.message || "Could not load meeting attendance."); }
   }
   function addAttendanceDraft() {
-    const member = approvedMembers.find((m) => m.id === attendanceEntry.memberId);
-    if (!member) { setError("Select an approved member for attendance."); return; }
-    const row: MeetingAttendance = { memberId: member.id, status: attendanceEntry.status, remarks: attendanceEntry.remarks || null, member: { id: member.id, memberNo: member.memberNo, fullName: member.fullName } };
-    setAttendanceRows((current) => current.some((x) => x.memberId === member.id) ? current.map((x) => x.memberId === member.id ? { ...x, ...row } : x) : [...current, row]);
-    setAttendanceEntry({ memberId: "", status: "present", remarks: "" });
+    if (attendanceEntry.attendeeType === "member") {
+      const member = approvedMembers.find((m) => m.id === attendanceEntry.memberId);
+      if (!member) { setError("Select an approved member for attendance."); return; }
+      const row: MeetingAttendance = { memberId: member.id, attendeeType: "member", status: attendanceEntry.status, remarks: attendanceEntry.remarks || null, member: { id: member.id, memberNo: member.memberNo, fullName: member.fullName } };
+      setAttendanceRows((current) => current.some((x) => x.memberId === member.id) ? current.map((x) => x.memberId === member.id ? { ...x, ...row } : x) : [...current, row]);
+    } else {
+      if (!attendanceEntry.guestName.trim()) { setError("Enter the guest / volunteer name."); return; }
+      const row: MeetingAttendance = {
+        attendeeType: attendanceEntry.attendeeType,
+        guestName: attendanceEntry.guestName.trim(),
+        guestDesignation: attendanceEntry.guestDesignation.trim() || null,
+        status: attendanceEntry.status,
+        remarks: attendanceEntry.remarks || null,
+        memberId: null,
+      };
+      setAttendanceRows((current) => [...current, row]);
+    }
+    setAttendanceEntry({ memberId: "", attendeeType: "member", guestName: "", guestDesignation: "", status: "present", remarks: "" });
+  }
+  async function loadOfficialRoster() {
+    if (!attendanceMeetingId) return;
+    setError("");
+    try {
+      const result = await initializeMeetingAttendance(attendanceMeetingId);
+      const refreshed = await fetchMeetingAttendance(attendanceMeetingId);
+      setAttendanceRows(refreshed);
+      flash(`${result.count} official member(s) loaded for attendance.`);
+    } catch (e: any) { setError(e.message || "Could not load the official meeting roster."); }
+  }
+  async function suggestAndConfirmChair() {
+    if (!attendanceMeetingId) return;
+    setError("");
+    try {
+      const result = await fetchChairSuggestion(attendanceMeetingId);
+      if (!result.suggestion) { setError("No eligible present office bearer was found for chairperson."); return; }
+      const c = result.suggestion;
+      if (!confirm(`Use ${c.name} (${c.designation}) as chairperson for this meeting?`)) return;
+      await confirmMeetingChair(attendanceMeetingId, c);
+      flash(`Chairperson confirmed: ${c.name}.`);
+    } catch (e: any) { setError(e.message || "Could not determine the meeting chairperson."); }
   }
   async function persistAttendance() {
     if (!attendanceMeetingId) return;
@@ -229,6 +268,44 @@ export function AdminOperationsCenterPage() {
       setMeetings(meetingRows);
       flash("Meeting attendance saved.");
     } catch (e: any) { setError(e.message || "Could not save meeting attendance."); }
+  }
+
+  async function meetingPdfAction(meeting: GovernanceMeeting, type: MeetingDocumentType, action: "view" | "download" | "print") {
+    setError("");
+    try {
+      const response = await fetch(meetingDocumentUrl(meeting.id, type, action === "download" ? "download" : "view"), {
+        headers: { Authorization: `Bearer ${sessionStorage.getItem("araian_admin_token") || ""}` },
+      });
+      if (!response.ok) {
+        let message = "Meeting PDF could not be generated.";
+        try { const body = await response.json(); message = body?.error || message; } catch {}
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (action === "download") {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${meeting.date || "meeting"}-${type}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+        return;
+      }
+      const w = window.open(url, "_blank", "noopener,noreferrer");
+      if (!w) throw new Error("Allow pop-ups to view or print the PDF.");
+      if (action === "print") window.setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 1200);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e: any) { setError(e.message || "Meeting PDF could not be opened."); }
+  }
+
+  async function finalizeMinutesNow(meeting: GovernanceMeeting) {
+    if (!confirm("Finalize these minutes as the official internal record? This does not publish the meeting publicly.")) return;
+    setError("");
+    try {
+      await finalizeMeetingMinutes(meeting.id);
+      await loadAll();
+      flash("Official internal meeting record finalized.");
+    } catch (e: any) { setError(e.message || "Could not finalize the meeting minutes."); }
   }
 
   async function saveMeeting() {
@@ -330,16 +407,95 @@ export function AdminOperationsCenterPage() {
       </div>}
 
       {!loading && tab === "meetings" && <div style={{ display: "grid", gap: 18 }}>
-        <div style={panel}><h2 style={{ color: GREEN, fontFamily: "Playfair Display,serif", marginTop: 0 }}>{meetingForm.id ? "Update Meeting, Minutes & Photos" : "Create Meeting Notice"}</h2><p style={{ color:"#777",fontSize:12 }}>A meeting starts as an announcement. After it is held, update the same record with minutes, attendance and photos instead of creating a duplicate meeting.</p><div className="ops-grid3" style={{ display:"grid",gridTemplateColumns:"1.5fr 1fr 1fr",gap:12 }}>
+        <div style={panel}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+            <div>
+              <h2 style={{ color: GREEN, fontFamily: "Playfair Display,serif", margin:"0 0 4px" }}>{meetingForm.id ? "Update Meeting, Minutes & Photos" : "Create Meeting Notice"}</h2>
+              <p style={{ color:"#777",fontSize:12,margin:"0 0 12px" }}>A meeting starts as an announcement. After it is held, update the same record with minutes, attendance and photos instead of creating a duplicate meeting.</p>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:620}}>
+              {meetingForm.id ? (()=>{ const current=meetings.find(x=>x.id===meetingForm.id); return current ? <>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"notice","print")}><FileText size={12}/> Print Notice</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"agenda","print")}><FileText size={12}/> Print Agenda</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"attendance","print")}><Users size={12}/> Print Attendance</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"minutes","print")}><FileText size={12}/> Print Minutes</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"package","download")}><Download size={12}/> Complete File</button>
+              </> : null; })() : <span style={{fontSize:11,color:"#888",padding:"8px 2px"}}>Save the meeting first to enable official PDF / print.</span>}
+            </div>
+          </div>
+          <div className="ops-grid3" style={{ display:"grid",gridTemplateColumns:"1.5fr 1fr 1fr",gap:12 }}>
           <Field labelText="Meeting title"><input style={field} value={meetingForm.title} onChange={(e)=>setMeetingForm({...meetingForm,title:e.target.value})}/></Field>
           <Field labelText="Meeting type"><select style={field} value={meetingForm.meetingType} onChange={(e)=>setMeetingForm({...meetingForm,meetingType:e.target.value as any})}><option value="meeting">Meeting</option><option value="agm">Annual General Meeting</option><option value="committee">Committee Meeting</option><option value="emergency">Emergency Meeting</option><option value="other">Other</option></select></Field>
           <Field labelText="Committee / unit"><select style={field} value={meetingForm.organizationId} onChange={(e)=>setMeetingForm({...meetingForm,organizationId:e.target.value})}><option value="">General / no unit</option>{activeUnits.map((u)=><option value={u.id} key={u.id}>{u.name}</option>)}</select></Field>
           <Field labelText="Date"><input type="date" style={field} value={meetingForm.date} onChange={(e)=>setMeetingForm({...meetingForm,date:e.target.value})}/></Field><Field labelText="Time"><input type="time" style={field} value={meetingForm.time} onChange={(e)=>setMeetingForm({...meetingForm,time:e.target.value})}/></Field><Field labelText="Venue"><input style={field} value={meetingForm.venue} onChange={(e)=>setMeetingForm({...meetingForm,venue:e.target.value})}/></Field>
           <Field labelText="Status"><select style={field} value={meetingForm.status} onChange={(e)=>setMeetingForm({...meetingForm,status:e.target.value as any})}><option value="announced">Announced / Upcoming</option><option value="held">Held / Completed</option><option value="postponed">Postponed</option><option value="cancelled">Cancelled</option></select></Field>
-          <Field labelText="Publish"><select style={field} value={meetingForm.published ? "yes":"no"} onChange={(e)=>setMeetingForm({...meetingForm,published:e.target.value==="yes"})}><option value="no">Internal / Draft</option><option value="yes">Public</option></select></Field>
+          <Field labelText="Public meeting information"><select style={field} value={meetingForm.published ? "yes":"no"} onChange={(e)=>setMeetingForm({...meetingForm,published:e.target.value==="yes"})}><option value="no">Internal / Draft</option><option value="yes">Public Notice & Agenda Only</option></select></Field>
         </div><div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}><Field labelText="Meeting notice"><textarea style={{...field,minHeight:105}} value={meetingForm.notice} onChange={(e)=>setMeetingForm({...meetingForm,notice:e.target.value})}/></Field><Field labelText="Agenda"><textarea style={{...field,minHeight:105}} value={meetingForm.agenda} onChange={(e)=>setMeetingForm({...meetingForm,agenda:e.target.value})}/></Field><Field labelText="Minutes / decisions"><textarea style={{...field,minHeight:105}} value={meetingForm.minutes} onChange={(e)=>setMeetingForm({...meetingForm,minutes:e.target.value})} placeholder="Complete after the meeting"/></Field></div><div style={{marginTop:12}}><MultiImageUpload label="Meeting Photos" images={meetingForm.images} onChange={(images)=>setMeetingForm({...meetingForm,images})} maxFiles={20}/></div><div style={{display:"flex",gap:8,marginTop:14}}><button disabled={!databaseReady || meetingForm.title.trim().length<3 || !meetingForm.date} style={primary} onClick={()=>void saveMeeting()}><Save size={14}/> {meetingForm.id?"Update Meeting":"Save Meeting"}</button>{meetingForm.id&&<button style={secondary} onClick={()=>setMeetingForm({ id:"",organizationId:"",title:"",meetingType:"meeting",date:"",time:"",venue:"",status:"announced",notice:"",agenda:"",minutes:"",images:[],published:false })}>Cancel</button>}</div></div>
-        {attendanceMeetingId && <div style={panel}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}><div><h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:0}}>Meeting Attendance</h2><p style={{fontSize:12,color:"#777",margin:"4px 0 0"}}>{attendanceMeetingTitle} · {attendanceRows.length} attendance record(s)</p></div><button style={secondary} onClick={()=>{setAttendanceMeetingId("");setAttendanceMeetingTitle("");setAttendanceRows([]);}}>Close</button></div><div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1.5fr .7fr 1.5fr",gap:10,alignItems:"end"}}><Field labelText="Approved member"><select style={field} value={attendanceEntry.memberId} onChange={(e)=>setAttendanceEntry({...attendanceEntry,memberId:e.target.value})}><option value="">Select member</option>{approvedMembers.map((m)=><option key={m.id} value={m.id}>{m.fullName} · {m.memberNo}</option>)}</select></Field><Field labelText="Status"><select style={field} value={attendanceEntry.status} onChange={(e)=>setAttendanceEntry({...attendanceEntry,status:e.target.value as MeetingAttendance["status"]})}><option value="present">Present</option><option value="absent">Absent</option><option value="excused">Excused</option></select></Field><Field labelText="Remarks"><input style={field} value={attendanceEntry.remarks} onChange={(e)=>setAttendanceEntry({...attendanceEntry,remarks:e.target.value})}/></Field></div><div style={{display:"flex",gap:8,marginBottom:12}}><button style={secondary} onClick={addAttendanceDraft}><Plus size={13}/> Add / Update Attendee</button><button style={primary} onClick={()=>void persistAttendance()}><Save size={13}/> Save Attendance</button></div><div className="ops-table-wrap"><table className="ops-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#f8f5ef"}}>{["Member","Status","Remarks","Action"].map((h)=><th key={h} style={{padding:"9px",textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{attendanceRows.map((a)=><tr key={a.memberId} style={{borderTop:`1px solid ${BORDER}`}}><td style={{padding:9}}><strong>{a.member?.fullName||approvedMembers.find(m=>m.id===a.memberId)?.fullName||"Member"}</strong><small style={{display:"block",color:"#999"}}>{a.member?.memberNo||approvedMembers.find(m=>m.id===a.memberId)?.memberNo||""}</small></td><td style={{padding:9}}><Status text={a.status} good={a.status==="present"}/></td><td style={{padding:9}}>{a.remarks||"-"}</td><td style={{padding:9}}><button style={secondary} onClick={()=>setAttendanceRows((rows)=>rows.filter((x)=>x.memberId!==a.memberId))}>Remove</button></td></tr>)}{!attendanceRows.length&&<tr><td colSpan={4} style={{padding:20,textAlign:"center",color:"#888"}}>No attendance recorded yet.</td></tr>}</tbody></table></div></div>}
-        <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.status} good={m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}><button style={secondary} onClick={()=>{setMeetingForm({id:m.id,organizationId:m.organizationId||"",title:m.title,meetingType:m.meetingType,date:m.date,time:m.time||"",venue:m.venue||"",status:m.status,notice:m.notice||"",agenda:m.agenda||"",minutes:m.minutes||"",images:m.images||[],published:m.published}); window.scrollTo({top:0,behavior:"smooth"});}}><Edit2 size={12}/> Open</button><button style={secondary} onClick={()=>void openAttendance(m)}><Users size={12}/> Attendance Records {m._count?.attendance?`(${m._count.attendance})`:""}</button></div></Td></tr>)}</DataTable>
+        {attendanceMeetingId && <div style={panel}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+            <div>
+              <h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:0}}>Live Meeting Attendance</h2>
+              <p style={{fontSize:12,color:"#777",margin:"4px 0 0"}}>{attendanceMeetingTitle} · {attendanceRows.length} attendee(s)</p>
+            </div>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+              <button style={secondary} onClick={()=>void loadOfficialRoster()}><Users size={13}/> Load Official Roster</button>
+              <button style={secondary} onClick={()=>void suggestAndConfirmChair()}><Crown size={13}/> Suggest Chair</button>
+              <button style={secondary} onClick={()=>{setAttendanceMeetingId("");setAttendanceMeetingTitle("");setAttendanceRows([]);}}>Close</button>
+            </div>
+          </div>
+
+          <div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1fr 1.5fr .8fr",gap:10,alignItems:"end"}}>
+            <Field labelText="Attendee type">
+              <select style={field} value={attendanceEntry.attendeeType} onChange={(e)=>setAttendanceEntry({...attendanceEntry,attendeeType:e.target.value as MeetingAttendance["attendeeType"],memberId:"",guestName:"",guestDesignation:""})}>
+                <option value="member">Official Member</option>
+                <option value="volunteer">Volunteer</option>
+                <option value="guest">Guest</option>
+                <option value="special_invitee">Special Invitee</option>
+                <option value="observer">Observer</option>
+              </select>
+            </Field>
+            {attendanceEntry.attendeeType==="member" ? <Field labelText="Approved member"><select style={field} value={attendanceEntry.memberId} onChange={(e)=>setAttendanceEntry({...attendanceEntry,memberId:e.target.value})}><option value="">Select member</option>{approvedMembers.map((m)=><option key={m.id} value={m.id}>{m.fullName} · {m.memberNo}</option>)}</select></Field> :
+              <Field labelText="Guest / volunteer name"><input style={field} value={attendanceEntry.guestName} onChange={(e)=>setAttendanceEntry({...attendanceEntry,guestName:e.target.value})} placeholder="Full name"/></Field>}
+            <Field labelText="Status"><select style={field} value={attendanceEntry.status} onChange={(e)=>setAttendanceEntry({...attendanceEntry,status:e.target.value as MeetingAttendance["status"]})}><option value="present">Present</option><option value="late">Late</option><option value="online">Online</option><option value="leave">Leave</option><option value="absent">Absent</option><option value="excused">Excused</option><option value="not_marked">Not Marked</option></select></Field>
+          </div>
+          {attendanceEntry.attendeeType!=="member" && <div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field labelText="Guest designation / role"><input style={field} value={attendanceEntry.guestDesignation} onChange={(e)=>setAttendanceEntry({...attendanceEntry,guestDesignation:e.target.value})}/></Field><Field labelText="Remarks"><input style={field} value={attendanceEntry.remarks} onChange={(e)=>setAttendanceEntry({...attendanceEntry,remarks:e.target.value})}/></Field></div>}
+          {attendanceEntry.attendeeType==="member" && <Field labelText="Remarks"><input style={field} value={attendanceEntry.remarks} onChange={(e)=>setAttendanceEntry({...attendanceEntry,remarks:e.target.value})}/></Field>}
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <button style={secondary} onClick={addAttendanceDraft}><Plus size={13}/> Add / Update Attendee</button>
+            <button style={primary} onClick={()=>void persistAttendance()}><Save size={13}/> Save Attendance</button>
+          </div>
+
+          <div style={{display:"flex",gap:12,flexWrap:"wrap",margin:"4px 0 12px",fontSize:12}}>
+            <strong>Present: {attendanceRows.filter(a=>["present","late","online"].includes(a.status)).length}</strong>
+            <span>Absent: {attendanceRows.filter(a=>a.status==="absent").length}</span>
+            <span>Leave/Excused: {attendanceRows.filter(a=>["leave","excused"].includes(a.status)).length}</span>
+            <span>Not marked: {attendanceRows.filter(a=>a.status==="not_marked").length}</span>
+          </div>
+
+          <div className="ops-table-wrap"><table className="ops-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{background:"#f8f5ef"}}>{["Attendee","Type","Status","Remarks","Action"].map((h)=><th key={h} style={{padding:"9px",textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+            <tbody>{attendanceRows.map((a,idx)=><tr key={a.id||a.memberId||`guest-${idx}-${a.guestName||""}`} style={{borderTop:`1px solid ${BORDER}`}}>
+              <td style={{padding:9}}><strong>{a.member?.fullName||approvedMembers.find(m=>m.id===a.memberId)?.fullName||a.guestName||"Attendee"}</strong><small style={{display:"block",color:"#999"}}>{a.member?.memberNo||approvedMembers.find(m=>m.id===a.memberId)?.memberNo||a.guestDesignation||""}</small></td>
+              <td style={{padding:9}}>{(a.attendeeType||"member").replace(/_/g," ")}</td>
+              <td style={{padding:9}}><select style={{...field,minHeight:34,padding:"5px 7px"}} value={a.status} onChange={(e)=>setAttendanceRows(rows=>rows.map((x,i)=>i===idx?{...x,status:e.target.value as MeetingAttendance["status"]}:x))}><option value="not_marked">Not Marked</option><option value="present">Present</option><option value="late">Late</option><option value="online">Online</option><option value="leave">Leave</option><option value="absent">Absent</option><option value="excused">Excused</option></select></td>
+              <td style={{padding:9}}><input style={{...field,minHeight:34,padding:"5px 7px"}} value={a.remarks||""} onChange={(e)=>setAttendanceRows(rows=>rows.map((x,i)=>i===idx?{...x,remarks:e.target.value}:x))}/></td>
+              <td style={{padding:9}}><button style={secondary} onClick={()=>setAttendanceRows((rows)=>rows.filter((_,i)=>i!==idx))}>Remove</button></td>
+            </tr>)}{!attendanceRows.length&&<tr><td colSpan={5} style={{padding:20,textAlign:"center",color:"#888"}}>No attendance loaded yet. Use “Load Official Roster” or add an attendee.</td></tr>}</tbody>
+          </table></div>
+        </div>}
+
+                <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.minutesStatus||m.status} good={m.minutesStatus==="finalized"||m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          <button style={secondary} onClick={()=>{setMeetingForm({id:m.id,organizationId:m.organizationId||"",title:m.title,meetingType:m.meetingType,date:m.date,time:m.time||"",venue:m.venue||"",status:m.status,notice:m.notice||"",agenda:m.agenda||"",minutes:m.minutes||"",images:m.images||[],published:m.published}); window.scrollTo({top:0,behavior:"smooth"});}}><Edit2 size={12}/> Open</button>
+          <button style={secondary} onClick={()=>void openAttendance(m)}><Users size={12}/> Take Attendance {m._count?.attendance?`(${m._count.attendance})`:""}</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"notice","view")}><FileText size={12}/> Notice PDF</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"agenda","view")}><FileText size={12}/> Agenda PDF</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"attendance","view")}><Users size={12}/> Attendance PDF</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","view")}><FileText size={12}/> Preview Minutes</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"package","download")}><Download size={12}/> Complete File</button>
+          {m.minutesStatus!=="finalized" && <button style={primary} onClick={()=>void finalizeMinutesNow(m)}>Finalize Official Record</button>}
+          {m.minutesStatus==="finalized" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","download")}><Download size={12}/> Download Final Minutes</button>}
+          {m.minutesStatus==="finalized" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","print")}><FileText size={12}/> Print</button>}
+        </div></Td></tr>)}</DataTable>
       </div>}
 
       {!loading && tab === "overseas" && <div style={{display:"grid",gap:18}}>

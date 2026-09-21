@@ -47,16 +47,36 @@ export interface GovernanceMeeting {
   minutes?: string | null;
   images: string[];
   published: boolean;
+  minutesStatus?: string;
+  chairName?: string | null;
+  chairDesignation?: string | null;
+  preparedByName?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  publishedAt?: string | null;
   _count?: { attendance: number };
 }
 
 export interface MeetingAttendance {
   id?: string;
   meetingId?: string;
-  memberId: string;
-  status: "present" | "absent" | "excused";
+  memberId?: string | null;
+  attendeeType: "member" | "volunteer" | "guest" | "special_invitee" | "observer";
+  guestName?: string | null;
+  guestDesignation?: string | null;
+  status: "not_marked" | "present" | "absent" | "leave" | "late" | "online" | "excused";
   remarks?: string | null;
+  markedByName?: string | null;
+  markedAt?: string | null;
   member?: { id: string; memberNo: string; fullName: string; city?: string; photoUrl?: string | null };
+}
+
+export interface ChairSuggestion {
+  memberId: string;
+  name: string;
+  designation: string;
+  priority: number;
+  rank: number;
 }
 
 export interface GovernanceSummary {
@@ -121,6 +141,38 @@ export async function fetchMeetingAttendance(meetingId: string) {
   return (rows || []).map(normalizeAttendance);
 }
 
-export const saveMeetingAttendance = (meetingId: string, entries: MeetingAttendance[]) => apiClient<{ message: string; count: number }>(`/governance/meetings/${meetingId}/attendance`, { method: "PUT", body: JSON.stringify({ entries: entries.map(({ memberId, status, remarks }) => ({ memberId, status, remarks: remarks || null })) }) });
+export const initializeMeetingAttendance = (meetingId: string) => apiClient<{ message: string; count: number }>(`/governance/meetings/${meetingId}/attendance/initialize`, { method: "POST" });
+
+export const saveMeetingAttendance = (meetingId: string, entries: MeetingAttendance[]) => apiClient<{ message: string; count: number }>(`/governance/meetings/${meetingId}/attendance`, {
+  method: "PUT",
+  body: JSON.stringify({
+    entries: entries.map(({ id, memberId, attendeeType, guestName, guestDesignation, status, remarks }) => ({
+      id,
+      memberId: memberId || null,
+      attendeeType: attendeeType || "member",
+      guestName: guestName || null,
+      guestDesignation: guestDesignation || null,
+      status,
+      remarks: remarks || null,
+    })),
+  }),
+});
+
+export const fetchChairSuggestion = (meetingId: string) => apiClient<{ suggestion: ChairSuggestion | null }>(`/governance/meetings/${meetingId}/chair-suggestion`);
+export const confirmMeetingChair = (meetingId: string, data: Pick<ChairSuggestion, "memberId" | "name" | "designation">) => apiClient(`/governance/meetings/${meetingId}/chair`, { method: "PUT", body: JSON.stringify(data) });
 
 export const bootstrapLegacyLeadership = () => apiClient<{ imported: number; skipped: number; message: string }>("/governance/bootstrap-legacy", { method: "POST" });
+
+
+export type MeetingDocumentType = "notice" | "agenda" | "attendance" | "minutes" | "decisions" | "package";
+
+export function meetingDocumentUrl(meetingId: string, type: MeetingDocumentType, mode: "view" | "download" = "view") {
+  return `/api/governance/meetings/${encodeURIComponent(meetingId)}/document.pdf?type=${encodeURIComponent(type)}&mode=${mode}`;
+}
+
+export function publicMeetingDocumentUrl(meetingId: string, type: Exclude<MeetingDocumentType, "attendance"> = "minutes") {
+  return `/api/governance/public/meetings/${encodeURIComponent(meetingId)}/document.pdf?type=${encodeURIComponent(type)}`;
+}
+
+export const finalizeMeetingMinutes = (meetingId: string, data?: { preparedByName?: string; approvedByName?: string }) =>
+  apiClient<GovernanceMeeting>(`/governance/meetings/${meetingId}/finalize-minutes`, { method: "PUT", body: JSON.stringify(data || {}) });

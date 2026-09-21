@@ -98,8 +98,8 @@ export function CabinetPage() {
         {!loading && members.length === 0 && <div style={{ textAlign: "center", color: "#7b867f", padding: 36, background: "#fafbf9", border: "1px dashed #d8dfda", borderRadius: 12 }}>No active Executive Council assignments are currently published.</div>}
 
         {!loading && groups.president.length > 0 && <div style={{ maxWidth: 330, margin: "0 auto" }}>{groups.president.map((member) => <MemberCard key={member.id} member={member} featured />)}</div>}
-        <Section title="Vice Presidents" members={groups.vicePresidents} columns={3} />
         <Section title="General Secretary" members={groups.generalSecretary} columns={2} />
+        <Section title="Senior & Vice Presidents" members={groups.vicePresidents} columns={3} />
         <Section title="Secretariat & Office Bearers" members={groups.secretariat} columns={4} />
         <Section title="Executive Members" members={groups.executives} columns={4} />
       </section>
