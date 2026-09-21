@@ -756,12 +756,14 @@ return (
             <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, margin: 0 }}>
               Announcements, News & Activities <span style={{ color: "#aaa", fontSize: 16, fontWeight: 400 }}>({news.length})</span>
             </h2>
-            <button onClick={openAddNews} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GREEN, color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-              <Plus size={16} /> Add Article
-            </button>
-            <button onClick={openAddReport} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GOLD, color: GREEN, border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer", marginLeft: 8 }}>
-              <Plus size={16} /> Add Event Report
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button onClick={openAddNews} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GREEN, color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                <Plus size={16} /> Add Article
+              </button>
+              <button onClick={openAddReport} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GOLD, color: GREEN, border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                <Plus size={16} /> Add Event Report
+              </button>
+            </div>
           </div>
 
           <div style={{ backgroundColor: "white", borderRadius: 12, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
