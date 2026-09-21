@@ -50,9 +50,20 @@ const MeetingSchema = z.object({
 });
 
 const AttendanceSchema = z.object({
-  memberId: z.string().uuid(),
-  status: z.enum(["present", "absent", "excused"]).default("present"),
+  id: z.string().uuid().optional(),
+  memberId: z.string().uuid().nullable().optional(),
+  attendeeType: z.enum(["member", "volunteer", "guest", "special_invitee", "observer"]).default("member"),
+  guestName: z.string().trim().max(180).nullable().optional(),
+  guestDesignation: z.string().trim().max(180).nullable().optional(),
+  status: z.enum(["not_marked", "present", "absent", "leave", "late", "online", "excused"]).default("not_marked"),
   remarks: z.string().max(1000).nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (value.attendeeType === "member" && !value.memberId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["memberId"], message: "Member is required." });
+  }
+  if (value.attendeeType !== "member" && !value.guestName?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["guestName"], message: "Guest or volunteer name is required." });
+  }
 });
 
 function parseImages(value: string | null | undefined): string[] {
@@ -377,29 +388,148 @@ router.get("/meetings/:id/attendance", requireAdmin, async (req, res, next) => {
     const rows = await prisma.meetingAttendance.findMany({
       where: { meetingId: String(req.params.id) },
       include: { member: { select: { id: true, memberNo: true, fullName: true, city: true, photoUrl: true } } },
-      orderBy: { member: { fullName: "asc" } },
+      orderBy: [{ attendeeType: "asc" }, { createdAt: "asc" }],
+    });
+    rows.sort((a: any, b: any) => {
+      const an = a.member?.fullName || a.guestName || "";
+      const bn = b.member?.fullName || b.guestName || "";
+      return an.localeCompare(bn);
     });
     res.json(rows);
   } catch (error) { next(error); }
 });
 
-router.put("/meetings/:id/attendance", requireAdmin, async (req, res, next) => {
+router.post("/meetings/:id/attendance/initialize", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const meetingId = String(req.params.id);
+    const meeting = await prisma.governanceMeeting.findUnique({ where: { id: meetingId }, select: { id: true, organizationId: true } });
+    if (!meeting) return void res.status(404).json({ error: "Meeting not found." });
+    if (!meeting.organizationId) return void res.status(400).json({ error: "Select a committee / unit before loading official members." });
+
+    const assignments = await prisma.organizationAssignment.findMany({
+      where: { organizationId: meeting.organizationId, isActive: true, member: { status: "approved" } },
+      select: { memberId: true },
+      orderBy: [{ rank: "asc" }, { createdAt: "asc" }],
+    });
+    if (!assignments.length) return void res.status(400).json({ error: "No active approved members are assigned to this committee / unit." });
+
+    await prisma.$transaction(assignments.map((a) => prisma.meetingAttendance.upsert({
+      where: { meetingId_memberId: { meetingId, memberId: a.memberId } },
+      update: {},
+      create: { meetingId, memberId: a.memberId, attendeeType: "member", status: "not_marked", source: "unit_roster" },
+    })));
+    res.json({ message: "Official meeting roster loaded.", count: assignments.length });
+  } catch (error) { next(error); }
+});
+
+router.put("/meetings/:id/attendance", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const meetingId = String(req.params.id);
+    const user: any = (req as any).user || {};
     const entries = z.array(AttendanceSchema).max(1000).parse(req.body?.entries || req.body || []);
-    const memberIds = entries.map((x) => x.memberId);
-    const approvedCount = await prisma.member.count({ where: { id: { in: memberIds }, status: "approved" } });
-    if (approvedCount !== new Set(memberIds).size) return void res.status(400).json({ error: "Attendance can only be recorded for approved members." });
-    const operations: any[] = [
-      prisma.meetingAttendance.deleteMany({ where: { meetingId, ...(memberIds.length ? { memberId: { notIn: memberIds } } : {}) } }),
-      ...entries.map((entry) => prisma.meetingAttendance.upsert({
-        where: { meetingId_memberId: { meetingId, memberId: entry.memberId } },
-        update: { status: entry.status, remarks: entry.remarks || null },
-        create: { meetingId, memberId: entry.memberId, status: entry.status, remarks: entry.remarks || null },
-      })),
-    ];
-    await prisma.$transaction(operations);
+    const memberIds = entries.map((x) => x.memberId).filter(Boolean) as string[];
+    if (memberIds.length) {
+      const approvedCount = await prisma.member.count({ where: { id: { in: memberIds }, status: "approved" } });
+      if (approvedCount !== new Set(memberIds).size) return void res.status(400).json({ error: "Attendance can only be recorded for approved members." });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const incomingGuestIds = entries.filter((x) => x.attendeeType !== "member" && x.id).map((x) => x.id!) as string[];
+      const incomingMemberIds = memberIds;
+
+      await tx.meetingAttendance.deleteMany({
+        where: {
+          meetingId,
+          OR: [
+            { memberId: { not: null }, ...(incomingMemberIds.length ? { memberId: { notIn: incomingMemberIds } } : {}) },
+            { memberId: null, ...(incomingGuestIds.length ? { id: { notIn: incomingGuestIds } } : {}) },
+          ],
+        },
+      });
+
+      for (const entry of entries) {
+        const common = {
+          status: entry.status,
+          remarks: entry.remarks?.trim() || null,
+          attendeeType: entry.attendeeType,
+          guestName: entry.attendeeType === "member" ? null : entry.guestName?.trim() || null,
+          guestDesignation: entry.attendeeType === "member" ? null : entry.guestDesignation?.trim() || null,
+          markedByAdminId: user.id ? String(user.id) : null,
+          markedByName: user.username || user.email || user.role || "Admin",
+          markedAt: entry.status === "not_marked" ? null : new Date(),
+          source: entry.attendeeType === "member" ? "manual" : "additional_attendee",
+        };
+        if (entry.memberId) {
+          await tx.meetingAttendance.upsert({
+            where: { meetingId_memberId: { meetingId, memberId: entry.memberId } },
+            update: common,
+            create: { meetingId, memberId: entry.memberId, ...common },
+          });
+        } else if (entry.id) {
+          await tx.meetingAttendance.update({ where: { id: entry.id }, data: common });
+        } else {
+          await tx.meetingAttendance.create({ data: { meetingId, memberId: null, ...common } });
+        }
+      }
+    });
     res.json({ message: "Attendance saved.", count: entries.length });
+  } catch (error) { next(error); }
+});
+
+router.get("/meetings/:id/chair-suggestion", requireAdmin, async (req, res, next) => {
+  try {
+    const meetingId = String(req.params.id);
+    const present = await prisma.meetingAttendance.findMany({
+      where: { meetingId, memberId: { not: null }, status: { in: ["present", "late", "online"] } },
+      include: { member: { select: { id: true, fullName: true } } },
+    });
+    if (!present.length) return void res.json({ suggestion: null });
+
+    const memberIds = present.map((x) => x.memberId!).filter(Boolean);
+    const assignments = await prisma.organizationAssignment.findMany({
+      where: { memberId: { in: memberIds }, isActive: true },
+      select: { memberId: true, role: true, rank: true },
+    });
+    const roles = await prisma.governanceRoleMaster.findMany({ where: { canChair: true, isActive: true } });
+    const priorityByDesignation = new Map(roles.map((r) => [r.designation.toLowerCase(), r.chairPriority ?? 999]));
+
+    const candidates = present.map((row) => {
+      const assignment = assignments
+        .filter((a) => a.memberId === row.memberId)
+        .sort((a, b) => (priorityByDesignation.get(a.role.toLowerCase()) ?? 999) - (priorityByDesignation.get(b.role.toLowerCase()) ?? 999) || a.rank - b.rank)[0];
+      return {
+        memberId: row.memberId,
+        name: row.member?.fullName || "",
+        designation: assignment?.role || "",
+        priority: assignment ? (priorityByDesignation.get(assignment.role.toLowerCase()) ?? 999) : 999,
+        rank: assignment?.rank ?? 999,
+      };
+    }).filter((x) => x.designation && x.priority < 999)
+      .sort((a, b) => a.priority - b.priority || a.rank - b.rank || a.name.localeCompare(b.name));
+
+    res.json({ suggestion: candidates[0] || null });
+  } catch (error) { next(error); }
+});
+
+router.put("/meetings/:id/chair", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const meetingId = String(req.params.id);
+    const memberId = String(req.body?.memberId || "");
+    const name = String(req.body?.name || "").trim();
+    const designation = String(req.body?.designation || "").trim();
+    if (!memberId || !name || !designation) return void res.status(400).json({ error: "Chair member, name and designation are required." });
+    const user: any = (req as any).user || {};
+    const row = await prisma.governanceMeeting.update({
+      where: { id: meetingId },
+      data: {
+        chairMemberId: memberId,
+        chairName: name,
+        chairDesignation: designation,
+        chairConfirmedByAdminId: user.id ? String(user.id) : null,
+        chairConfirmedAt: new Date(),
+      },
+    });
+    res.json(row);
   } catch (error) { next(error); }
 });
 
