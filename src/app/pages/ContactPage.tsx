@@ -44,7 +44,7 @@ export function ContactPage() {
       <div style={{ width: "100%", minHeight: 210, backgroundColor: "#fce8e6", display: "flex", alignItems: "center", justifyContent: "center", borderBottom: `3px solid ${GOLD}`, padding: "28px 20px", boxSizing: "border-box" }}>
         <div style={{ textAlign: "center", maxWidth: 760 }}>
           <MapPin size={36} color={GREEN} style={{ margin: "0 auto 8px" }} />
-          <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, margin: "0 0 14px" }}>Secretariat, Anjuman-e-Araian Faisalabad</p>
+          <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, margin: "0 0 14px" }}>Faisalabad</p>
           <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 14 }}>
             {leadershipContacts.map((contact) => (
               <a
@@ -69,9 +69,9 @@ export function ContactPage() {
             <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Get in Touch</h2>
             <div style={{ width: 48, height: 3, backgroundColor: GOLD, borderRadius: 2, marginBottom: 24 }} />
 
-            <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Secretariat</h3>
+            <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Faisalabad</h3>
             <div style={{ backgroundColor: "#f8f5ef", borderRadius: 10, padding: "18px", border: `1px solid rgba(200,160,74,0.2)` }}>
-              <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, margin: "0 0 14px" }}>Anjuman-e-Araian Faisalabad</p>
+              <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, margin: "0 0 14px" }}>Faisalabad</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {leadershipContacts.map((contact) => (
                   <div key={contact.role}>
