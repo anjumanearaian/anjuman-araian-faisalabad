@@ -47,6 +47,13 @@ export interface GovernanceMeeting {
   minutes?: string | null;
   images: string[];
   published: boolean;
+  minutesStatus?: string;
+  chairName?: string | null;
+  chairDesignation?: string | null;
+  preparedByName?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  publishedAt?: string | null;
   _count?: { attendance: number };
 }
 
@@ -155,3 +162,17 @@ export const fetchChairSuggestion = (meetingId: string) => apiClient<{ suggestio
 export const confirmMeetingChair = (meetingId: string, data: Pick<ChairSuggestion, "memberId" | "name" | "designation">) => apiClient(`/governance/meetings/${meetingId}/chair`, { method: "PUT", body: JSON.stringify(data) });
 
 export const bootstrapLegacyLeadership = () => apiClient<{ imported: number; skipped: number; message: string }>("/governance/bootstrap-legacy", { method: "POST" });
+
+
+export type MeetingDocumentType = "notice" | "agenda" | "attendance" | "minutes" | "decisions" | "package";
+
+export function meetingDocumentUrl(meetingId: string, type: MeetingDocumentType, mode: "view" | "download" = "view") {
+  return `/api/governance/meetings/${encodeURIComponent(meetingId)}/document.pdf?type=${encodeURIComponent(type)}&mode=${mode}`;
+}
+
+export function publicMeetingDocumentUrl(meetingId: string, type: Exclude<MeetingDocumentType, "attendance"> = "minutes") {
+  return `/api/governance/public/meetings/${encodeURIComponent(meetingId)}/document.pdf?type=${encodeURIComponent(type)}`;
+}
+
+export const publishMeetingMinutes = (meetingId: string, data?: { preparedByName?: string; approvedByName?: string }) =>
+  apiClient<GovernanceMeeting>(`/governance/meetings/${meetingId}/publish-minutes`, { method: "PUT", body: JSON.stringify(data || {}) });
