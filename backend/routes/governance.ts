@@ -95,7 +95,13 @@ function publicMeetingBody(item: any) {
   const parts: string[] = [];
   if (item.notice) parts.push(`<h2>Meeting Notice</h2><p>${escapeHtml(item.notice)}</p>`);
   if (item.agenda) parts.push(`<h2>Agenda</h2><p>${escapeHtml(item.agenda)}</p>`);
-  if (item.status === "held" && item.minutes) parts.push(`<h2>Minutes & Decisions</h2><p>${escapeHtml(item.minutes)}</p>`);
+  if (item.status === "held" && item.minutes) {
+    parts.push(`<h2>Minutes & Decisions</h2><p>${escapeHtml(item.minutes)}</p>`);
+    if (item.published && item.id) {
+      const base = `/api/governance/public/meetings/${encodeURIComponent(item.id)}/document.pdf?type=minutes`;
+      parts.push(`<h2>Official Meeting Document</h2><p><a href="${base}" target="_blank" rel="noopener">View / Print Official Minutes PDF</a> &nbsp; | &nbsp; <a href="${base}&mode=download">Download PDF</a></p>`);
+    }
+  }
   if (item.status === "postponed") parts.unshift(`<p><strong>Status:</strong> This meeting has been postponed.</p>`);
   if (item.status === "cancelled") parts.unshift(`<p><strong>Status:</strong> This meeting has been cancelled.</p>`);
   return parts.join("\n") || `<p>Official meeting record of Anjuman-e-Araian Faisalabad.</p>`;
@@ -219,7 +225,8 @@ router.get("/public/meetings/:id/document.pdf", async (req, res, next) => {
     if (type === "attendance") return void res.status(403).json({ error: "The detailed attendance sheet is restricted to authorized users." });
     const meeting = await meetingForDocument(id);
     if (!meeting || !meeting.published) return void res.status(404).json({ error: "Published meeting document not found." });
-    return void sendMeetingPdf(res, meeting, type, "view");
+    const mode = String(req.query.mode || "view").toLowerCase() === "download" ? "download" : "view";
+    return void sendMeetingPdf(res, meeting, type, mode);
   } catch (error) { next(error); }
 });
 
