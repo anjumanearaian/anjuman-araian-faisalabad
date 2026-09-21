@@ -169,10 +169,10 @@ export function UpdatesPage() {
                 <article key={item.id} data-content-id={item.id} style={{ background: "white", border: "1px solid #e3e8e4", borderRadius: 14, overflow: "hidden", boxShadow: "0 8px 30px rgba(26,77,46,.06)", display: "flex", flexDirection: "column", minWidth: 0 }}>
                   {image ? (
                     <Link to={contentDetailPath(item)} aria-label={`Open ${item.title}`}>
-                      <ResponsiveImage src={image} alt={`${item.title} featured image`} widthHint={720} sizes="(max-width: 760px) 100vw, 33vw" style={{ width: "100%", aspectRatio: "16 / 9", objectFit: event ? "contain" : "cover", display: "block", background: event ? "#f7f4ec" : "#eef2ef" }} />
+                      <ResponsiveImage src={image} alt={`${item.title} featured image`} widthHint={720} sizes="(max-width: 760px) 100vw, 33vw" style={{ width: "100%", aspectRatio: "1200 / 630", objectFit: event ? "contain" : "cover", display: "block", background: event ? "#f7f4ec" : "#eef2ef" }} />
                     </Link>
                   ) : (
-                    <div style={{ aspectRatio: "16 / 9", background: "linear-gradient(135deg,#edf4ef,#f8f2e5)", display: "grid", placeItems: "center", color: GREEN, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>Anjuman-e-Araian Faisalabad</div>
+                    <div style={{ aspectRatio: "1200 / 630", background: "linear-gradient(135deg,#edf4ef,#f8f2e5)", display: "grid", placeItems: "center", color: GREEN, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>Anjuman-e-Araian Faisalabad</div>
                   )}
 
                   <div style={{ padding: 20, display: "flex", flexDirection: "column", flex: 1 }}>
