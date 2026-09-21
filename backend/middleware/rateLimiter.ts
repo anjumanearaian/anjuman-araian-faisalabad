@@ -34,11 +34,11 @@ export const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// File upload: max 10 uploads per 10 minutes
+// File upload: allow authenticated admin bulk media workflows while retaining a protective ceiling
 export const uploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 10,
+  max: process.env.NODE_ENV === "production" ? 120 : 1000,
   message: {
-    error: "Too many upload attempts. Please wait 10 minutes.",
+    error: "Too many upload attempts. Please wait a few minutes and try again.",
   },
 });

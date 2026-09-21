@@ -10,7 +10,7 @@ import { RichTextEditor } from "../components/ui/RichTextEditor";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import { ImageModal } from "../components/ui/ImageModal";
 import { getLeadershipProfiles, saveLeadershipProfiles, fetchLeadershipProfiles, fetchLeadershipMessages, createLeadershipProfile, updateLeadershipProfile, deleteLeadershipProfile, updateLeadershipMessage, LeadershipProfile } from "../lib/leadershipStore";
-import { fetchMediaGallery, createMedia, updateMedia, deleteMedia, MediaItem } from "../lib/mediaStore";
+import { fetchMediaAlbums, createMedia, updateMedia, deleteMedia, MediaAlbum } from "../lib/mediaStore";
 import { fetchOverseasChapters, createOverseasChapter, updateOverseasChapter, deleteOverseasChapter, OverseasChapter } from "../lib/overseasStore";
 import { getSiteSettings, saveSiteSettings, fetchSiteSettings, updateSiteSettings, SiteSettings, PaymentMethod, MembershipTier } from "../lib/settingsStore";
 import { fetchAllMessages, updateMessageStatus, deleteMessage, MessageRequest, MessageStatus } from "../lib/messageStore";
@@ -2436,139 +2436,252 @@ function OverseasTab() {
 
 // ── Media Tab ────────────────────────────────────────────────────────────────
 function MediaTab() {
-  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [albums, setAlbums] = useState<MediaAlbum[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<{ urls: string[], title: string, type: "photo" | "video", date: string, caption: string }>({ urls: [], title: "", type: "photo", date: new Date().toISOString().slice(0, 10), caption: "" });
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [savingAlbum, setSavingAlbum] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const [form, setForm] = useState<{ urls: string[]; title: string; date: string; caption: string; videoUrl: string }>({
+    urls: [],
+    title: "",
+    date: new Date().toISOString().slice(0, 10),
+    caption: "",
+    videoUrl: "",
+  });
 
   const loadMedia = async () => {
     setLoading(true);
     try {
-      // Admin dashboard might need 20 items per page
-      const res = await fetchMediaGallery(page, 20);
-      setMedia(res.data);
-      setTotalPages(res.totalPages);
+      setAlbums(await fetchMediaAlbums());
     } catch (e) {
-      console.error("Failed to fetch media", e);
+      console.error("Failed to fetch media albums", e);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadMedia();
-  }, [page]);
+    void loadMedia();
+  }, []);
+
+  const emptyForm = () => ({
+    urls: [] as string[],
+    title: "",
+    date: new Date().toISOString().slice(0, 10),
+    caption: "",
+    videoUrl: "",
+  });
+
+  const openNewAlbum = () => {
+    setEditingKey(null);
+    setForm(emptyForm());
+    setMediaError("");
+    setShowForm(true);
+  };
+
+  const openAlbum = (album: MediaAlbum) => {
+    setEditingKey(album.key);
+    setForm({
+      urls: album.photos.map((photo) => photo.url),
+      title: album.title,
+      date: String(album.date).slice(0, 10),
+      caption: album.caption || "",
+      videoUrl: album.videos[0]?.url || "",
+    });
+    setMediaError("");
+    setShowForm(true);
+  };
 
   const submit = async () => {
-    if (form.urls.length === 0) return;
+    if (savingAlbum) return;
+    const title = form.title.trim();
+    const date = form.date.trim();
+    const caption = form.caption.trim();
+    const videoUrl = form.videoUrl.trim();
+
+    if (!title || !date) {
+      setMediaError("Event / album title and date are required.");
+      return;
+    }
+    if (form.urls.length > 50) {
+      setMediaError("Maximum 50 photos are allowed in one event album.");
+      return;
+    }
+    if (!form.urls.length && !videoUrl) {
+      setMediaError("Add at least one photo or one event video link.");
+      return;
+    }
+
+    const collision = albums.some((album) =>
+      album.key !== editingKey &&
+      album.title.trim().toLowerCase() === title.toLowerCase() &&
+      String(album.date).slice(0, 10) === date
+    );
+    if (collision) {
+      setMediaError("An event folder with the same title and date already exists. Open that album instead of creating a duplicate.");
+      return;
+    }
+
+    setSavingAlbum(true);
+    setMediaError("");
     try {
-      const newItems = form.urls.map((url) => ({
-        title: form.title,
-        caption: form.caption,
-        date: form.date,
-        type: form.type,
-        url: url
-      }));
-      
-      if (editingId) {
-        await updateMedia(editingId, newItems[0]);
-      } else {
+      const current = editingKey ? albums.find((album) => album.key === editingKey) : undefined;
+      const common = { title, caption, date };
+
+      if (!current) {
+        const newItems = [
+          ...form.urls.map((url) => ({ ...common, type: "photo" as const, url })),
+          ...(videoUrl ? [{ ...common, type: "video" as const, url: videoUrl }] : []),
+        ];
         await createMedia(newItems);
+      } else {
+        const selectedUrls = new Set(form.urls);
+        const existingPhotoUrls = new Set(current.photos.map((photo) => photo.url));
+
+        const removals = current.photos
+          .filter((photo) => !selectedUrls.has(photo.url))
+          .map((photo) => deleteMedia(photo.id));
+
+        const metadataUpdates = current.photos
+          .filter((photo) => selectedUrls.has(photo.url))
+          .map((photo) => updateMedia(photo.id, { ...common, type: "photo", url: photo.url }));
+
+        const additions = form.urls
+          .filter((url) => !existingPhotoUrls.has(url))
+          .map((url) => ({ ...common, type: "photo" as const, url }));
+
+        await Promise.all([...removals, ...metadataUpdates]);
+
+        const existingVideo = current.videos[0];
+        const extraVideos = current.videos.slice(1);
+        if (extraVideos.length) await Promise.all(extraVideos.map((video) => deleteMedia(video.id)));
+
+        if (existingVideo && videoUrl) {
+          await updateMedia(existingVideo.id, { ...common, type: "video", url: videoUrl });
+        } else if (existingVideo && !videoUrl) {
+          await deleteMedia(existingVideo.id);
+        } else if (!existingVideo && videoUrl) {
+          additions.push({ ...common, type: "video" as const, url: videoUrl } as any);
+        }
+
+        if (additions.length) await createMedia(additions);
       }
+
       setShowForm(false);
-      setEditingId(null);
-      loadMedia(); // refresh
-    } catch (e) {
-      console.error("Failed to save media", e);
+      setEditingKey(null);
+      setForm(emptyForm());
+      await loadMedia();
+    } catch (e: any) {
+      console.error("Failed to save media album", e);
+      setMediaError(e?.message || "Could not save this event album.");
+    } finally {
+      setSavingAlbum(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Delete media?")) {
-      try {
-        await deleteMedia(id);
-        loadMedia();
-      } catch (e) {
-        console.error("Failed to delete media", e);
-      }
+  const deleteAlbum = async (album: MediaAlbum) => {
+    if (!confirm(`Delete the complete event folder "${album.title}" with ${album.photos.length} photo(s) and ${album.videos.length} video(s)?`)) return;
+    try {
+      await Promise.all(album.items.map((item) => deleteMedia(item.id)));
+      await loadMedia();
+    } catch (e) {
+      console.error("Failed to delete media album", e);
     }
   };
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, margin: 0 }}>
-          Media Gallery
-        </h2>
-        <button onClick={() => { setEditingId(null); setForm({ urls: [], title: "", type: "photo", date: new Date().toISOString().slice(0, 10), caption: "" }); setShowForm(true); }} style={actionBtn(GREEN)}>
-          <Plus size={14} /> Add Media
+        <div>
+          <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, margin: 0 }}>
+            Media Gallery <span style={{ color: "#aaa", fontSize: 15, fontWeight: 400 }}>({albums.length} event folders)</span>
+          </h2>
+          <p style={{ color: "#777", fontSize: 12, margin: "5px 0 0" }}>Every event is managed as a separate folder. Maximum 50 photos and one video per event.</p>
+        </div>
+        <button onClick={openNewAlbum} style={actionBtn(GREEN)}>
+          <Plus size={14} /> Create Event Album
         </button>
       </div>
+
       <div style={{ backgroundColor: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'Lato', sans-serif", minWidth: 700 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'Lato', sans-serif", minWidth: 820 }}>
           <thead>
             <tr style={{ backgroundColor: "#f8f5ef" }}>
-              {["Thumbnail", "Title and Caption", "Type", "Date", "Actions"].map((h) => (
+              {["Cover", "Event Folder", "Photos", "Video", "Date", "Actions"].map((h) => (
                 <th key={h} style={{ padding: "14px 16px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} style={{ padding: "40px 14px", textAlign: "center", color: "#888" }}>Loading...</td></tr>
-            ) : media.length === 0 ? (
-              <tr><td colSpan={5} style={{ padding: "40px 14px", textAlign: "center", color: "#888" }}>No media items found.</td></tr>
-            ) : media.map((m, i) => (
-              <tr key={m.id} style={{ borderTop: "1px solid #f5f5f5", backgroundColor: i % 2 === 0 ? "white" : "#fafafa" }}>
+              <tr><td colSpan={6} style={{ padding: "40px 14px", textAlign: "center", color: "#888" }}>Loading event folders...</td></tr>
+            ) : albums.length === 0 ? (
+              <tr><td colSpan={6} style={{ padding: "40px 14px", textAlign: "center", color: "#888" }}>No event albums yet. Create the first folder above.</td></tr>
+            ) : albums.map((album, i) => (
+              <tr key={album.key} style={{ borderTop: "1px solid #f5f5f5", backgroundColor: i % 2 === 0 ? "white" : "#fafafa" }}>
                 <td style={{ padding: "14px 16px", width: 100 }}>
-                  <img src={m.url} alt={m.title} style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, display: "block", border: "1px solid #eee" }} />
+                  {album.photos[0]?.url ? (
+                    <img src={album.photos[0].url} alt={album.title} style={{ width: 82, height: 60, objectFit: "cover", borderRadius: 7, display: "block", border: "1px solid #eee" }} />
+                  ) : (
+                    <div style={{ width: 82, height: 60, borderRadius: 7, display: "grid", placeItems: "center", background: "#eef7f1", color: GREEN }}><ImageIcon size={22}/></div>
+                  )}
+                </td>
+                <td style={{ padding: "14px 16px", maxWidth: 430 }}>
+                  <p style={{ color: GREEN, fontSize: 13, fontWeight: 800, margin: 0 }}>{album.title}</p>
+                  {album.caption && <p style={{ color: "#888", fontSize: 11, margin: "3px 0 0", lineHeight: 1.45 }}>{album.caption}</p>}
                 </td>
                 <td style={{ padding: "14px 16px" }}>
-                  <p style={{ color: GREEN, fontSize: 13, fontWeight: 700, margin: 0 }}>{m.title || "Untitled"}</p>
-                  {m.caption && <p style={{ color: "#888", fontSize: 11, margin: "2px 0 0" }}>{m.caption}</p>}
+                  <span style={{ background: "#e0f2fe", color: "#0369a1", borderRadius: 20, padding: "4px 10px", fontSize: 11, fontWeight: 800 }}>{album.photos.length} / 50</span>
                 </td>
                 <td style={{ padding: "14px 16px" }}>
-                  <span style={{ backgroundColor: m.type === "video" ? "#fce7f3" : "#e0f2fe", color: m.type === "video" ? "#be185d" : "#0369a1", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, textTransform: "capitalize" }}>
-                    {m.type}
-                  </span>
+                  <span style={{ background: album.videos.length ? "#fef3c7" : "#f3f4f6", color: album.videos.length ? "#92400e" : "#6b7280", borderRadius: 20, padding: "4px 10px", fontSize: 11, fontWeight: 800 }}>{album.videos.length ? "1 video" : "No video"}</span>
                 </td>
-                <td style={{ padding: "14px 16px", fontSize: 12, color: "#555" }}>{new Date(m.date).toLocaleDateString()}</td>
+                <td style={{ padding: "14px 16px", fontSize: 12, color: "#555", whiteSpace: "nowrap" }}>{new Date(album.date).toLocaleDateString()}</td>
                 <td style={{ padding: "14px 16px" }}>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => { setEditingId(m.id); setForm({ urls: [m.url], title: m.title, type: m.type, date: m.date.slice(0, 10), caption: m.caption || "" }); setShowForm(true); }} style={actionBtn("#0ea5e9")} title="Edit"><Edit2 size={12} /></button>
-                    <button onClick={() => handleDelete(m.id)} style={actionBtn("#6b7280")} title="Delete"><Trash2 size={12} /></button>
+                    <button onClick={() => openAlbum(album)} style={actionBtn("#0ea5e9")} title="Manage album"><Edit2 size={12}/> Manage</button>
+                    <button onClick={() => void deleteAlbum(album)} style={actionBtn("#6b7280", true)} title="Delete complete event folder"><Trash2 size={12}/></button>
                   </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {totalPages > 0 && (
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 20px", borderTop: "1px solid #eee" }}>
-            <span style={{ fontSize: 13, color: "#666" }}>Page {page} of {totalPages}</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button disabled={page === 1} onClick={() => setPage(p => Math.max(1, p - 1))} style={actionBtn(GREEN, page === 1)}>Prev</button>
-              <button disabled={page === totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} style={actionBtn(GREEN, page === totalPages)}>Next</button>
-            </div>
-          </div>
-        )}
       </div>
+
       {showForm && (
-        <FormModal title="Add Photo to Gallery" onClose={() => setShowForm(false)} onSubmit={submit} err="">
-          <FormField label="Photo Title" type="text" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
-          <FormField label="Caption" type="text" value={form.caption} onChange={(v) => setForm({ ...form, caption: v })} />
-          <FormField label="Date" type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", color: GREEN, fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Type</label>
-            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as "photo" | "video" })} style={selectStyle}>
-              <option value="photo">Photo</option>
-              <option value="video">Video</option>
-            </select>
+        <FormModal
+          title={editingKey ? "Manage Event Album" : "Create Event Album"}
+          onClose={() => { if (!savingAlbum) { setShowForm(false); setMediaError(""); } }}
+          onSubmit={submit}
+          err={mediaError}
+          maxWidth={760}
+          loading={savingAlbum}
+        >
+          <FormField label="Event / Album Title" type="text" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+          <FormField label="Caption / Description" type="text" value={form.caption} onChange={(v) => setForm({ ...form, caption: v })} />
+          <FormField label="Event Date" type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+
+          <MultiImageUpload
+            label="Event Photos"
+            images={form.urls}
+            onChange={(imgs) => setForm({ ...form, urls: imgs })}
+            maxFiles={50}
+            imageMaxWidth={1600}
+            imageMaxHeight={1200}
+            imageQuality={0.82}
+            guidance="Maximum 50 photos. Large JPG/PNG images are automatically resized and converted to WebP for fast web loading while keeping good visual quality."
+          />
+
+          <div>
+            <FormField label="Event Video URL (maximum 1)" type="url" value={form.videoUrl} onChange={(v) => setForm({ ...form, videoUrl: v })} placeholder="YouTube, Vimeo or direct MP4 link" />
+            <p style={{ color: "#888", fontSize: 11, lineHeight: 1.5, margin: "6px 0 0" }}>For long videos, use a YouTube/Vimeo link instead of storing a large video file on the website.</p>
           </div>
-          <MultiImageUpload label="Upload Image(s)/Thumbnail(s)" images={form.urls} onChange={(imgs) => setForm({ ...form, urls: imgs })} />
+
+          <div style={{ background: "#f7faf8", border: "1px solid #dfe9e2", borderRadius: 8, padding: "11px 13px", color: "#5f6c64", fontSize: 11, lineHeight: 1.55 }}>
+            This event remains a separate folder in both the Admin Panel and public Media Gallery. Photos from another event will not appear here unless they use the same event title and date.
+          </div>
         </FormModal>
       )}
     </div>
