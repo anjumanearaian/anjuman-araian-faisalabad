@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { requireAdmin } from "../middleware/auth";
+import { createMeetingDocumentPdf, MeetingDocumentType } from "../lib/meetingDocumentPdf";
 
 const router = Router();
 
@@ -166,6 +167,93 @@ async function wouldCreateHierarchyCycle(unitId: string, parentId: string | null
   }
   return false;
 }
+
+
+const DOCUMENT_TYPES = new Set<MeetingDocumentType>(["notice","agenda","attendance","minutes","decisions","package"]);
+
+async function meetingForDocument(id: string) {
+  return prisma.governanceMeeting.findUnique({
+    where: { id },
+    include: {
+      organization: { select: { id: true, name: true, type: true } },
+      attendance: {
+        include: { member: { select: { id: true, memberNo: true, fullName: true } } },
+        orderBy: [{ attendeeType: "asc" }, { createdAt: "asc" }],
+      },
+      agendaItems: { orderBy: [{ itemNo: "asc" }, { createdAt: "asc" }] },
+      approvals: { orderBy: { createdAt: "asc" } },
+    },
+  });
+}
+
+function safePdfName(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100) || "meeting-document";
+}
+
+function sendMeetingPdf(res: Response, meeting: any, type: MeetingDocumentType, mode: string) {
+  const buffer = createMeetingDocumentPdf(meeting as any, type);
+  const filename = safePdfName(`${meeting.date || "meeting"}-${meeting.title}-${type}`) + ".pdf";
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `${mode === "download" ? "attachment" : "inline"}; filename="${filename}"`);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.send(buffer);
+}
+
+router.get("/meetings/:id/document.pdf", requireAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const requested = String(req.query.type || "minutes").toLowerCase() as MeetingDocumentType;
+    const type = DOCUMENT_TYPES.has(requested) ? requested : "minutes";
+    const mode = String(req.query.mode || "view").toLowerCase() === "download" ? "download" : "view";
+    const meeting = await meetingForDocument(id);
+    if (!meeting) return void res.status(404).json({ error: "Meeting not found." });
+    return void sendMeetingPdf(res, meeting, type, mode);
+  } catch (error) { next(error); }
+});
+
+router.get("/public/meetings/:id/document.pdf", async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const requested = String(req.query.type || "minutes").toLowerCase() as MeetingDocumentType;
+    const type = DOCUMENT_TYPES.has(requested) ? requested : "minutes";
+    if (type === "attendance") return void res.status(403).json({ error: "The detailed attendance sheet is restricted to authorized users." });
+    const meeting = await meetingForDocument(id);
+    if (!meeting || !meeting.published) return void res.status(404).json({ error: "Published meeting document not found." });
+    return void sendMeetingPdf(res, meeting, type, "view");
+  } catch (error) { next(error); }
+});
+
+router.put("/meetings/:id/publish-minutes", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const current = await prisma.governanceMeeting.findUnique({ where: { id } });
+    if (!current) return void res.status(404).json({ error: "Meeting not found." });
+    if (!String(current.minutes || "").trim() && !(await prisma.meetingAgendaItem.count({ where: { meetingId: id, decision: { not: null } } }))) {
+      return void res.status(400).json({ error: "Complete the meeting minutes or record agenda decisions before publishing." });
+    }
+    if (!current.chairName || !current.chairDesignation) {
+      return void res.status(400).json({ error: "Confirm the presiding officer before publishing the minutes." });
+    }
+    const user: any = (req as any).user || {};
+    const preparedByName = String(req.body?.preparedByName || current.preparedByName || "").trim() || "General Secretary / Authorized Officer";
+    const approvedByName = String(req.body?.approvedByName || current.approvedByName || current.chairName).trim();
+    const row = await prisma.governanceMeeting.update({
+      where: { id },
+      data: {
+        status: "held",
+        minutesStatus: "published",
+        published: true,
+        preparedByName,
+        approvedByName,
+        approvedAt: new Date(),
+        publishedAt: new Date(),
+      },
+      include: { organization: { select: { id: true, name: true, type: true } } },
+    });
+    const contentId = await syncPublicMeetingContent(row);
+    res.json({ ...mapMeeting(row), contentId, publishedBy: user.username || user.email || user.role || "Admin" });
+  } catch (error) { next(error); }
+});
 
 router.get("/summary", requireAdmin, async (_req, res, next) => {
   try {
