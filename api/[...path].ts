@@ -418,6 +418,22 @@ async function renderSocialUpdate(req: any, res: any) {
 }
 
 export default async function handler(req: any, res: any) {
+  const originalPathname = String(req.url || "").split("?")[0];
+  const updateRoute = originalPathname.match(/^\/updates\/([^/]+)(?:\/([^/]+))?\/?$/);
+  if (updateRoute && String(req.method || "").toUpperCase() === "GET") {
+    req.query = {
+      ...(req.query && typeof req.query === "object" ? req.query : {}),
+      id: decodeURIComponent(updateRoute[1]),
+      ...(updateRoute[2] ? { slug: decodeURIComponent(updateRoute[2]) } : {}),
+    };
+    try {
+      return await renderSocialUpdate(req, res);
+    } catch (error) {
+      console.error("Social update render failed", error);
+      return res.redirect(302, "/updates");
+    }
+  }
+
   restoreNestedApiPath(req);
   normalizeSameOriginRequest(req);
   const pathname = String(req.url || "").split("?")[0];
