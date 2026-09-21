@@ -407,7 +407,23 @@ export function AdminOperationsCenterPage() {
       </div>}
 
       {!loading && tab === "meetings" && <div style={{ display: "grid", gap: 18 }}>
-        <div style={panel}><h2 style={{ color: GREEN, fontFamily: "Playfair Display,serif", marginTop: 0 }}>{meetingForm.id ? "Update Meeting, Minutes & Photos" : "Create Meeting Notice"}</h2><p style={{ color:"#777",fontSize:12 }}>A meeting starts as an announcement. After it is held, update the same record with minutes, attendance and photos instead of creating a duplicate meeting.</p><div className="ops-grid3" style={{ display:"grid",gridTemplateColumns:"1.5fr 1fr 1fr",gap:12 }}>
+        <div style={panel}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+            <div>
+              <h2 style={{ color: GREEN, fontFamily: "Playfair Display,serif", margin:"0 0 4px" }}>{meetingForm.id ? "Update Meeting, Minutes & Photos" : "Create Meeting Notice"}</h2>
+              <p style={{ color:"#777",fontSize:12,margin:"0 0 12px" }}>A meeting starts as an announcement. After it is held, update the same record with minutes, attendance and photos instead of creating a duplicate meeting.</p>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:620}}>
+              {meetingForm.id ? (()=>{ const current=meetings.find(x=>x.id===meetingForm.id); return current ? <>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"notice","print")}><FileText size={12}/> Print Notice</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"agenda","print")}><FileText size={12}/> Print Agenda</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"attendance","print")}><Users size={12}/> Print Attendance</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"minutes","print")}><FileText size={12}/> Print Minutes</button>
+                <button style={secondary} onClick={()=>void meetingPdfAction(current,"package","download")}><Download size={12}/> Complete File</button>
+              </> : null; })() : <span style={{fontSize:11,color:"#888",padding:"8px 2px"}}>Save the meeting first to enable official PDF / print.</span>}
+            </div>
+          </div>
+          <div className="ops-grid3" style={{ display:"grid",gridTemplateColumns:"1.5fr 1fr 1fr",gap:12 }}>
           <Field labelText="Meeting title"><input style={field} value={meetingForm.title} onChange={(e)=>setMeetingForm({...meetingForm,title:e.target.value})}/></Field>
           <Field labelText="Meeting type"><select style={field} value={meetingForm.meetingType} onChange={(e)=>setMeetingForm({...meetingForm,meetingType:e.target.value as any})}><option value="meeting">Meeting</option><option value="agm">Annual General Meeting</option><option value="committee">Committee Meeting</option><option value="emergency">Emergency Meeting</option><option value="other">Other</option></select></Field>
           <Field labelText="Committee / unit"><select style={field} value={meetingForm.organizationId} onChange={(e)=>setMeetingForm({...meetingForm,organizationId:e.target.value})}><option value="">General / no unit</option>{activeUnits.map((u)=><option value={u.id} key={u.id}>{u.name}</option>)}</select></Field>
