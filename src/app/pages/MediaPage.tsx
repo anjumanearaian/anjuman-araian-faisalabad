@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { PageHeader } from "../components/PageHeader";
 import { X, Play, ChevronLeft, ChevronRight, Images } from "lucide-react";
 import { fetchMediaAlbums, MediaAlbum } from "../lib/mediaStore";
@@ -29,6 +30,7 @@ function isDirectVideo(url: string) {
 }
 
 export function MediaPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [albums, setAlbums] = useState<MediaAlbum[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -39,7 +41,18 @@ export function MediaPage() {
     let mounted = true;
     setLoading(true);
     fetchMediaAlbums()
-      .then((data) => { if (mounted) setAlbums(data); })
+      .then((data) => {
+        if (!mounted) return;
+        setAlbums(data);
+        const requestedAlbum = searchParams.get("album");
+        if (requestedAlbum) {
+          const index = data.findIndex((album) => album.key === requestedAlbum);
+          if (index >= 0) {
+            setSelectedKey(requestedAlbum);
+            setPage(Math.floor(index / PAGE_SIZE) + 1);
+          }
+        }
+      })
       .catch((err) => console.error("Failed to load media albums", err))
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
@@ -70,7 +83,12 @@ export function MediaPage() {
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 18 }} className="media-album-grid">
               {pageAlbums.map((album) => (
-                <button key={album.key} type="button" onClick={() => setSelectedKey(album.key)} style={{ textAlign: "left", border: "1px solid #ece7df", borderRadius: 12, overflow: "hidden", cursor: "pointer", boxShadow: "0 3px 14px rgba(0,0,0,0.06)", background: "white", padding: 0 }}>
+                <button key={album.key} type="button" onClick={() => {
+                  setSelectedKey(album.key);
+                  const next = new URLSearchParams(searchParams);
+                  next.set("album", album.key);
+                  setSearchParams(next, { replace: true });
+                }} style={{ textAlign: "left", border: "1px solid #ece7df", borderRadius: 12, overflow: "hidden", cursor: "pointer", boxShadow: "0 3px 14px rgba(0,0,0,0.06)", background: "white", padding: 0 }}>
                   <div style={{ height: 180, overflow: "hidden", position: "relative", background: "#eef4f0" }}>
                     {album.photos[0]?.url ? (
                       <img src={album.photos[0].url} alt={album.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -105,9 +123,19 @@ export function MediaPage() {
       </section>
 
       {selected && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={() => setSelectedKey(null)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={() => {
+          setSelectedKey(null);
+          const next = new URLSearchParams(searchParams);
+          next.delete("album");
+          setSearchParams(next, { replace: true });
+        }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", width: "min(1100px, 100%)", maxHeight: "92vh", overflowY: "auto", borderRadius: 14, position: "relative", boxShadow: "0 24px 70px rgba(0,0,0,.28)" }}>
-            <button onClick={() => setSelectedKey(null)} aria-label="Close album" style={{ position: "sticky", float: "right", top: 14, right: 14, margin: 14, zIndex: 2, width: 36, height: 36, borderRadius: "50%", border: "none", background: GREEN, color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}><X size={20}/></button>
+            <button onClick={() => {
+              setSelectedKey(null);
+              const next = new URLSearchParams(searchParams);
+              next.delete("album");
+              setSearchParams(next, { replace: true });
+            }} aria-label="Close album" style={{ position: "sticky", float: "right", top: 14, right: 14, margin: 14, zIndex: 2, width: 36, height: 36, borderRadius: "50%", border: "none", background: GREEN, color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}><X size={20}/></button>
             <div style={{ padding: "28px 28px 10px" }}>
               <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0, fontSize: 26 }}>{selected.title}</h2>
               <p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0 0" }}>{new Date(selected.date).toLocaleDateString()} · {selected.photos.length} photos{selected.videos.length ? ` · ${selected.videos.length} video` : ""}</p>

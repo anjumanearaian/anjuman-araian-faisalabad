@@ -183,6 +183,8 @@ function Dashboard() {
   const [newsForm, setNewsForm] = useState(blankNews());
   const [newsErr, setNewsErr] = useState("");
   const [newsLoading, setNewsLoading] = useState(false);
+  const [reportMediaAlbums, setReportMediaAlbums] = useState<MediaAlbum[]>([]);
+  const [reportMediaAlbumKey, setReportMediaAlbumKey] = useState("");
 
   // Events state
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -231,8 +233,36 @@ function Dashboard() {
     }
   }, [tab, role]);
 
-  const openAddNews = () => { setEditingNews(null); setNewsForm(blankNews()); setNewsErr(""); setShowNewsForm(true); };
-  const openEditNews = (item: NewsItem) => { setEditingNews(item); setNewsForm({ type: "news", title: item.title, date: item.date, category: item.category, body: item.body, status: item.status, images: item.images || [] }); setNewsErr(""); setShowNewsForm(true); };
+  const openAddNews = () => { setEditingNews(null); setNewsForm(blankNews()); setNewsErr(""); setReportMediaAlbumKey(""); setShowNewsForm(true); };
+  const openAddReport = () => {
+    setEditingNews(null);
+    setNewsForm({ ...blankNews(), category: "Event Report" });
+    setNewsErr("");
+    setReportMediaAlbumKey("");
+    setShowNewsForm(true);
+  };
+  const openEditNews = (item: NewsItem) => { setEditingNews(item); setNewsForm({ type: "news", title: item.title, date: item.date, category: item.category, body: item.body, status: item.status, images: item.images || [] }); setNewsErr(""); setReportMediaAlbumKey(""); setShowNewsForm(true); };
+
+  useEffect(() => {
+    if (!showNewsForm || !String(newsForm.category || "").toLowerCase().includes("report")) return;
+    let active = true;
+    fetchMediaAlbums()
+      .then((data) => { if (active) setReportMediaAlbums(data); })
+      .catch((error) => console.error("Failed to load media albums for report linking", error));
+    return () => { active = false; };
+  }, [showNewsForm, newsForm.category]);
+
+  const linkExistingMediaAlbum = (albumKey: string) => {
+    setReportMediaAlbumKey(albumKey);
+    const album = reportMediaAlbums.find((entry) => entry.key === albumKey);
+    if (!album) return;
+    const reusedImages = album.photos.slice(0, 2).map((photo) => photo.url);
+    setNewsForm((current) => ({
+      ...current,
+      date: current.date || String(album.date).slice(0, 10),
+      images: reusedImages.length ? reusedImages : current.images,
+    }));
+  };
   const submitNews = async () => {
     if (!newsForm.title || !newsForm.body) { setNewsErr("Title and content are required."); return; }
     setNewsLoading(true);
@@ -726,9 +756,14 @@ return (
             <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, margin: 0 }}>
               Announcements, News & Activities <span style={{ color: "#aaa", fontSize: 16, fontWeight: 400 }}>({news.length})</span>
             </h2>
-            <button onClick={openAddNews} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GREEN, color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-              <Plus size={16} /> Add Article
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button onClick={openAddNews} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GREEN, color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                <Plus size={16} /> Add Article
+              </button>
+              <button onClick={openAddReport} style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: GOLD, color: GREEN, border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                <Plus size={16} /> Add Event Report
+              </button>
+            </div>
           </div>
 
           <div style={{ backgroundColor: "white", borderRadius: 12, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
@@ -1636,7 +1671,7 @@ return (
             <div>
               <label style={{ display: "block", color: GREEN, fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Category</label>
               <select value={newsForm.category} onChange={(e) => setNewsForm((f) => ({ ...f, category: e.target.value }))} style={selectStyle}>
-                {["Announcement", "News", "Press Release", "Activity", "Minutes", "Education", "Welfare", "Organisation", "Overseas"].map((c) => <option key={c}>{c}</option>)}
+                {["Announcement", "News", "Press Release", "Activity", "Minutes", "Event Report", "Technical Report", "Management Review", "Education", "Welfare", "Organisation", "Overseas"].map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -1652,6 +1687,22 @@ return (
             <label style={{ display: "block", color: GREEN, fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Content *</label>
             <RichTextEditor value={newsForm.body} onChange={(v) => setNewsForm((f) => ({ ...f, body: v }))} placeholder="Full article content..." />
           </div>
+
+          {String(newsForm.category || "").toLowerCase().includes("report") && (
+            <div style={{ marginTop: 16, padding: 14, borderRadius: 9, background: "#f7faf8", border: "1px solid #dce8df" }}>
+              <label style={{ display: "block", color: GREEN, fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Link Existing Media Album</label>
+              <select value={reportMediaAlbumKey} onChange={(e) => linkExistingMediaAlbum(e.target.value)} style={selectStyle}>
+                <option value="">Select an existing event media folder...</option>
+                {reportMediaAlbums.map((album) => (
+                  <option key={album.key} value={album.key}>{album.title} · {String(album.date).slice(0, 10)} · {album.photos.length} photos{album.videos.length ? " · 1 video" : ""}</option>
+                ))}
+              </select>
+              <p style={{ margin: "7px 0 0", color: "#6b746d", fontSize: 11, lineHeight: 1.55 }}>
+                This reuses up to two existing event images as the report thumbnail/supporting images. Nothing is uploaded again. The full report page will link back to the original Media Gallery album automatically.
+              </p>
+            </div>
+          )}
+
           <div style={{ marginTop: 16 }}>
             <MultiImageUpload
               label="Article Photos (Optional)"
