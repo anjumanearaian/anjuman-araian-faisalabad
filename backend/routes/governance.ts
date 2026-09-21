@@ -168,7 +168,7 @@ async function wouldCreateHierarchyCycle(unitId: string, parentId: string | null
 const DOCUMENT_TYPES = new Set<MeetingDocumentType>(["notice","agenda","attendance","minutes","decisions","package"]);
 
 async function meetingForDocument(id: string) {
-  return prisma.governanceMeeting.findUnique({
+  const meeting = await prisma.governanceMeeting.findUnique({
     where: { id },
     include: {
       organization: { select: { id: true, name: true, type: true } },
@@ -180,6 +180,27 @@ async function meetingForDocument(id: string) {
       approvals: { orderBy: { createdAt: "asc" } },
     },
   });
+  if (!meeting) return null;
+  const memberIds = meeting.attendance.map((x) => x.memberId).filter(Boolean) as string[];
+  const assignments = meeting.organizationId && memberIds.length
+    ? await prisma.organizationAssignment.findMany({
+        where: { organizationId: meeting.organizationId, memberId: { in: memberIds }, isActive: true },
+        select: { memberId: true, role: true, rank: true },
+      })
+    : [];
+  const assignmentByMember = new Map(assignments.map((a) => [a.memberId, a]));
+  const attendance = meeting.attendance.map((row: any) => {
+    const assignment = row.memberId ? assignmentByMember.get(row.memberId) : null;
+    return {
+      ...row,
+      organizationRole: assignment?.role || row.guestDesignation || null,
+      organizationRank: assignment?.rank ?? 999,
+    };
+  }).sort((a: any, b: any) =>
+    (a.organizationRank ?? 999) - (b.organizationRank ?? 999) ||
+    String(a.member?.fullName || a.guestName || "").localeCompare(String(b.member?.fullName || b.guestName || ""))
+  );
+  return { ...meeting, attendance };
 }
 
 function safePdfName(value: string) {
