@@ -11,7 +11,7 @@ import {
   createOrganizationAssignment, createOrganizationUnit, fetchGovernanceMeetings,
   fetchGovernanceSummary, fetchOrganizationAssignments, fetchOrganizationUnits,
   GovernanceMeeting, GovernanceSummary, MeetingAttendance, OrganizationAssignment, OrganizationUnit,
-  OrganizationUnitType, fetchMeetingAttendance, initializeMeetingAttendance, saveMeetingAttendance, fetchChairSuggestion, confirmMeetingChair, meetingDocumentUrl, publishMeetingMinutes, MeetingDocumentType, updateGovernanceMeeting, updateOrganizationAssignment, updateOrganizationUnit,
+  OrganizationUnitType, fetchMeetingAttendance, initializeMeetingAttendance, saveMeetingAttendance, fetchChairSuggestion, confirmMeetingChair, meetingDocumentUrl, finalizeMeetingMinutes, MeetingDocumentType, updateGovernanceMeeting, updateOrganizationAssignment, updateOrganizationUnit,
 } from "../lib/governanceStore";
 import { createOverseasChapter, deleteOverseasChapter, fetchOverseasChapters, OverseasChapter, updateOverseasChapter } from "../lib/overseasStore";
 import { createFinanceTransaction, fetchFinanceLedger, fetchFinanceMembers, fetchFinanceSummary, financeReceiptUrl, FinanceLedgerRow, FinanceSummary, voidFinanceTransaction } from "../lib/financeStore";
@@ -298,14 +298,14 @@ export function AdminOperationsCenterPage() {
     } catch (e: any) { setError(e.message || "Meeting PDF could not be opened."); }
   }
 
-  async function publishMinutesNow(meeting: GovernanceMeeting) {
-    if (!confirm("Publish these minutes as the official meeting record? The PDF and public meeting record will become available.")) return;
+  async function finalizeMinutesNow(meeting: GovernanceMeeting) {
+    if (!confirm("Finalize these minutes as the official internal record? This does not publish the meeting publicly.")) return;
     setError("");
     try {
-      await publishMeetingMinutes(meeting.id);
+      await finalizeMeetingMinutes(meeting.id);
       await loadAll();
-      flash("Official minutes published successfully.");
-    } catch (e: any) { setError(e.message || "Could not publish the meeting minutes."); }
+      flash("Official internal meeting record finalized.");
+    } catch (e: any) { setError(e.message || "Could not finalize the meeting minutes."); }
   }
 
   async function saveMeeting() {
@@ -413,7 +413,7 @@ export function AdminOperationsCenterPage() {
           <Field labelText="Committee / unit"><select style={field} value={meetingForm.organizationId} onChange={(e)=>setMeetingForm({...meetingForm,organizationId:e.target.value})}><option value="">General / no unit</option>{activeUnits.map((u)=><option value={u.id} key={u.id}>{u.name}</option>)}</select></Field>
           <Field labelText="Date"><input type="date" style={field} value={meetingForm.date} onChange={(e)=>setMeetingForm({...meetingForm,date:e.target.value})}/></Field><Field labelText="Time"><input type="time" style={field} value={meetingForm.time} onChange={(e)=>setMeetingForm({...meetingForm,time:e.target.value})}/></Field><Field labelText="Venue"><input style={field} value={meetingForm.venue} onChange={(e)=>setMeetingForm({...meetingForm,venue:e.target.value})}/></Field>
           <Field labelText="Status"><select style={field} value={meetingForm.status} onChange={(e)=>setMeetingForm({...meetingForm,status:e.target.value as any})}><option value="announced">Announced / Upcoming</option><option value="held">Held / Completed</option><option value="postponed">Postponed</option><option value="cancelled">Cancelled</option></select></Field>
-          <Field labelText="Publish"><select style={field} value={meetingForm.published ? "yes":"no"} onChange={(e)=>setMeetingForm({...meetingForm,published:e.target.value==="yes"})}><option value="no">Internal / Draft</option><option value="yes">Public</option></select></Field>
+          <Field labelText="Record visibility"><select style={{...field,background:"#f6f7f5"}} value="internal" disabled><option value="internal">Internal / Official Record Only</option></select></Field>
         </div><div className="ops-grid3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}><Field labelText="Meeting notice"><textarea style={{...field,minHeight:105}} value={meetingForm.notice} onChange={(e)=>setMeetingForm({...meetingForm,notice:e.target.value})}/></Field><Field labelText="Agenda"><textarea style={{...field,minHeight:105}} value={meetingForm.agenda} onChange={(e)=>setMeetingForm({...meetingForm,agenda:e.target.value})}/></Field><Field labelText="Minutes / decisions"><textarea style={{...field,minHeight:105}} value={meetingForm.minutes} onChange={(e)=>setMeetingForm({...meetingForm,minutes:e.target.value})} placeholder="Complete after the meeting"/></Field></div><div style={{marginTop:12}}><MultiImageUpload label="Meeting Photos" images={meetingForm.images} onChange={(images)=>setMeetingForm({...meetingForm,images})} maxFiles={20}/></div><div style={{display:"flex",gap:8,marginTop:14}}><button disabled={!databaseReady || meetingForm.title.trim().length<3 || !meetingForm.date} style={primary} onClick={()=>void saveMeeting()}><Save size={14}/> {meetingForm.id?"Update Meeting":"Save Meeting"}</button>{meetingForm.id&&<button style={secondary} onClick={()=>setMeetingForm({ id:"",organizationId:"",title:"",meetingType:"meeting",date:"",time:"",venue:"",status:"announced",notice:"",agenda:"",minutes:"",images:[],published:false })}>Cancel</button>}</div></div>
         {attendanceMeetingId && <div style={panel}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
@@ -468,7 +468,7 @@ export function AdminOperationsCenterPage() {
           </table></div>
         </div>}
 
-                <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.minutesStatus||m.status} good={m.minutesStatus==="published"||m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.minutesStatus||m.status} good={m.minutesStatus==="finalized"||m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           <button style={secondary} onClick={()=>{setMeetingForm({id:m.id,organizationId:m.organizationId||"",title:m.title,meetingType:m.meetingType,date:m.date,time:m.time||"",venue:m.venue||"",status:m.status,notice:m.notice||"",agenda:m.agenda||"",minutes:m.minutes||"",images:m.images||[],published:m.published}); window.scrollTo({top:0,behavior:"smooth"});}}><Edit2 size={12}/> Open</button>
           <button style={secondary} onClick={()=>void openAttendance(m)}><Users size={12}/> Take Attendance {m._count?.attendance?`(${m._count.attendance})`:""}</button>
           <button style={secondary} onClick={()=>void meetingPdfAction(m,"notice","view")}><FileText size={12}/> Notice PDF</button>
@@ -476,9 +476,9 @@ export function AdminOperationsCenterPage() {
           <button style={secondary} onClick={()=>void meetingPdfAction(m,"attendance","view")}><Users size={12}/> Attendance PDF</button>
           <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","view")}><FileText size={12}/> Preview Minutes</button>
           <button style={secondary} onClick={()=>void meetingPdfAction(m,"package","download")}><Download size={12}/> Complete File</button>
-          {m.minutesStatus!=="published" && <button style={primary} onClick={()=>void publishMinutesNow(m)}>Publish Minutes</button>}
-          {m.minutesStatus==="published" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","download")}><Download size={12}/> Download Minutes</button>}
-          {m.minutesStatus==="published" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","print")}><FileText size={12}/> Print</button>}
+          {m.minutesStatus!=="finalized" && <button style={primary} onClick={()=>void finalizeMinutesNow(m)}>Finalize Official Record</button>}
+          {m.minutesStatus==="finalized" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","download")}><Download size={12}/> Download Final Minutes</button>}
+          {m.minutesStatus==="finalized" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","print")}><FileText size={12}/> Print</button>}
         </div></Td></tr>)}</DataTable>
       </div>}
 
