@@ -11,7 +11,7 @@ const router = Router();
 const ContentSchema = z.object({
   type: z.enum(["news", "event"]),
   title: z.string().min(2).max(300),
-  body: z.string().min(10).max(10000),
+  body: z.string().min(10).max(100000),
   date: z.string().min(1),
   time: z.string().nullable().optional(),
   location: z.string().max(300).nullable().optional(),

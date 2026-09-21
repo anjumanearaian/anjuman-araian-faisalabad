@@ -274,7 +274,15 @@ function Dashboard() {
       }
       setShowNewsForm(false); setEditingNews(null); setNewsErr("");
       loadContent();
-    } catch (e: any) { setNewsErr(e.message); }
+    } catch (e: any) {
+      const details = e?.details && typeof e.details === "object"
+        ? Object.entries(e.details)
+            .flatMap(([field, messages]: any) => (Array.isArray(messages) ? messages : []).map((msg: string) => `${field}: ${msg}`))
+            .filter(Boolean)
+            .join(" · ")
+        : "";
+      setNewsErr(details || e?.message || "Failed to save article.");
+    }
     finally { setNewsLoading(false); }
   };
   const setNewsStatus = async (id: string, status: ContentStatus) => {
