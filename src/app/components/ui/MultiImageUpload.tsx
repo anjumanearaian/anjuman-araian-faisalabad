@@ -9,6 +9,9 @@ interface MultiImageUploadProps {
   label?: string;
   guidance?: string;
   maxFiles?: number;
+  imageMaxWidth?: number;
+  imageMaxHeight?: number;
+  imageQuality?: number;
 }
 
 const GREEN = "#1a4d2e";
@@ -29,7 +32,7 @@ function guidanceFor(label = "") {
 function isPdfUrl(src: string) { return /\.pdf(?:\?|$)/i.test(src); }
 function isPrivateMatrimonialUrl(src: string) { return src.startsWith("/api/matrimonial/private-file/"); }
 
-export function MultiImageUpload({ images = [], onChange, label, guidance, maxFiles }: MultiImageUploadProps) {
+export function MultiImageUpload({ images = [], onChange, label, guidance, maxFiles, imageMaxWidth = 1920, imageMaxHeight = 1080, imageQuality = 0.86 }: MultiImageUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const recommendation = useMemo(() => guidance || guidanceFor(label), [guidance, label]);
@@ -51,7 +54,7 @@ export function MultiImageUpload({ images = [], onChange, label, guidance, maxFi
     try {
       const uploadedUrls: string[] = [];
       for (const file of files) {
-        const prepared = file.type === "application/pdf" ? file : await optimizeImageFile(file, { maxWidth: 1920, maxHeight: 1080, quality: 0.86 });
+        const prepared = file.type === "application/pdf" ? file : await optimizeImageFile(file, { maxWidth: imageMaxWidth, maxHeight: imageMaxHeight, quality: imageQuality });
         if (prepared.size > 4 * 1024 * 1024) throw new Error(file.type === "application/pdf" ? "PDF documents must be 4 MB or smaller." : "This image is still larger than 4 MB after optimization.");
         const fd = new FormData(); fd.append("file", prepared); fd.append("category", privateMatrimonial ? "matrimonial-document" : allowDocuments ? "member-document" : "content-image");
         const endpoint = privateMatrimonial ? "/matrimonial/private-upload" : "/upload";
