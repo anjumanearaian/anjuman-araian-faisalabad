@@ -174,5 +174,5 @@ export function publicMeetingDocumentUrl(meetingId: string, type: Exclude<Meetin
   return `/api/governance/public/meetings/${encodeURIComponent(meetingId)}/document.pdf?type=${encodeURIComponent(type)}`;
 }
 
-export const publishMeetingMinutes = (meetingId: string, data?: { preparedByName?: string; approvedByName?: string }) =>
-  apiClient<GovernanceMeeting>(`/governance/meetings/${meetingId}/publish-minutes`, { method: "PUT", body: JSON.stringify(data || {}) });
+export const finalizeMeetingMinutes = (meetingId: string, data?: { preparedByName?: string; approvedByName?: string }) =>
+  apiClient<GovernanceMeeting>(`/governance/meetings/${meetingId}/finalize-minutes`, { method: "PUT", body: JSON.stringify(data || {}) });
