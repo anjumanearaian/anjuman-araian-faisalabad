@@ -40,6 +40,7 @@ type MeetingPdfData = {
   approvedByName?: string | null;
   approvedAt?: Date | string | null;
   publishedAt?: Date | string | null;
+  minutesStatus?: string | null;
   attendance?: AttendanceRow[];
   agendaItems?: AgendaItem[];
 };
@@ -350,7 +351,7 @@ function buildSection(c: Composer, data: MeetingPdfData, type: MeetingDocumentTy
     ["Prepared By", data.preparedByName || "General Secretary / Authorized Officer"],
     ["Presided / Approved By", data.approvedByName || data.chairName || "Pending approval"],
     ["Approval Date", dateText(data.approvedAt || data.publishedAt || "")],
-    ["Document Status", data.publishedAt ? "Published" : "Draft / Internal"],
+    ["Document Status", data.minutesStatus === "finalized" ? "Finalized Official Internal Record" : "Draft / Internal"],
   ]);
 }
 
