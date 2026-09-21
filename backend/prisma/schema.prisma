@@ -427,48 +427,147 @@ model OrganizationAssignment {
   @@index([organizationId, isActive, rank])
 }
 
+model GovernanceRoleMaster {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  designation  String
+  displayOrder Int      @default(999)
+  chairPriority Int?
+  canChair     Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive, displayOrder])
+  @@index([chairPriority])
+}
+
 model GovernanceMeeting {
-  id             String            @id @default(uuid())
-  organizationId String?
-  organization   OrganizationUnit? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  title          String
-  meetingType    String            @default("meeting")
-  date           String
-  time           String?
-  venue          String?
-  status         String            @default("announced")
-  notice         String?
-  agenda         String?
-  minutes        String?
-  images         String?
-  published      Boolean           @default(false)
-  contentId       String?           @unique
-  createdByAdminId String?
-  createdByName  String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id                       String            @id @default(uuid())
+  organizationId           String?
+  organization             OrganizationUnit? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  title                    String
+  meetingType              String            @default("meeting")
+  date                     String
+  time                     String?
+  venue                    String?
+  status                   String            @default("announced")
+  notice                   String?
+  agenda                   String?
+  minutes                  String?
+  images                   String?
+  published                Boolean           @default(false)
+  contentId                String?            @unique
+  createdByAdminId         String?
+  createdByName            String?
+  attendanceManagerAdminId String?
+  attendanceManagerName    String?
+  chairMemberId            String?
+  chairName                String?
+  chairDesignation         String?
+  chairConfirmedByAdminId  String?
+  chairConfirmedAt         DateTime?
+  minutesStatus            String             @default("draft")
+  preparedByMemberId       String?
+  preparedByName           String?
+  approvedByMemberId       String?
+  approvedByName           String?
+  approvedAt               DateTime?
+  publishedAt              DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 
   attendance MeetingAttendance[]
+  agendaItems MeetingAgendaItem[]
+  approvals  MeetingApproval[]
+  assignments MeetingAssignment[]
 
   @@index([date])
   @@index([status])
   @@index([organizationId])
+  @@index([minutesStatus])
 }
 
 model MeetingAttendance {
-  id        String            @id @default(uuid())
-  meetingId String
-  meeting   GovernanceMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  memberId  String
-  member    Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  status    String            @default("present")
-  remarks   String?
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id               String            @id @default(uuid())
+  meetingId        String
+  meeting          GovernanceMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  memberId         String?
+  member           Member?           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  status           String            @default("not_marked")
+  remarks          String?
+  attendeeType     String            @default("member")
+  guestName        String?
+  guestDesignation String?
+  markedByAdminId  String?
+  markedByName     String?
+  markedAt         DateTime?
+  source           String            @default("manual")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@unique([meetingId, memberId])
   @@index([meetingId])
   @@index([memberId])
+  @@index([status])
+}
+
+model MeetingAgendaItem {
+  id                  String            @id @default(uuid())
+  meetingId           String
+  meeting             GovernanceMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  itemNo              Int
+  title               String
+  discussion          String?
+  decision            String?
+  responsibleMemberId String?
+  responsibleName     String?
+  deadline            String?
+  status              String            @default("pending")
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([meetingId, itemNo])
+  @@index([status])
+}
+
+model MeetingApproval {
+  id                   String            @id @default(uuid())
+  meetingId            String
+  meeting              GovernanceMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  approvalType         String
+  memberId             String?
+  name                 String
+  designation          String
+  status               String            @default("pending")
+  approvedAt           DateTime?
+  approvedByAuthUserId String?
+  signatureRef         String?
+  remarks              String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@index([meetingId, approvalType])
+  @@index([status])
+}
+
+model MeetingAssignment {
+  id                  String            @id @default(uuid())
+  meetingId           String
+  meeting             GovernanceMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  adminId             String?
+  assignedToName      String
+  assignmentType      String            @default("attendance_manager")
+  canMarkAttendance   Boolean           @default(true)
+  canAddGuest         Boolean           @default(true)
+  canEditMinutes      Boolean           @default(false)
+  canApproveMinutes   Boolean           @default(false)
+  expiresAt           DateTime?
+  isActive            Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+
+  @@index([meetingId, isActive])
+  @@index([adminId])
 }
 
 model FinanceTransaction {
