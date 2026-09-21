@@ -242,7 +242,7 @@ export function AdminOperationsCenterPage() {
       const result = await initializeMeetingAttendance(attendanceMeetingId);
       const refreshed = await fetchMeetingAttendance(attendanceMeetingId);
       setAttendanceRows(refreshed);
-      flash(`${result.count} official member(s) loaded for attendance.`);
+      flash(`${result.count} official member(s) loaded from ${(result as any).unitName || "the selected body"}.`);
     } catch (e: any) { setError(e.message || "Could not load the official meeting roster."); }
   }
   async function suggestAndConfirmChair() {
@@ -291,10 +291,14 @@ export function AdminOperationsCenterPage() {
         window.setTimeout(() => URL.revokeObjectURL(url), 1200);
         return;
       }
-      const w = window.open(url, "_blank", "noopener,noreferrer");
+      const w = window.open(url, "_blank");
       if (!w) throw new Error("Allow pop-ups to view or print the PDF.");
-      if (action === "print") window.setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 1200);
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      if (action === "print") {
+        window.setTimeout(() => {
+          try { w.focus(); w.print(); } catch {}
+        }, 1800);
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 120000);
     } catch (e: any) { setError(e.message || "Meeting PDF could not be opened."); }
   }
 
@@ -438,8 +442,8 @@ export function AdminOperationsCenterPage() {
               <p style={{fontSize:12,color:"#777",margin:"4px 0 0"}}>{attendanceMeetingTitle} · {attendanceRows.length} attendee(s)</p>
             </div>
             <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-              <button style={secondary} onClick={()=>void loadOfficialRoster()}><Users size={13}/> Load Official Roster</button>
-              <button style={secondary} onClick={()=>void suggestAndConfirmChair()}><Crown size={13}/> Suggest Chair</button>
+              <button style={secondary} onClick={()=>void loadOfficialRoster()}><Users size={13}/> Load Selected Body Roster</button>
+              <button style={secondary} onClick={()=>void suggestAndConfirmChair()}><Crown size={13}/> Confirm Presiding Officer</button>
               <button style={secondary} onClick={()=>{setAttendanceMeetingId("");setAttendanceMeetingTitle("");setAttendanceRows([]);}}>Close</button>
             </div>
           </div>
@@ -472,11 +476,12 @@ export function AdminOperationsCenterPage() {
             <span>Not marked: {attendanceRows.filter(a=>a.status==="not_marked").length}</span>
           </div>
 
+          <div style={{fontSize:11,color:"#777",margin:"0 0 8px"}}>Official members are loaded only from the body / committee selected on this meeting. Guests, volunteers and special invitees are added separately and do not change the official roster.</div>
           <div className="ops-table-wrap"><table className="ops-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead><tr style={{background:"#f8f5ef"}}>{["Attendee","Type","Status","Remarks","Action"].map((h)=><th key={h} style={{padding:"9px",textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+            <thead><tr style={{background:"#f8f5ef"}}>{["Attendee","Designation / Type","Status","Remarks","Action"].map((h)=><th key={h} style={{padding:"9px",textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
             <tbody>{attendanceRows.map((a,idx)=><tr key={a.id||a.memberId||`guest-${idx}-${a.guestName||""}`} style={{borderTop:`1px solid ${BORDER}`}}>
               <td style={{padding:9}}><strong>{a.member?.fullName||approvedMembers.find(m=>m.id===a.memberId)?.fullName||a.guestName||"Attendee"}</strong><small style={{display:"block",color:"#999"}}>{a.member?.memberNo||approvedMembers.find(m=>m.id===a.memberId)?.memberNo||a.guestDesignation||""}</small></td>
-              <td style={{padding:9}}>{(a.attendeeType||"member").replace(/_/g," ")}</td>
+              <td style={{padding:9}}>{a.organizationRole || (a.attendeeType||"member").replace(/_/g," ")}</td>
               <td style={{padding:9}}><select style={{...field,minHeight:34,padding:"5px 7px"}} value={a.status} onChange={(e)=>setAttendanceRows(rows=>rows.map((x,i)=>i===idx?{...x,status:e.target.value as MeetingAttendance["status"]}:x))}><option value="not_marked">Not Marked</option><option value="present">Present</option><option value="late">Late</option><option value="online">Online</option><option value="leave">Leave</option><option value="absent">Absent</option><option value="excused">Excused</option></select></td>
               <td style={{padding:9}}><input style={{...field,minHeight:34,padding:"5px 7px"}} value={a.remarks||""} onChange={(e)=>setAttendanceRows(rows=>rows.map((x,i)=>i===idx?{...x,remarks:e.target.value}:x))}/></td>
               <td style={{padding:9}}><button style={secondary} onClick={()=>setAttendanceRows((rows)=>rows.filter((_,i)=>i!==idx))}>Remove</button></td>

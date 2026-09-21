@@ -8,6 +8,8 @@ type AttendanceRow = {
   status?: string | null;
   guestName?: string | null;
   guestDesignation?: string | null;
+  organizationRole?: string | null;
+  organizationRank?: number | null;
   remarks?: string | null;
   member?: { fullName?: string | null; memberNo?: string | null } | null;
 };
@@ -283,7 +285,7 @@ function attendanceRows(data: MeetingPdfData) {
   return (data.attendance || []).map((a,i)=>[
     String(i+1),
     a.member?.fullName || a.guestName || "Attendee",
-    a.attendeeType === "member" || !a.attendeeType ? "Official Member" : clean(a.guestDesignation || a.attendeeType?.replace(/_/g," ") || "Guest"),
+    a.attendeeType === "member" || !a.attendeeType ? clean(a.organizationRole || "Official Member") : clean(a.guestDesignation || a.attendeeType?.replace(/_/g," ") || "Guest"),
     clean(a.status || "not marked").replace(/_/g," "),
     clean(a.remarks || ""),
   ]);

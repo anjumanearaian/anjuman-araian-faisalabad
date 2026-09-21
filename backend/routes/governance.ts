@@ -168,7 +168,7 @@ async function wouldCreateHierarchyCycle(unitId: string, parentId: string | null
 const DOCUMENT_TYPES = new Set<MeetingDocumentType>(["notice","agenda","attendance","minutes","decisions","package"]);
 
 async function meetingForDocument(id: string) {
-  return prisma.governanceMeeting.findUnique({
+  const meeting = await prisma.governanceMeeting.findUnique({
     where: { id },
     include: {
       organization: { select: { id: true, name: true, type: true } },
@@ -180,6 +180,27 @@ async function meetingForDocument(id: string) {
       approvals: { orderBy: { createdAt: "asc" } },
     },
   });
+  if (!meeting) return null;
+  const memberIds = meeting.attendance.map((x) => x.memberId).filter(Boolean) as string[];
+  const assignments = meeting.organizationId && memberIds.length
+    ? await prisma.organizationAssignment.findMany({
+        where: { organizationId: meeting.organizationId, memberId: { in: memberIds }, isActive: true },
+        select: { memberId: true, role: true, rank: true },
+      })
+    : [];
+  const assignmentByMember = new Map(assignments.map((a) => [a.memberId, a]));
+  const attendance = meeting.attendance.map((row: any) => {
+    const assignment = row.memberId ? assignmentByMember.get(row.memberId) : null;
+    return {
+      ...row,
+      organizationRole: assignment?.role || row.guestDesignation || null,
+      organizationRank: assignment?.rank ?? 999,
+    };
+  }).sort((a: any, b: any) =>
+    (a.organizationRank ?? 999) - (b.organizationRank ?? 999) ||
+    String(a.member?.fullName || a.guestName || "").localeCompare(String(b.member?.fullName || b.guestName || ""))
+  );
+  return { ...meeting, attendance };
 }
 
 function safePdfName(value: string) {
@@ -211,6 +232,39 @@ router.get("/public/meetings/:id/document.pdf", (_req, res) => {
   res.status(404).json({ error: "Meeting records are internal and are not publicly available." });
 });
 
+async function resolveSuggestedPresidingOfficer(meetingId: string, organizationId?: string | null) {
+  const present = await prisma.meetingAttendance.findMany({
+    where: { meetingId, memberId: { not: null }, status: { in: ["present", "late", "online"] } },
+    include: { member: { select: { id: true, fullName: true } } },
+  });
+  if (!present.length) return null;
+  const memberIds = present.map((x) => x.memberId!).filter(Boolean);
+  const assignments = await prisma.organizationAssignment.findMany({
+    where: {
+      memberId: { in: memberIds },
+      isActive: true,
+      ...(organizationId ? { organizationId } : {}),
+    },
+    select: { memberId: true, role: true, rank: true },
+  });
+  const roles = await prisma.governanceRoleMaster.findMany({ where: { canChair: true, isActive: true } });
+  const priorityByDesignation = new Map(roles.map((r) => [r.designation.toLowerCase(), r.chairPriority ?? 999]));
+  const candidates = present.map((row) => {
+    const assignment = assignments
+      .filter((a) => a.memberId === row.memberId)
+      .sort((a, b) => (priorityByDesignation.get(a.role.toLowerCase()) ?? 999) - (priorityByDesignation.get(b.role.toLowerCase()) ?? 999) || a.rank - b.rank)[0];
+    return {
+      memberId: row.memberId!,
+      name: row.member?.fullName || "",
+      designation: assignment?.role || "",
+      priority: assignment ? (priorityByDesignation.get(assignment.role.toLowerCase()) ?? 999) : 999,
+      rank: assignment?.rank ?? 999,
+    };
+  }).filter((x) => x.designation && x.priority < 999)
+    .sort((a, b) => a.priority - b.priority || a.rank - b.rank || a.name.localeCompare(b.name));
+  return candidates[0] || null;
+}
+
 router.put("/meetings/:id/finalize-minutes", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = String(req.params.id);
@@ -219,10 +273,17 @@ router.put("/meetings/:id/finalize-minutes", requireAdmin, async (req: Request, 
     if (!String(current.minutes || "").trim() && !(await prisma.meetingAgendaItem.count({ where: { meetingId: id, decision: { not: null } } }))) {
       return void res.status(400).json({ error: "Complete the meeting minutes or record agenda decisions before finalizing the official record." });
     }
-    if (!current.chairName || !current.chairDesignation) {
-      return void res.status(400).json({ error: "Confirm the presiding officer before publishing the minutes." });
-    }
     const user: any = (req as any).user || {};
+    let chairName = current.chairName || "";
+    let chairDesignation = current.chairDesignation || "";
+    let chairMemberId = current.chairMemberId || null;
+    if (!chairName || !chairDesignation) {
+      const suggested = await resolveSuggestedPresidingOfficer(id, current.organizationId);
+      if (!suggested) return void res.status(400).json({ error: "No eligible presiding officer is marked Present, Late or Online. Confirm attendance first." });
+      chairName = suggested.name;
+      chairDesignation = suggested.designation;
+      chairMemberId = suggested.memberId;
+    }
     let defaultSecretaryName = "";
     if (current.organizationId) {
       const secretary = await prisma.organizationAssignment.findFirst({
@@ -233,12 +294,17 @@ router.put("/meetings/:id/finalize-minutes", requireAdmin, async (req: Request, 
       defaultSecretaryName = secretary?.member?.fullName || "";
     }
     const preparedByName = String(req.body?.preparedByName || current.preparedByName || defaultSecretaryName).trim() || "General Secretary / Authorized Officer";
-    const approvedByName = String(req.body?.approvedByName || current.approvedByName || current.chairName).trim();
+    const approvedByName = String(req.body?.approvedByName || current.approvedByName || chairName).trim();
     const row = await prisma.governanceMeeting.update({
       where: { id },
       data: {
         status: "held",
         minutesStatus: "finalized",
+        chairMemberId,
+        chairName,
+        chairDesignation,
+        chairConfirmedByAdminId: current.chairConfirmedByAdminId || (user.id ? String(user.id) : null),
+        chairConfirmedAt: current.chairConfirmedAt || new Date(),
         preparedByName,
         approvedByName,
         approvedAt: new Date(),
@@ -470,40 +536,72 @@ router.put("/meetings/:id", requireAdmin, async (req, res, next) => {
 
 router.get("/meetings/:id/attendance", requireAdmin, async (req, res, next) => {
   try {
+    const meetingId = String(req.params.id);
+    const meeting = await prisma.governanceMeeting.findUnique({ where: { id: meetingId }, select: { organizationId: true } });
     const rows = await prisma.meetingAttendance.findMany({
-      where: { meetingId: String(req.params.id) },
+      where: { meetingId },
       include: { member: { select: { id: true, memberNo: true, fullName: true, city: true, photoUrl: true } } },
       orderBy: [{ attendeeType: "asc" }, { createdAt: "asc" }],
     });
-    rows.sort((a: any, b: any) => {
-      const an = a.member?.fullName || a.guestName || "";
-      const bn = b.member?.fullName || b.guestName || "";
-      return an.localeCompare(bn);
+
+    const memberIds = rows.map((x) => x.memberId).filter(Boolean) as string[];
+    const assignments = meeting?.organizationId && memberIds.length
+      ? await prisma.organizationAssignment.findMany({
+          where: { organizationId: meeting.organizationId, memberId: { in: memberIds }, isActive: true },
+          select: { memberId: true, role: true, rank: true },
+        })
+      : [];
+    const assignmentByMember = new Map(assignments.map((a) => [a.memberId, a]));
+
+    const enriched = rows.map((row: any) => {
+      const assignment = row.memberId ? assignmentByMember.get(row.memberId) : null;
+      return {
+        ...row,
+        organizationRole: assignment?.role || row.guestDesignation || null,
+        organizationRank: assignment?.rank ?? 999,
+      };
     });
-    res.json(rows);
+    enriched.sort((a: any, b: any) =>
+      (a.organizationRank ?? 999) - (b.organizationRank ?? 999) ||
+      String(a.member?.fullName || a.guestName || "").localeCompare(String(b.member?.fullName || b.guestName || ""))
+    );
+    res.json(enriched);
   } catch (error) { next(error); }
 });
 
 router.post("/meetings/:id/attendance/initialize", requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const meetingId = String(req.params.id);
-    const meeting = await prisma.governanceMeeting.findUnique({ where: { id: meetingId }, select: { id: true, organizationId: true } });
+    const meeting = await prisma.governanceMeeting.findUnique({
+      where: { id: meetingId },
+      select: { id: true, organizationId: true, organization: { select: { name: true, type: true } } },
+    });
     if (!meeting) return void res.status(404).json({ error: "Meeting not found." });
-    if (!meeting.organizationId) return void res.status(400).json({ error: "Select a committee / unit before loading official members." });
+    if (!meeting.organizationId) return void res.status(400).json({ error: "Select the meeting body / committee before loading its official roster." });
 
     const assignments = await prisma.organizationAssignment.findMany({
       where: { organizationId: meeting.organizationId, isActive: true, member: { status: "approved" } },
       select: { memberId: true },
       orderBy: [{ rank: "asc" }, { createdAt: "asc" }],
     });
-    if (!assignments.length) return void res.status(400).json({ error: "No active approved members are assigned to this committee / unit." });
+    const memberIds = [...new Set(assignments.map((a) => a.memberId))];
+    if (!memberIds.length) return void res.status(400).json({ error: `No active approved members are assigned to ${meeting.organization?.name || "this body / committee"}.` });
 
-    await prisma.$transaction(assignments.map((a) => prisma.meetingAttendance.upsert({
-      where: { meetingId_memberId: { meetingId, memberId: a.memberId } },
-      update: {},
-      create: { meetingId, memberId: a.memberId, attendeeType: "member", status: "not_marked", source: "unit_roster" },
-    })));
-    res.json({ message: "Official meeting roster loaded.", count: assignments.length });
+    await prisma.$transaction(async (tx) => {
+      // Keep guest / volunteer / invitee rows, but make the official-member roster
+      // exactly match the body selected on the meeting.
+      await tx.meetingAttendance.deleteMany({
+        where: { meetingId, memberId: { notIn: memberIds } },
+      });
+      for (const memberId of memberIds) {
+        await tx.meetingAttendance.upsert({
+          where: { meetingId_memberId: { meetingId, memberId } },
+          update: { attendeeType: "member", source: "unit_roster" },
+          create: { meetingId, memberId, attendeeType: "member", status: "not_marked", source: "unit_roster" },
+        });
+      }
+    });
+    res.json({ message: `${meeting.organization?.name || "Selected body"} roster loaded.`, count: memberIds.length, unitName: meeting.organization?.name || null });
   } catch (error) { next(error); }
 });
 
@@ -564,35 +662,10 @@ router.put("/meetings/:id/attendance", requireAdmin, async (req: Request, res: R
 router.get("/meetings/:id/chair-suggestion", requireAdmin, async (req, res, next) => {
   try {
     const meetingId = String(req.params.id);
-    const present = await prisma.meetingAttendance.findMany({
-      where: { meetingId, memberId: { not: null }, status: { in: ["present", "late", "online"] } },
-      include: { member: { select: { id: true, fullName: true } } },
-    });
-    if (!present.length) return void res.json({ suggestion: null });
-
-    const memberIds = present.map((x) => x.memberId!).filter(Boolean);
-    const assignments = await prisma.organizationAssignment.findMany({
-      where: { memberId: { in: memberIds }, isActive: true },
-      select: { memberId: true, role: true, rank: true },
-    });
-    const roles = await prisma.governanceRoleMaster.findMany({ where: { canChair: true, isActive: true } });
-    const priorityByDesignation = new Map(roles.map((r) => [r.designation.toLowerCase(), r.chairPriority ?? 999]));
-
-    const candidates = present.map((row) => {
-      const assignment = assignments
-        .filter((a) => a.memberId === row.memberId)
-        .sort((a, b) => (priorityByDesignation.get(a.role.toLowerCase()) ?? 999) - (priorityByDesignation.get(b.role.toLowerCase()) ?? 999) || a.rank - b.rank)[0];
-      return {
-        memberId: row.memberId,
-        name: row.member?.fullName || "",
-        designation: assignment?.role || "",
-        priority: assignment ? (priorityByDesignation.get(assignment.role.toLowerCase()) ?? 999) : 999,
-        rank: assignment?.rank ?? 999,
-      };
-    }).filter((x) => x.designation && x.priority < 999)
-      .sort((a, b) => a.priority - b.priority || a.rank - b.rank || a.name.localeCompare(b.name));
-
-    res.json({ suggestion: candidates[0] || null });
+    const meeting = await prisma.governanceMeeting.findUnique({ where: { id: meetingId }, select: { organizationId: true } });
+    if (!meeting) return void res.status(404).json({ error: "Meeting not found." });
+    const suggestion = await resolveSuggestedPresidingOfficer(meetingId, meeting.organizationId);
+    res.json({ suggestion });
   } catch (error) { next(error); }
 });
 
