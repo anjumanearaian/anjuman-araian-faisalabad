@@ -167,7 +167,8 @@ export const bootstrapLegacyLeadership = () => apiClient<{ imported: number; ski
 export type MeetingDocumentType = "notice" | "agenda" | "attendance" | "minutes" | "decisions" | "package";
 
 export function meetingDocumentUrl(meetingId: string, type: MeetingDocumentType, mode: "view" | "download" = "view") {
-  return `/api/governance/meetings/${encodeURIComponent(meetingId)}/document.pdf?type=${encodeURIComponent(type)}&mode=${mode}`;
+  const encodedPath = ["governance", "meetings", meetingId, "document.pdf"].map(encodeURIComponent).join("__");
+  return `/api/__proxy__${encodedPath}?type=${encodeURIComponent(type)}&mode=${mode}`;
 }
 
 export function publicMeetingDocumentUrl(meetingId: string, type: Exclude<MeetingDocumentType, "attendance"> = "minutes") {
