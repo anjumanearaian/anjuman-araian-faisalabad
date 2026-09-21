@@ -8,32 +8,59 @@ function isOptimizable(file: File) {
 
 export async function optimizeImageFile(
   file: File,
-  options: { maxWidth?: number; maxHeight?: number; quality?: number } = {},
+  options: { maxWidth?: number; maxHeight?: number; quality?: number; cropToAspect?: boolean } = {},
 ): Promise<File> {
   if (!isOptimizable(file) || typeof document === "undefined" || typeof createImageBitmap !== "function") return file;
 
   const maxWidth = options.maxWidth ?? DEFAULT_MAX_WIDTH;
   const maxHeight = options.maxHeight ?? DEFAULT_MAX_HEIGHT;
   const quality = options.quality ?? DEFAULT_QUALITY;
+  const cropToAspect = Boolean(options.cropToAspect);
 
   const bitmap = await createImageBitmap(file);
   try {
-    const scale = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height);
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    let width: number;
+    let height: number;
+
+    if (cropToAspect) {
+      width = Math.max(1, Math.round(maxWidth));
+      height = Math.max(1, Math.round(maxHeight));
+      canvas.width = width;
+      canvas.height = height;
+
+      const targetRatio = width / height;
+      const sourceRatio = bitmap.width / bitmap.height;
+      let sx = 0;
+      let sy = 0;
+      let sw = bitmap.width;
+      let sh = bitmap.height;
+
+      if (sourceRatio > targetRatio) {
+        sw = Math.round(bitmap.height * targetRatio);
+        sx = Math.round((bitmap.width - sw) / 2);
+      } else if (sourceRatio < targetRatio) {
+        sh = Math.round(bitmap.width / targetRatio);
+        sy = Math.round((bitmap.height - sh) / 2);
+      }
+      ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
+    } else {
+      const scale = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height);
+      width = Math.max(1, Math.round(bitmap.width * scale));
+      height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(bitmap, 0, 0, width, height);
+    }
 
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
     if (!blob) return file;
 
     // Keep the original when conversion would make the payload larger.
-    if (blob.size >= file.size && scale === 1 && file.type === "image/webp") return file;
+    if (!cropToAspect && blob.size >= file.size && file.type === "image/webp" && bitmap.width === width && bitmap.height === height) return file;
 
     const base = file.name.replace(/\.[^.]+$/, "") || "image";
     return new File([blob], `${base}.webp`, { type: "image/webp", lastModified: Date.now() });
