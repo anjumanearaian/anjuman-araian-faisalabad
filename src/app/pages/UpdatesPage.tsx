@@ -10,7 +10,7 @@ const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
 
 type HubItem = NewsItem | EventItem;
-type SectionKey = "all" | "announcements" | "news" | "activities" | "events" | "minutes";
+type SectionKey = "all" | "announcements" | "news" | "activities" | "events" | "minutes" | "reports";
 
 const filters: { key: SectionKey; label: string }[] = [
   { key: "all", label: "All" },
@@ -19,6 +19,7 @@ const filters: { key: SectionKey; label: string }[] = [
   { key: "activities", label: "Activities" },
   { key: "events", label: "Meetings & Events" },
   { key: "minutes", label: "Minutes" },
+  { key: "reports", label: "Reports" },
 ];
 
 function itemBody(item: HubItem) {
@@ -39,6 +40,7 @@ function sectionFor(item: HubItem): SectionKey {
   if (category.includes("announcement")) return "announcements";
   if (category.includes("activity")) return "activities";
   if (category.includes("minute")) return "minutes";
+  if (category.includes("report") || category.includes("review")) return "reports";
   return "news";
 }
 
@@ -115,7 +117,7 @@ export function UpdatesPage() {
     <div>
       <PageHeader
         title="Updates & Events"
-        subtitle="Official announcements, news, activities, meetings, events and minutes in one place"
+        subtitle="Official announcements, news, activities, meetings, events, minutes and reports in one place"
         breadcrumb={["Home", "Updates & Events"]}
       />
 
