@@ -68,6 +68,8 @@ export interface MeetingAttendance {
   remarks?: string | null;
   markedByName?: string | null;
   markedAt?: string | null;
+  organizationRole?: string | null;
+  organizationRank?: number | null;
   member?: { id: string; memberNo: string; fullName: string; city?: string; photoUrl?: string | null };
 }
 
