@@ -291,10 +291,14 @@ export function AdminOperationsCenterPage() {
         window.setTimeout(() => URL.revokeObjectURL(url), 1200);
         return;
       }
-      const w = window.open(url, "_blank", "noopener,noreferrer");
+      const w = window.open(url, "_blank");
       if (!w) throw new Error("Allow pop-ups to view or print the PDF.");
-      if (action === "print") window.setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 1200);
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      if (action === "print") {
+        window.setTimeout(() => {
+          try { w.focus(); w.print(); } catch {}
+        }, 1800);
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 120000);
     } catch (e: any) { setError(e.message || "Meeting PDF could not be opened."); }
   }
 
