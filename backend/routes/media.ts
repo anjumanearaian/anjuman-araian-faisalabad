@@ -31,7 +31,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
 router.post("/", requireContentAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = Array.isArray(req.body) ? req.body : [req.body];
-    const parsed = z.array(MediaSchema).min(1).max(50).safeParse(input);
+    const parsed = z.array(MediaSchema).min(1).max(51).safeParse(input);
     if (!parsed.success) { res.status(400).json({ error: "Invalid media data", details: parsed.error.flatten().fieldErrors }); return; }
     const created = await prisma.$transaction(parsed.data.map((data) => prisma.media.create({ data })));
     res.status(201).json(Array.isArray(req.body) ? created.map(serialize) : serialize(created[0]));
