@@ -316,12 +316,122 @@ async function saveAdminRelations(req: any, res: any, memberId: string) {
   return false;
 }
 
+
+function socialEscapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function socialPlainText(value: unknown) {
+  return String(value ?? "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function socialTruncate(value: string, max = 180) {
+  return value.length <= max ? value : value.slice(0, max - 1).trimEnd() + "…";
+}
+
+function removeExistingSocialSeo(html: string) {
+  return html
+    .replace(/<title>[\s\S]*?<\/title>/i, "")
+    .replace(/<meta\s+name=["']description["'][^>]*>/gi, "")
+    .replace(/<meta\s+property=["']og:[^"']+["'][^>]*>/gi, "")
+    .replace(/<meta\s+name=["']twitter:[^"']+["'][^>]*>/gi, "")
+    .replace(/<link\s+rel=["']canonical["'][^>]*>/gi, "");
+}
+
+async function renderSocialUpdate(req: any, res: any) {
+  const id = text(req.query?.id);
+  if (!id) return res.redirect(302, "/updates");
+
+  const forwardedProto = String(req.headers?.["x-forwarded-proto"] || "https").split(",")[0].trim();
+  const forwardedHost = String(req.headers?.["x-forwarded-host"] || req.headers?.host || "anjumanearaian.org").split(",")[0].trim();
+  const origin = `${forwardedProto}://${forwardedHost}`;
+
+  const item = await prisma.content.findFirst({
+    where: { id, status: "published" },
+  });
+
+  const shellResponse = await fetch(`${origin}/?__social_shell=1`, {
+    headers: { "x-social-preview": "1" },
+  });
+  if (!shellResponse.ok) throw new Error("Could not load application shell");
+
+  let html = await shellResponse.text();
+  if (!item) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+    return res.status(200).send(html);
+  }
+
+  let images: string[] = [];
+  try {
+    images = item.images ? JSON.parse(item.images) : [];
+    if (!Array.isArray(images)) images = [];
+  } catch {
+    images = [];
+  }
+
+  const title = String(item.title || "Official Update");
+  const description = socialTruncate(socialPlainText(item.body) || `${title} - Anjuman-e-Araian Faisalabad`, 180);
+  const firstImage = String(images[0] || "").trim();
+  const imageUrl = firstImage ? new URL(firstImage, origin).href : "";
+  const slug = text(req.query?.slug);
+  const canonical = `${origin}/updates/${encodeURIComponent(id)}${slug ? `/${encodeURIComponent(slug)}` : ""}`;
+
+  const tags = [
+    `<title>${socialEscapeHtml(title)} | Anjuman-e-Araian Faisalabad</title>`,
+    `<meta name="description" content="${socialEscapeHtml(description)}" />`,
+    `<link rel="canonical" href="${socialEscapeHtml(canonical)}" />`,
+    `<meta property="og:title" content="${socialEscapeHtml(title)}" />`,
+    `<meta property="og:description" content="${socialEscapeHtml(description)}" />`,
+    `<meta property="og:type" content="${item.type === "event" ? "website" : "article"}" />`,
+    `<meta property="og:site_name" content="Anjuman-e-Araian Faisalabad" />`,
+    `<meta property="og:url" content="${socialEscapeHtml(canonical)}" />`,
+    imageUrl ? `<meta property="og:image" content="${socialEscapeHtml(imageUrl)}" />` : "",
+    imageUrl ? `<meta property="og:image:secure_url" content="${socialEscapeHtml(imageUrl)}" />` : "",
+    imageUrl ? `<meta property="og:image:width" content="1200" />` : "",
+    imageUrl ? `<meta property="og:image:height" content="630" />` : "",
+    imageUrl ? `<meta property="og:image:alt" content="${socialEscapeHtml(title)}" />` : "",
+    `<meta name="twitter:card" content="${imageUrl ? "summary_large_image" : "summary"}" />`,
+    `<meta name="twitter:title" content="${socialEscapeHtml(title)}" />`,
+    `<meta name="twitter:description" content="${socialEscapeHtml(description)}" />`,
+    imageUrl ? `<meta name="twitter:image" content="${socialEscapeHtml(imageUrl)}" />` : "",
+  ].filter(Boolean).join("\n      ");
+
+  html = removeExistingSocialSeo(html).replace("</head>", `      ${tags}\n    </head>`);
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+  return res.status(200).send(html);
+}
+
 export default async function handler(req: any, res: any) {
   restoreNestedApiPath(req);
   normalizeSameOriginRequest(req);
   const pathname = String(req.url || "").split("?")[0];
   const method = String(req.method || "").toUpperCase();
   const requestBody = bodyOf(req);
+
+  if (pathname === "/api/social-update" && method === "GET") {
+    try {
+      return await renderSocialUpdate(req, res);
+    } catch (error) {
+      console.error("Social update render failed", error);
+      return res.redirect(302, "/updates");
+    }
+  }
 
   if (pathname === "/api/matrimonial/manual-flow" && (method === "GET" || method === "POST")) {
     return manualMatrimonialFlow(req, res);

@@ -1657,6 +1657,11 @@ return (
               label="Article Photos (Optional)"
               images={newsForm.images || []}
               onChange={(imgs) => setNewsForm((f) => ({ ...f, images: imgs }))}
+              imageMaxWidth={1200}
+              imageMaxHeight={630}
+              imageQuality={0.84}
+              cropToAspect
+              guidance="Standard website/social size: 1200 × 630 px. Images are automatically cropped to this ratio, converted to WebP and optimized for fast loading and full link previews."
             />
           </div>
 
@@ -1717,6 +1722,11 @@ return (
               label="Event Photos (Optional)"
               images={eventForm.images || []}
               onChange={(imgs) => setEventForm((f) => ({ ...f, images: imgs }))}
+              imageMaxWidth={1200}
+              imageMaxHeight={630}
+              imageQuality={0.84}
+              cropToAspect
+              guidance="Standard website/social size: 1200 × 630 px. Images are automatically cropped to this ratio, converted to WebP and optimized for fast loading and full link previews."
             />
           </div>
 

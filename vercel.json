@@ -44,6 +44,14 @@
       "destination": "/api/__proxy__matrimonial__manual-flow"
     },
     {
+      "source": "/updates/:id/:slug",
+      "destination": "/api/__proxy__social-update?id=:id&slug=:slug"
+    },
+    {
+      "source": "/updates/:id",
+      "destination": "/api/__proxy__social-update?id=:id"
+    },
+    {
       "source": "/((?!api/|uploads/).*)",
       "destination": "/index.html"
     }

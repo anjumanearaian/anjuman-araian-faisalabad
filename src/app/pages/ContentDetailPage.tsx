@@ -98,8 +98,17 @@ export function ContentDetailPage() {
     upsertMeta('meta[property="og:type"]', { property: "og:type", content: item.type === "event" ? "website" : "article" });
     upsertMeta('meta[property="og:url"]', { property: "og:url", content: canonical });
     upsertMeta('meta[name="twitter:card"]', { name: "twitter:card", content: image ? "summary_large_image" : "summary" });
-    if (absoluteImage) upsertMeta('meta[property="og:image"]', { property: "og:image", content: absoluteImage });
-    else document.head.querySelector('meta[property="og:image"]')?.remove();
+    if (absoluteImage) {
+      upsertMeta('meta[property="og:image"]', { property: "og:image", content: absoluteImage });
+      upsertMeta('meta[property="og:image:width"]', { property: "og:image:width", content: "1200" });
+      upsertMeta('meta[property="og:image:height"]', { property: "og:image:height", content: "630" });
+      upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: absoluteImage });
+    } else {
+      document.head.querySelector('meta[property="og:image"]')?.remove();
+      document.head.querySelector('meta[property="og:image:width"]')?.remove();
+      document.head.querySelector('meta[property="og:image:height"]')?.remove();
+      document.head.querySelector('meta[name="twitter:image"]')?.remove();
+    }
     setCanonical(canonical);
 
     const schema = document.createElement("script");
@@ -171,7 +180,7 @@ export function ContentDetailPage() {
 
         {images[0] && (
           <button type="button" onClick={() => setGallery({ images, index: 0 })} style={{ display: "block", width: "100%", padding: 0, border: 0, background: "none", cursor: "zoom-in", marginBottom: 30 }} aria-label="Open featured image">
-            <ResponsiveImage src={images[0]} alt={`${item.title} featured image`} widthHint={1600} sizes="(max-width: 1040px) 100vw, 1040px" fetchPriority="high" loading="eager" style={{ display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: event ? "contain" : "cover", borderRadius: 14, background: event ? "#f7f4ec" : "#eef2ef", boxShadow: "0 12px 34px rgba(26,77,46,.09)" }} />
+            <ResponsiveImage src={images[0]} alt={`${item.title} featured image`} widthHint={1600} sizes="(max-width: 1040px) 100vw, 1040px" fetchPriority="high" loading="eager" style={{ display: "block", width: "100%", aspectRatio: "1200 / 630", objectFit: event ? "contain" : "cover", borderRadius: 14, background: event ? "#f7f4ec" : "#eef2ef", boxShadow: "0 12px 34px rgba(26,77,46,.09)" }} />
           </button>
         )}
 
@@ -183,7 +192,7 @@ export function ContentDetailPage() {
             <div className="detail-gallery-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
               {images.map((src, index) => (
                 <button key={`${src}-${index}`} onClick={() => setGallery({ images, index })} style={{ border: 0, padding: 0, background: "none", cursor: "zoom-in", borderRadius: 10, overflow: "hidden" }} aria-label={`Open photo ${index + 1}`}>
-                  <ResponsiveImage src={src} alt={`${item.title} photo ${index + 1}`} widthHint={520} sizes="(max-width: 650px) 50vw, 33vw" style={{ display: "block", width: "100%", aspectRatio: "4 / 3", objectFit: "cover" }} />
+                  <ResponsiveImage src={src} alt={`${item.title} photo ${index + 1}`} widthHint={520} sizes="(max-width: 650px) 50vw, 33vw" style={{ display: "block", width: "100%", aspectRatio: "1200 / 630", objectFit: "cover" }} />
                 </button>
               ))}
             </div>

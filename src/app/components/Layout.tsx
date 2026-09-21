@@ -19,6 +19,10 @@ function setMeta(selector: string, attr: "name" | "property", key: string, conte
 }
 
 function applySeo(pathname: string) {
+  // Update detail pages set their own post-specific metadata after loading.
+  // Do not overwrite those tags with the site-wide defaults.
+  if (/^\/updates\/[^/]+/.test(pathname)) return;
+
   const isBusinessDirectory = pathname === "/business";
   const isBusinessForm = pathname === "/business/submit";
   const isMatrimonialLanding = pathname === "/matrimonial";
