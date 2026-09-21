@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { PageHeader } from "../components/PageHeader";
-import { Phone, Mail, MapPin, Clock, Send, CheckCircle } from "lucide-react";
+import { Phone, MapPin, Send, CheckCircle } from "lucide-react";
 import { createMessage } from "../lib/messageStore";
 
 const GREEN = "#1a4d2e";
 const GOLD = "#c8a04a";
 
-const offices = [
-  { city: "Faisalabad (Head Office)", address: "Central Secretariat, Anjuman-e-Araian, Faisalabad", phone: "+92 300 865 5522", email: "anjumanearaianfaisalabad@gmail.com" },
-  { city: "Karachi", address: "Plot 45, Block 7, Gulshan-e-Iqbal, Karachi", phone: "+92 21 3456 7890", email: "karachi@anjumanearaian.org" },
-  { city: "Islamabad", address: "House 10, Street 4, F-8/2, Islamabad", phone: "+92 51 2345 6789", email: "islamabad@anjumanearaian.org" },
-  { city: "Faisalabad", address: "Canal Road, Near Government College, Faisalabad", phone: "+92 41 3456 7890", email: "faisalabad@anjumanearaian.org" },
+const leadershipContacts = [
+  { role: "President", name: "Dr M. Ahsanul Haq", phone: "+92 301 866 5199" },
+  { role: "General Secretary", name: "Dr Mian Saqib Rehman", phone: "+92 300 865 5522" },
 ];
 
 const blank = { name: "", email: "", phone: "", subject: "", message: "" };
@@ -41,14 +39,26 @@ export function ContactPage() {
 
   return (
     <div>
-      <PageHeader title="Contact Us" subtitle="We are here to help — reach out to any of our offices" breadcrumb={["Home", "Contact"]} />
+      <PageHeader title="Contact Us" subtitle="Official contact information for Anjuman-e-Araian Faisalabad" breadcrumb={["Home", "Contact"]} />
 
-      {/* Map placeholder */}
-      <div style={{ width: "100%", height: 240, backgroundColor: "#fce8e6", display: "flex", alignItems: "center", justifyContent: "center", borderBottom: `3px solid ${GOLD}` }}>
-        <div style={{ textAlign: "center" }}>
+      <div style={{ width: "100%", minHeight: 210, backgroundColor: "#fce8e6", display: "flex", alignItems: "center", justifyContent: "center", borderBottom: `3px solid ${GOLD}`, padding: "28px 20px", boxSizing: "border-box" }}>
+        <div style={{ textAlign: "center", maxWidth: 760 }}>
           <MapPin size={36} color={GREEN} style={{ margin: "0 auto 8px" }} />
-          <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700 }}>Anjuman-e-Araian Head Office</p>
-          <p style={{ color: "#666", fontSize: 14 }}>12 Temple Road, Lahore — 54000, Pakistan</p>
+          <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, margin: "0 0 14px" }}>Secretariat, Anjuman-e-Araian Faisalabad</p>
+          <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 14 }}>
+            {leadershipContacts.map((contact) => (
+              <a
+                key={contact.role}
+                href={`tel:${contact.phone.replace(/[^+\d]/g, "")}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#555", fontSize: 14, textDecoration: "none", background: "rgba(255,255,255,.62)", border: "1px solid rgba(26,77,46,.12)", borderRadius: 999, padding: "8px 14px" }}
+              >
+                <Phone size={14} color={GOLD} />
+                <strong style={{ color: GREEN }}>{contact.role}:</strong>
+                <span>{contact.name}</span>
+                <span>{contact.phone}</span>
+              </a>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -59,28 +69,20 @@ export function ContactPage() {
             <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Get in Touch</h2>
             <div style={{ width: 48, height: 3, backgroundColor: GOLD, borderRadius: 2, marginBottom: 24 }} />
 
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 20 }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: GREEN, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Clock size={18} color={GOLD} />
-              </div>
-              <div>
-                <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Office Hours</p>
-                <p style={{ color: "#666", fontSize: 13, lineHeight: 1.8 }}>Monday – Friday: 9:00 AM – 5:00 PM<br />Saturday: 9:00 AM – 1:00 PM<br />Sunday: Closed</p>
-              </div>
-            </div>
-
-            <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Our Offices</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {offices.map((o) => (
-                <div key={o.city} style={{ backgroundColor: "#f8f5ef", borderRadius: 10, padding: "16px 18px", border: `1px solid rgba(200,160,74,0.2)` }}>
-                  <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{o.city}</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 8, color: "#555", fontSize: 13 }}><MapPin size={12} color={GOLD} /> {o.address}</span>
-                    <a href={`tel:${o.phone}`} style={{ display: "flex", alignItems: "center", gap: 8, color: "#555", fontSize: 13, textDecoration: "none" }}><Phone size={12} color={GOLD} /> {o.phone}</a>
-                    <a href={`mailto:${o.email}`} style={{ display: "flex", alignItems: "center", gap: 8, color: "#555", fontSize: 13, textDecoration: "none" }}><Mail size={12} color={GOLD} /> {o.email}</a>
+            <h3 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Secretariat</h3>
+            <div style={{ backgroundColor: "#f8f5ef", borderRadius: 10, padding: "18px", border: `1px solid rgba(200,160,74,0.2)` }}>
+              <p style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, margin: "0 0 14px" }}>Anjuman-e-Araian Faisalabad</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {leadershipContacts.map((contact) => (
+                  <div key={contact.role}>
+                    <p style={{ margin: 0, color: "#555", fontSize: 13, fontWeight: 700 }}>{contact.role}</p>
+                    <p style={{ margin: "2px 0 5px", color: GREEN, fontSize: 14, fontWeight: 700 }}>{contact.name}</p>
+                    <a href={`tel:${contact.phone.replace(/[^+\d]/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#555", fontSize: 13, textDecoration: "none" }}>
+                      <Phone size={13} color={GOLD} /> {contact.phone}
+                    </a>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
 
