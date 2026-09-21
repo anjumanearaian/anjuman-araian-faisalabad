@@ -93,32 +93,22 @@ function escapeHtml(value: unknown) {
 
 function publicMeetingBody(item: any) {
   const parts: string[] = [];
-  if (item.notice) parts.push(`<h2>Meeting Notice</h2><p>${escapeHtml(item.notice)}</p>`);
+  if (item.status === "postponed") parts.push(`<p><strong>Status:</strong> This meeting has been postponed.</p>`);
+  if (item.status === "cancelled") parts.push(`<p><strong>Status:</strong> This meeting has been cancelled.</p>`);
+  if (item.notice) parts.push(`<h2>Meeting Information</h2><p>${escapeHtml(item.notice)}</p>`);
   if (item.agenda) parts.push(`<h2>Agenda</h2><p>${escapeHtml(item.agenda)}</p>`);
-  if (item.status === "held" && item.minutes) {
-    parts.push(`<h2>Minutes & Decisions</h2><p>${escapeHtml(item.minutes)}</p>`);
-    if (item.published && item.id) {
-      const base = `/api/governance/public/meetings/${encodeURIComponent(item.id)}/document.pdf?type=minutes`;
-      parts.push(`<h2>Official Meeting Document</h2><p><a href="${base}" target="_blank" rel="noopener">View / Print Official Minutes PDF</a> &nbsp; | &nbsp; <a href="${base}&mode=download">Download PDF</a></p>`);
-    }
-  }
-  if (item.status === "postponed") parts.unshift(`<p><strong>Status:</strong> This meeting has been postponed.</p>`);
-  if (item.status === "cancelled") parts.unshift(`<p><strong>Status:</strong> This meeting has been cancelled.</p>`);
-  return parts.join("\n") || `<p>Official meeting record of Anjuman-e-Araian Faisalabad.</p>`;
+  parts.push(`<p><em>Attendance, minutes, decisions, approvals and official meeting documents are internal records and are not publicly available.</em></p>`);
+  return parts.join("\n") || `<p>Meeting information of Anjuman-e-Araian Faisalabad.</p>`;
 }
 
 function meetingCategory(item: any) {
-  const base = item.meetingType === "agm"
+  return item.meetingType === "agm"
     ? "Annual General Meeting"
     : item.meetingType === "committee"
       ? "Committee Meeting"
       : item.meetingType === "emergency"
         ? "Emergency Meeting"
         : "Meeting";
-  // Keep one public record throughout the meeting lifecycle. Once minutes are
-  // added to a held meeting, the same Content row naturally moves into the
-  // Minutes filter because its category now contains the word "Minutes".
-  return item.status === "held" && String(item.minutes || "").trim() ? `${base} Minutes` : base;
 }
 
 async function syncPublicMeetingContent(meeting: any) {
@@ -249,16 +239,14 @@ router.put("/meetings/:id/finalize-minutes", requireAdmin, async (req: Request, 
       data: {
         status: "held",
         minutesStatus: "finalized",
-        published: false,
         preparedByName,
         approvedByName,
         approvedAt: new Date(),
-        publishedAt: null,
       },
       include: { organization: { select: { id: true, name: true, type: true } } },
     });
-    if (row.contentId) {
-      try { await prisma.content.update({ where: { id: row.contentId }, data: { status: "draft" } }); } catch {}
+    if (row.published || row.contentId) {
+      await syncPublicMeetingContent(row);
     }
     res.json({ ...mapMeeting(row), finalizedBy: user.username || user.email || user.role || "Admin" });
   } catch (error) { next(error); }
@@ -450,13 +438,16 @@ router.post("/meetings", requireAdmin, async (req: Request, res: Response, next:
     let row = await prisma.governanceMeeting.create({
       data: {
         ...data,
-        published: false,
         images: JSON.stringify(data.images || []),
         createdByAdminId: user.id ? String(user.id) : null,
         createdByName: user.username || user.email || user.role || "Admin",
       },
       include: { organization: { select: { id: true, name: true, type: true } } },
     });
+    if (row.published) {
+      const contentId = await syncPublicMeetingContent(row);
+      row = { ...row, contentId } as any;
+    }
     res.status(201).json(mapMeeting(row));
   } catch (error) { next(error); }
 });
@@ -466,11 +457,12 @@ router.put("/meetings/:id", requireAdmin, async (req, res, next) => {
     const data = MeetingSchema.parse(req.body);
     let row = await prisma.governanceMeeting.update({
       where: { id: String(req.params.id) },
-      data: { ...data, published: false, images: JSON.stringify(data.images || []) },
+      data: { ...data, images: JSON.stringify(data.images || []) },
       include: { organization: { select: { id: true, name: true, type: true } } },
     });
-    if (row.contentId) {
-      try { await prisma.content.update({ where: { id: row.contentId }, data: { status: "draft" } }); } catch {}
+    if (row.published || row.contentId) {
+      const contentId = await syncPublicMeetingContent(row);
+      row = { ...row, contentId } as any;
     }
     res.json(mapMeeting(row));
   } catch (error) { next(error); }
