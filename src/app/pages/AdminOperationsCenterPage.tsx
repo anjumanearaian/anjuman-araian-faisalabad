@@ -11,7 +11,7 @@ import {
   createOrganizationAssignment, createOrganizationUnit, fetchGovernanceMeetings,
   fetchGovernanceSummary, fetchOrganizationAssignments, fetchOrganizationUnits,
   GovernanceMeeting, GovernanceSummary, MeetingAttendance, OrganizationAssignment, OrganizationUnit,
-  OrganizationUnitType, fetchMeetingAttendance, initializeMeetingAttendance, saveMeetingAttendance, fetchChairSuggestion, confirmMeetingChair, updateGovernanceMeeting, updateOrganizationAssignment, updateOrganizationUnit,
+  OrganizationUnitType, fetchMeetingAttendance, initializeMeetingAttendance, saveMeetingAttendance, fetchChairSuggestion, confirmMeetingChair, meetingDocumentUrl, publishMeetingMinutes, MeetingDocumentType, updateGovernanceMeeting, updateOrganizationAssignment, updateOrganizationUnit,
 } from "../lib/governanceStore";
 import { createOverseasChapter, deleteOverseasChapter, fetchOverseasChapters, OverseasChapter, updateOverseasChapter } from "../lib/overseasStore";
 import { createFinanceTransaction, fetchFinanceLedger, fetchFinanceMembers, fetchFinanceSummary, financeReceiptUrl, FinanceLedgerRow, FinanceSummary, voidFinanceTransaction } from "../lib/financeStore";
@@ -270,6 +270,44 @@ export function AdminOperationsCenterPage() {
     } catch (e: any) { setError(e.message || "Could not save meeting attendance."); }
   }
 
+  async function meetingPdfAction(meeting: GovernanceMeeting, type: MeetingDocumentType, action: "view" | "download" | "print") {
+    setError("");
+    try {
+      const response = await fetch(meetingDocumentUrl(meeting.id, type, action === "download" ? "download" : "view"), {
+        headers: { Authorization: `Bearer ${sessionStorage.getItem("araian_admin_token") || ""}` },
+      });
+      if (!response.ok) {
+        let message = "Meeting PDF could not be generated.";
+        try { const body = await response.json(); message = body?.error || message; } catch {}
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (action === "download") {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${meeting.date || "meeting"}-${type}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+        return;
+      }
+      const w = window.open(url, "_blank", "noopener,noreferrer");
+      if (!w) throw new Error("Allow pop-ups to view or print the PDF.");
+      if (action === "print") window.setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 1200);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e: any) { setError(e.message || "Meeting PDF could not be opened."); }
+  }
+
+  async function publishMinutesNow(meeting: GovernanceMeeting) {
+    if (!confirm("Publish these minutes as the official meeting record? The PDF and public meeting record will become available.")) return;
+    setError("");
+    try {
+      await publishMeetingMinutes(meeting.id);
+      await loadAll();
+      flash("Official minutes published successfully.");
+    } catch (e: any) { setError(e.message || "Could not publish the meeting minutes."); }
+  }
+
   async function saveMeeting() {
     setError("");
     try {
@@ -430,7 +468,18 @@ export function AdminOperationsCenterPage() {
           </table></div>
         </div>}
 
-                <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.status} good={m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}><button style={secondary} onClick={()=>{setMeetingForm({id:m.id,organizationId:m.organizationId||"",title:m.title,meetingType:m.meetingType,date:m.date,time:m.time||"",venue:m.venue||"",status:m.status,notice:m.notice||"",agenda:m.agenda||"",minutes:m.minutes||"",images:m.images||[],published:m.published}); window.scrollTo({top:0,behavior:"smooth"});}}><Edit2 size={12}/> Open</button><button style={secondary} onClick={()=>void openAttendance(m)}><Users size={12}/> Attendance Records {m._count?.attendance?`(${m._count.attendance})`:""}</button></div></Td></tr>)}</DataTable>
+                <DataTable headers={["Meeting","Unit","Date / Venue","Status","Minutes","Photos","Action"]}>{meetings.map((m)=><tr key={m.id}><Td><strong>{m.title}</strong><small>{m.meetingType.toUpperCase()}</small></Td><Td>{m.organization?.name||"General"}</Td><Td>{m.date}{m.time?` · ${m.time}`:""}<small>{m.venue||"-"}</small></Td><Td><Status text={m.minutesStatus||m.status} good={m.minutesStatus==="published"||m.status==="held"||m.status==="announced"}/></Td><Td>{m.minutes?.trim()?"Added":"Pending"}</Td><Td>{m.images?.length||0}</Td><Td><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          <button style={secondary} onClick={()=>{setMeetingForm({id:m.id,organizationId:m.organizationId||"",title:m.title,meetingType:m.meetingType,date:m.date,time:m.time||"",venue:m.venue||"",status:m.status,notice:m.notice||"",agenda:m.agenda||"",minutes:m.minutes||"",images:m.images||[],published:m.published}); window.scrollTo({top:0,behavior:"smooth"});}}><Edit2 size={12}/> Open</button>
+          <button style={secondary} onClick={()=>void openAttendance(m)}><Users size={12}/> Take Attendance {m._count?.attendance?`(${m._count.attendance})`:""}</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"notice","view")}><FileText size={12}/> Notice PDF</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"agenda","view")}><FileText size={12}/> Agenda PDF</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"attendance","view")}><Users size={12}/> Attendance PDF</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","view")}><FileText size={12}/> Preview Minutes</button>
+          <button style={secondary} onClick={()=>void meetingPdfAction(m,"package","download")}><Download size={12}/> Complete File</button>
+          {m.minutesStatus!=="published" && <button style={primary} onClick={()=>void publishMinutesNow(m)}>Publish Minutes</button>}
+          {m.minutesStatus==="published" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","download")}><Download size={12}/> Download Minutes</button>}
+          {m.minutesStatus==="published" && <button style={secondary} onClick={()=>void meetingPdfAction(m,"minutes","print")}><FileText size={12}/> Print</button>}
+        </div></Td></tr>)}</DataTable>
       </div>}
 
       {!loading && tab === "overseas" && <div style={{display:"grid",gap:18}}>
