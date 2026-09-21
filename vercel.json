@@ -45,11 +45,11 @@
     },
     {
       "source": "/updates/:id/:slug",
-      "destination": "/api/social-update?id=:id&slug=:slug"
+      "destination": "/api/__proxy__social-update?id=:id&slug=:slug"
     },
     {
       "source": "/updates/:id",
-      "destination": "/api/social-update?id=:id"
+      "destination": "/api/__proxy__social-update?id=:id"
     },
     {
       "source": "/((?!api/|uploads/).*)",
