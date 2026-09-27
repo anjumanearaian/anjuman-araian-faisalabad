@@ -192,6 +192,48 @@ async function validateLinkedMember(memberId?: string | null) {
 
 type LedgerView = "active" | "archived" | "all";
 
+function financeCategoryFamily(value: unknown) {
+  const n = normalize(value);
+  if (n.includes("membership")) return "membership";
+  if (n.includes("business")) return "business";
+  if (n.includes("matrimonial")) return "matrimonial";
+  if (n.includes("sponsor")) return "business";
+  return n;
+}
+
+function sameMoney(a: unknown, b: unknown) {
+  return Math.abs(Number(a || 0) - Number(b || 0)) < 0.005;
+}
+
+function dateDistanceDays(a: unknown, b: unknown) {
+  const da = new Date(String(a || "")).getTime();
+  const db = new Date(String(b || "")).getTime();
+  if (!Number.isFinite(da) || !Number.isFinite(db)) return Number.POSITIVE_INFINITY;
+  return Math.abs(da - db) / 86400000;
+}
+
+function legacyLooksMigrated(legacy: any, current: any[]) {
+  const legacyParty = normalize(legacy.partyName);
+  const legacyFamily = financeCategoryFamily(legacy.category);
+  const legacyRefs = [legacy.receiptNo, legacy.externalReference, legacy.transactionNo].map(normalize).filter(Boolean);
+
+  return current.some((row: any) => {
+    if (row.direction !== "credit" || row.status === "void") return false;
+    if (!sameMoney(row.amount, legacy.amount)) return false;
+
+    const currentRefs = [row.receiptNo, row.externalReference, row.transactionNo].map(normalize).filter(Boolean);
+    if (legacyRefs.some((ref) => currentRefs.includes(ref))) return true;
+
+    const partyMatch = normalize(row.partyName) === legacyParty || normalize(row.paymentSenderName) === legacyParty;
+    if (!partyMatch) return false;
+
+    const currentFamily = financeCategoryFamily(row.category);
+    if (legacyFamily && currentFamily && legacyFamily !== currentFamily) return false;
+
+    return dateDistanceDays(row.transactionDate, legacy.transactionDate) <= 7;
+  });
+}
+
 async function financeRows(view: LedgerView = "active") {
   const [transactions, legacy] = await Promise.all([
     prisma.financeTransaction.findMany({
@@ -256,7 +298,12 @@ async function financeRows(view: LedgerView = "active") {
     updatedAt: x.date,
   }));
 
-  return [...current, ...old].sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
+  // Historical RevenueRecord rows can overlap with migrated FinanceTransaction
+  // receipts. Keep the legacy data in storage, but suppress a legacy row from the
+  // live ledger when a strong same-payment match already exists in the new ledger.
+  const visibleLegacy = old.filter((legacyRow) => !legacyLooksMigrated(legacyRow, current));
+
+  return [...current, ...visibleLegacy].sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
 }
 
 async function createPostedTransaction(tx: any, data: any, who: { id: string | null; name: string; role: string }, handler?: any) {
