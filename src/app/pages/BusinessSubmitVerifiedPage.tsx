@@ -75,11 +75,20 @@ export function BusinessSubmitVerifiedPage() {
 
   useEffect(() => {
     let active = true;
-    fetchSiteSettings().then((value) => {
-      if (!active) return;
-      setSettings(value);
-      setForm((old) => old.paymentMethod || !value.paymentMethods?.length ? old : { ...old, paymentMethod: value.paymentMethods[0].bankName });
-    }).finally(() => { if (active) setReady(true); });
+    const refreshPaymentSettings = (markReady = false) => {
+      fetchSiteSettings().then((value) => {
+        if (!active) return;
+        setSettings(value);
+        setForm((old) => {
+          const stillValid = value.paymentMethods?.some((pm) => pm.bankName === old.paymentMethod);
+          if (stillValid || !value.paymentMethods?.length) return old;
+          return { ...old, paymentMethod: value.paymentMethods[0].bankName };
+        });
+      }).finally(() => { if (active && markReady) setReady(true); });
+    };
+
+    refreshPaymentSettings(true);
+    const settingsTimer = window.setInterval(() => refreshPaymentSettings(false), 30000);
 
     if (memberToken) {
       apiClient<any>("/forms/business").then((draft) => {
@@ -89,7 +98,7 @@ export function BusinessSubmitVerifiedPage() {
       }).catch(() => {});
     }
 
-    return () => { active = false; };
+    return () => { active = false; window.clearInterval(settingsTimer); };
   }, []);
 
   useEffect(() => {
@@ -268,11 +277,19 @@ export function BusinessSubmitVerifiedPage() {
           </div>
 
           <StepHeading step="3" icon={<DollarSign size={17}/>} title="Payment Proof" subtitle="No transaction number or sender name is required. Select the account used and upload the slip."/>
+          <div style={{ color: "#6b7280", fontSize: 11, lineHeight: 1.55, margin: "-4px 0 9px" }}>Deposit the selected listing fee into any official account below, then upload the receipt. Admin changes refresh automatically.</div>
           <div className="pay-methods" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9, marginBottom: 14 }}>
             {settings.paymentMethods?.length ? settings.paymentMethods.map((pm) => {
               const active = form.paymentMethod === pm.bankName;
-              return <button type="button" key={pm.id} onClick={() => set("paymentMethod", pm.bankName)} style={{ textAlign: "left", background: active ? "#f0f7f3" : "#fafafa", border: `1px solid ${active ? GREEN : "#e5e7eb"}`, borderRadius: 9, padding: 12, cursor: "pointer" }}><strong style={{ color: GREEN, display: "block" }}>{pm.bankName}</strong><span style={{ fontSize: 11, color: "#666", display: "block", marginTop: 3 }}>{pm.accountTitle}</span><span style={{ fontSize: 12, fontWeight: 800 }}>{pm.accountNo}</span></button>;
-            }) : <div style={{ fontSize: 12, color: "#777" }}>No payment method is configured. Please contact the office.</div>}
+              return <div key={pm.id} onClick={() => set("paymentMethod", pm.bankName)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") set("paymentMethod", pm.bankName); }} style={{ textAlign: "left", background: active ? "#f0f7f3" : "#fafafa", border: `1px solid ${active ? GREEN : "#e5e7eb"}`, borderRadius: 9, padding: 12, cursor: "pointer" }}>
+                <strong style={{ color: GREEN, display: "block" }}>{pm.bankName}</strong>
+                <span style={{ fontSize: 11, color: "#666", display: "block", marginTop: 3 }}>{pm.accountTitle}</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", marginTop: 5 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, overflowWrap: "anywhere" }}>{pm.accountNo}</span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(pm.accountNo); }} style={{ border: "1px solid #cfdcd3", background: "white", color: GREEN, borderRadius: 7, padding: "5px 9px", fontSize: 10, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Copy</button>
+                </div>
+              </div>;
+            }) : <div style={{ fontSize: 12, color: "#777" }}>No official payment account is configured. Please contact the office before sending payment.</div>}
           </div>
           <div style={{ maxWidth: 430 }}><UploadBox title="Payment Slip / Receipt *" value={form.paymentProofUrl} loading={uploading} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")} error={errors.paymentProofUrl}/></div>
 

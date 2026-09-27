@@ -17,7 +17,7 @@ import {
 } from "../lib/memberStore";
 import type { MembershipType, FamilyInfo, MemberChild, ReferralCandidate } from "../lib/memberStore";
 import { citiesForProvince, districtForCity } from "../lib/pakistanLocations";
-import { getSiteSettings } from "../lib/settingsStore";
+import { fetchSiteSettings, getSiteSettings, SiteSettings } from "../lib/settingsStore";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import { ApiError, apiClient } from "../lib/apiClient";
 import { uploadFile } from "../lib/upload";
@@ -88,7 +88,7 @@ export function MemberRegisterPage() {
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [done, setDone] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const settings = getSiteSettings();
+  const [settings, setSettings] = useState<SiteSettings>(() => getSiteSettings());
   const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem("araian_member_token")));
   const [saveState, setSaveState] = useState<"loading" | "saved" | "saving" | "error">("loading");
   const hydrated = useRef(false);
@@ -109,6 +109,19 @@ export function MemberRegisterPage() {
   const [referralResults, setReferralResults] = useState<ReferralCandidate[]>([]);
   const [selectedReferrer, setSelectedReferrer] = useState<ReferralCandidate | null>(null);
   const [referralLoading, setReferralLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    let active = true;
+    const refreshPaymentSettings = () => {
+      fetchSiteSettings().then((value) => {
+        if (active) setSettings(value);
+      }).catch(() => {});
+    };
+    refreshPaymentSettings();
+    const timer = window.setInterval(refreshPaymentSettings, 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [authenticated]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -363,6 +376,20 @@ export function MemberRegisterPage() {
 
           {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Payment stays pending until Finance/Accounts verifies the slip against the sender/reference. Pending payment is not added to the ledger." />
             <div style={{ background: "#fff9e9", border: "1px solid #ead39a", borderRadius: 10, padding: 14, marginBottom: 18 }}><div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.2fr", gap: 12 }} className="form-grid"><Field label="Sender / Account-Holder Name *" error={errors.paymentSenderName} hint="Enter the name exactly as it appears on the bank, JazzCash, Easypaisa or other payment slip."><input style={inputStyle} value={form.paymentSenderName} onChange={(e) => set("paymentSenderName", e.target.value)} placeholder="Name shown on payment proof" /></Field><Field label="Payment Method *" error={errors.paymentMethod}><select style={inputStyle} value={form.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>Easypaisa</option><option>Cheque</option><option>Cash</option><option>Other</option></select></Field><Field label="Transaction / Reference No." hint="Enter the bank/wallet reference if available. Finance will match it with the slip."><input style={inputStyle} value={form.paymentReference} onChange={(e) => set("paymentReference", e.target.value)} /></Field></div></div>
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ color: GREEN, fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Where to deposit your payment</div>
+              <div style={{ color: "#6b7280", fontSize: 11, lineHeight: 1.55, marginBottom: 9 }}>Use any official bank or wallet account below, then upload the receipt. These details are controlled from Admin → Site Settings and refresh automatically.</div>
+              {settings.paymentMethods?.length ? <div className="payment-account-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+                {settings.paymentMethods.map((pm) => <div key={pm.id} style={{ border: "1px solid #d8e5dc", background: "#f8fbf9", borderRadius: 10, padding: 12 }}>
+                  <strong style={{ color: GREEN, display: "block", fontSize: 13 }}>{pm.bankName}</strong>
+                  <span style={{ color: "#66736b", display: "block", fontSize: 11, marginTop: 4 }}>{pm.accountTitle}</span>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+                    <span style={{ color: "#26352d", fontWeight: 800, fontSize: 12, overflowWrap: "anywhere" }}>{pm.accountNo}</span>
+                    <button type="button" onClick={() => navigator.clipboard?.writeText(pm.accountNo)} style={{ border: "1px solid #cfdcd3", background: "white", color: GREEN, borderRadius: 7, padding: "5px 9px", fontSize: 10, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Copy</button>
+                  </div>
+                </div>)}
+              </div> : <div style={{ background: "#f8f5ef", border: "1px solid #e7ded0", borderRadius: 8, padding: 10, color: "#777", fontSize: 11 }}>No official payment account is configured. Please contact the Anjuman office before sending payment.</div>}
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }} className="doc-grid">{[
               { key: "photoUrl", label: "Passport Photo *" }, { key: "cnicFrontUrl", label: "CNIC Front *" }, { key: "cnicBackUrl", label: "CNIC Back *" }, { key: "paymentProofUrl", label: "Payment Proof *" }
             ].map(({ key, label }) => <div key={key}><label style={labelStyle}>{label}</label><label style={{ display: "block", border: `2px dashed ${form[key as keyof typeof form] ? GOLD : "#d9d9d9"}`, borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", background: "#fafaf8" }}>{form[key as keyof typeof form] ? <div style={{ color: GREEN, fontSize: 12, fontWeight: 800, padding: 24 }}>✓ Uploaded</div> : <div style={{ padding: 16 }}><Upload size={22} color="#aaa" /><div style={{ color: "#999", fontSize: 11, marginTop: 5 }}>Click to upload</div></div>}<input type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={handleFile(key as keyof typeof form)} /></label>{errors[key] && <p style={{ color: "#dc2626", fontSize: 11 }}>{errors[key]}</p>}</div>)}</div><div style={{ marginTop: 22 }}><MultiImageUpload label="Additional Photos / Certificates / Relevant Documents (Optional)" images={form.additionalPhotos} onChange={(imgs) => set("additionalPhotos", imgs)} /></div><div style={{ background: "#f0f7f3", borderRadius: 10, padding: "13px 16px", marginTop: 20, color: "#555", fontSize: 12, lineHeight: 1.7 }}>By submitting, I confirm that the information is accurate. Payment proof will first enter the Finance Verification Queue. It will not count as paid and will not affect the accounting ledger until an authorized finance reviewer approves it.</div></div>}
