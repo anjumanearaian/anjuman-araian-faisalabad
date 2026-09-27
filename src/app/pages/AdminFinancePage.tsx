@@ -9,11 +9,14 @@ import { smartSearchSort } from "../lib/searchUtils";
 import { uploadFile } from "../lib/upload";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import {
-  createFinanceHead, createFinanceTransaction, createPaymentSubmission, fetchFinanceAudit, fetchFinanceHeads,
+  cancelFinanceInternalTransfer, confirmFinanceInternalTransfer, createFinanceCustodian, createFinanceHead,
+  createFinanceInternalTransfer, createFinanceTransaction, createPaymentSubmission, fetchFinanceAudit,
+  fetchFinanceCustodians, fetchFinanceCustodySummary, fetchFinanceHeads, fetchFinanceInternalTransfers,
   fetchFinanceLedger, fetchFinanceMembers, fetchFinanceOfficers, fetchFinanceSummary, fetchPaymentSubmissions,
-  financeReceiptUrl, FinanceAuditRow, FinanceHead, FinanceLedgerRow, FinanceLedgerView, FinanceMember,
-  FinanceOfficer, FinanceSummary, PaymentSubmission, PaymentSubmissionStatus, restoreFinanceTransaction,
-  reviewPaymentSubmission, updateFinanceTransaction, voidFinanceTransaction,
+  financeReceiptUrl, FinanceAuditRow, FinanceCustodian, FinanceCustodySummary, FinanceHead, FinanceInternalTransfer,
+  FinanceLedgerRow, FinanceLedgerView, FinanceMember, FinanceOfficer, FinanceSummary, PaymentSubmission,
+  PaymentSubmissionStatus, restoreFinanceTransaction, reviewPaymentSubmission, updateFinanceTransaction,
+  voidFinanceTransaction,
 } from "../lib/financeStore";
 
 const GREEN = "#155a35";
@@ -43,7 +46,7 @@ const blankForm = () => ({
   type: "revenue" as "revenue" | "expense" | "adjustment",
   direction: "credit" as "credit" | "debit",
   memberId: "", partyName: "", paymentSenderName: "", category: "Annual Membership Fee", amount: "1000", currency: "PKR", paymentMethod: "Bank Transfer",
-  cashBookNo: "", externalReference: "", description: "", transactionDate: new Date().toISOString().slice(0, 10), handledByAssignmentId: "",
+  cashBookNo: "", externalReference: "", description: "", transactionDate: new Date().toISOString().slice(0, 10), handledByAssignmentId: "", custodianId: "",
   proofUrl: "", supportingDocuments: [] as string[],
 });
 
@@ -56,6 +59,12 @@ export function AdminFinancePage() {
   const [heads, setHeads] = useState<FinanceHead[]>([]);
   const [officers, setOfficers] = useState<FinanceOfficer[]>([]);
   const [payments, setPayments] = useState<PaymentSubmission[]>([]);
+  const [custodians, setCustodians] = useState<FinanceCustodian[]>([]);
+  const [custodySummary, setCustodySummary] = useState<FinanceCustodySummary>({ rows: [], unassigned: 0, total: 0 });
+  const [transfers, setTransfers] = useState<FinanceInternalTransfer[]>([]);
+  const [paymentCustodianIds, setPaymentCustodianIds] = useState<Record<string,string>>({});
+  const [newCustodian, setNewCustodian] = useState({ name: "", kind: "person" as FinanceCustodian["kind"], accountLabel: "" });
+  const [transferForm, setTransferForm] = useState({ fromCustodianId: "", toCustodianId: "", amount: "", paymentMethod: "Bank Transfer", externalReference: "", remarks: "" });
   const [paymentStatus, setPaymentStatus] = useState<PaymentSubmissionStatus>("pending");
   const [paymentQuery, setPaymentQuery] = useState("");
   const [form, setForm] = useState(blankForm());
@@ -94,10 +103,12 @@ export function AdminFinancePage() {
     if (!isAdmin) return;
     setLoading(true); setError("");
     try {
-      const [m, h, o, s, queue] = await Promise.all([
+      const [m, h, o, s, queue, custodianRows, custody, transferRows] = await Promise.all([
         fetchFinanceMembers(), fetchFinanceHeads(), fetchFinanceOfficers(), fetchFinanceSummary(), fetchPaymentSubmissions(paymentStatus, paymentQuery),
+        fetchFinanceCustodians(), fetchFinanceCustodySummary(), fetchFinanceInternalTransfers(),
       ]);
       setMembers(m); setHeads(h); setOfficers(o); setSummary(s); setPayments(queue);
+      setCustodians(custodianRows); setCustodySummary(custody); setTransfers(transferRows);
       if (includeLedger) setLedger(await fetchFinanceLedger(ledgerQuery, ledgerType, ledgerView));
     } catch (e: any) { setError(e?.message || "Finance records could not be loaded."); }
     finally { setLoading(false); }
@@ -224,7 +235,7 @@ export function AdminFinancePage() {
       type: row.type, direction: row.direction, memberId: row.memberId || "", partyName: row.partyName,
       paymentSenderName: row.paymentSenderName || "", category: row.category, amount: String(row.amount), currency: "PKR",
       paymentMethod: row.paymentMethod || "Cash", cashBookNo: row.cashBookNo || "", externalReference: row.externalReference || "",
-      description: row.description || "", transactionDate: dateOnly(row.transactionDate), handledByAssignmentId: officer?.id || "",
+      description: row.description || "", transactionDate: dateOnly(row.transactionDate), handledByAssignmentId: officer?.id || "", custodianId: row.custodianId || "",
       proofUrl: row.proofUrl || "", supportingDocuments: row.supportingDocuments || [],
     });
     window.scrollTo({top:0,behavior:"smooth"});
@@ -250,7 +261,9 @@ export function AdminFinancePage() {
         ledgerAmount = Number(raw.replace(/,/g, ""));
         if (!Number.isFinite(ledgerAmount) || ledgerAmount <= 0) throw new Error("A valid PKR-equivalent amount is required.");
       }
-      await reviewPaymentSubmission(row.id, { action: "approve", cashBookNo: cashBookNo.trim() || null, reviewNote: note.trim() || null, ledgerAmount });
+      const custodianId = paymentCustodianIds[row.id] || "";
+      if (!custodianId) throw new Error("Select where this money was actually received before approving it.");
+      await reviewPaymentSubmission(row.id, { action: "approve", cashBookNo: cashBookNo.trim() || null, reviewNote: note.trim() || null, ledgerAmount, custodianId });
       await load(); flash("Payment verified. A locked receipt/ledger entry has now been created and source payment status updated.");
     } catch (e: any) { setError(e?.message || "Payment review failed."); }
     finally { setReviewingId(""); }
@@ -319,6 +332,63 @@ export function AdminFinancePage() {
     URL.revokeObjectURL(url);
   }
 
+  async function saveCustodian() {
+    setError("");
+    try {
+      if (newCustodian.name.trim().length < 2) throw new Error("Enter an account / custodian name.");
+      await createFinanceCustodian({
+        name: newCustodian.name.trim(),
+        kind: newCustodian.kind,
+        accountLabel: newCustodian.accountLabel.trim() || null,
+      });
+      setNewCustodian({ name: "", kind: "person", accountLabel: "" });
+      await load(false);
+      flash("Account / custodian saved.");
+    } catch (e: any) { setError(e?.message || "Could not save account / custodian."); }
+  }
+
+  async function saveInternalTransfer() {
+    setError(""); setSaving(true);
+    try {
+      const amount = Number(transferForm.amount);
+      if (!transferForm.fromCustodianId || !transferForm.toCustodianId) throw new Error("Select both source and destination.");
+      if (transferForm.fromCustodianId === transferForm.toCustodianId) throw new Error("Source and destination must be different.");
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter a valid transfer amount.");
+      await createFinanceInternalTransfer({
+        fromCustodianId: transferForm.fromCustodianId,
+        toCustodianId: transferForm.toCustodianId,
+        amount,
+        paymentMethod: transferForm.paymentMethod || null,
+        externalReference: transferForm.externalReference.trim() || null,
+        remarks: transferForm.remarks.trim() || null,
+        transferDate: new Date().toISOString(),
+      });
+      setTransferForm({ fromCustodianId: "", toCustodianId: "", amount: "", paymentMethod: "Bank Transfer", externalReference: "", remarks: "" });
+      await load(false);
+      flash("Internal transfer recorded as Pending. It has not changed Anjuman's total funds.");
+    } catch (e: any) { setError(e?.message || "Could not create internal transfer."); }
+    finally { setSaving(false); }
+  }
+
+  async function confirmTransfer(row: FinanceInternalTransfer) {
+    try {
+      await confirmFinanceInternalTransfer(row.id);
+      await load(false);
+      flash("Internal transfer confirmed. Custodian balances moved, but total Anjuman funds stayed unchanged.");
+    } catch (e: any) { setError(e?.message || "Could not confirm transfer."); }
+  }
+
+  async function cancelTransfer(row: FinanceInternalTransfer) {
+    if (!isSuperAdmin) return;
+    const reason = prompt("Reason for cancelling this pending transfer?");
+    if (!reason || reason.trim().length < 3) return;
+    try {
+      await cancelFinanceInternalTransfer(row.id, reason.trim());
+      await load(false);
+      flash("Pending transfer cancelled with audit history retained.");
+    } catch (e: any) { setError(e?.message || "Could not cancel transfer."); }
+  }
+
   async function restoreRow(row: FinanceLedgerRow) {
     if (!isSuperAdmin) return;
     const reason = prompt("Reason for restoring this archived transaction?", "Restored after review");
@@ -336,9 +406,33 @@ export function AdminFinancePage() {
       <div style={{padding:"11px 13px",border:"1px solid #d8c483",background:"#fff9e9",borderRadius:9,marginBottom:14,fontSize:12,color:"#4f5f55",display:"flex",gap:8,alignItems:"flex-start"}}><FileCheck2 size={17} color={GREEN}/><span><b>Payment control:</b> uploaded or manually entered revenue remains <b>Pending Verification</b> and is excluded from ledger totals. Finance/Accounts must open the slip, match sender/reference and approve it. Only then is a receipt and locked ledger entry created. Expenses require proof before posting.</span></div>
       <div className="finance-cards" style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:18}}><MoneyCard title="Total Credits / Revenue" value={summary.credits} icon={CircleDollarSign}/><MoneyCard title="Total Debits / Expenses" value={summary.debits} icon={ReceiptText}/><MoneyCard title="Current Ledger Balance" value={summary.balance} icon={Landmark}/><CountCard title="Pending Verification" value={summary.pendingPayments || 0} icon={WalletCards}/></div>
 
+      <section style={{...panel,marginBottom:18,borderColor:"#cfded4"}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap",marginBottom:12}}>
+          <div><h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:"0 0 4px"}}>Funds by Account / Custodian</h2><p style={{margin:0,color:"#777",fontSize:12}}>This is the official custody view. Internal transfers move money between holders/accounts only and never change Anjuman's total funds.</p></div>
+          <div style={{fontSize:12,color:custodySummary.total===summary.balance?GREEN:"#9a6700",fontWeight:800}}>Custody total: {money(custodySummary.total)} · Ledger balance: {money(summary.balance)}</div>
+        </div>
+        <div className="finance-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10,marginBottom:12}}>
+          {custodySummary.rows.map((row)=><div key={row.id} style={{border:`1px solid ${BORDER}`,borderRadius:10,padding:12,background:BG}}><strong style={{color:GREEN,fontSize:12}}>{row.name}</strong><small style={{display:"block",color:"#888",marginTop:2}}>{row.accountLabel||row.kind.replace(/_/g," ")}</small><div style={{fontSize:18,fontWeight:900,color:"#26382d",marginTop:7}}>{money(row.balance)}</div></div>)}
+          {Math.abs(custodySummary.unassigned)>0.005&&<div style={{border:"1px solid #e9cc83",borderRadius:10,padding:12,background:"#fff9e9"}}><strong style={{color:"#8a6500",fontSize:12}}>Unassigned / needs allocation</strong><small style={{display:"block",color:"#8a6d22",marginTop:2}}>Verified ledger money not yet linked to a holder/account</small><div style={{fontSize:18,fontWeight:900,color:"#8a6500",marginTop:7}}>{money(custodySummary.unassigned)}</div></div>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12}} className="finance-grid">
+          <div style={{background:BG,borderRadius:10,padding:12,border:`1px solid ${BORDER}`}}>
+            <strong style={{color:GREEN,fontSize:12}}>Add account / custodian</strong>
+            <div style={{display:"grid",gap:7,marginTop:8}}><input style={field} placeholder="e.g. Finance Secretary / Bank Account" value={newCustodian.name} onChange={(e)=>setNewCustodian({...newCustodian,name:e.target.value})}/><select style={field} value={newCustodian.kind} onChange={(e)=>setNewCustodian({...newCustodian,kind:e.target.value as any})}><option value="person">Person / Custodian</option><option value="organization_account">Organization Bank Account</option><option value="cash">Cash in Hand</option><option value="wallet">Wallet</option><option value="other">Other</option></select><input style={field} placeholder="Account label / last digits (optional)" value={newCustodian.accountLabel} onChange={(e)=>setNewCustodian({...newCustodian,accountLabel:e.target.value})}/><button style={primary} onClick={()=>void saveCustodian()}><Plus size={13}/> Save Custodian</button></div>
+          </div>
+          <div style={{background:BG,borderRadius:10,padding:12,border:`1px solid ${BORDER}`}}>
+            <strong style={{color:GREEN,fontSize:12}}>Internal Transfer / Handover</strong>
+            <div style={{color:"#777",fontSize:10,marginTop:3}}>Example: Atif → Finance Secretary. This changes custody only, not revenue, expense or total balance.</div>
+            <div className="finance-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:7,marginTop:8}}><select style={field} value={transferForm.fromCustodianId} onChange={(e)=>setTransferForm({...transferForm,fromCustodianId:e.target.value})}><option value="">From account / custodian</option>{custodians.filter(x=>x.isActive).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><select style={field} value={transferForm.toCustodianId} onChange={(e)=>setTransferForm({...transferForm,toCustodianId:e.target.value})}><option value="">To account / custodian</option>{custodians.filter(x=>x.isActive).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><input style={field} type="number" min="0" placeholder="Amount" value={transferForm.amount} onChange={(e)=>setTransferForm({...transferForm,amount:e.target.value})}/><select style={field} value={transferForm.paymentMethod} onChange={(e)=>setTransferForm({...transferForm,paymentMethod:e.target.value})}><option>Bank Transfer</option><option>Cash</option><option>JazzCash</option><option>Easypaisa</option><option>Cheque</option><option>Other</option></select><input style={field} placeholder="Transfer reference" value={transferForm.externalReference} onChange={(e)=>setTransferForm({...transferForm,externalReference:e.target.value})}/><input style={field} placeholder="Remarks / handover details" value={transferForm.remarks} onChange={(e)=>setTransferForm({...transferForm,remarks:e.target.value})}/></div>
+            <button disabled={saving} style={{...primary,marginTop:8}} onClick={()=>void saveInternalTransfer()}><WalletCards size={13}/> Record Internal Transfer</button>
+          </div>
+        </div>
+        {transfers.length>0&&<div style={{overflowX:"auto",marginTop:12}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr style={{background:BG}}>{["Transfer","Date","From","To","Amount","Status","Action"].map(h=><th key={h} style={{padding:8,textAlign:"left",color:"#777"}}>{h}</th>)}</tr></thead><tbody>{transfers.slice(0,12).map(t=><tr key={t.id} style={{borderTop:`1px solid ${BORDER}`}}><td style={{padding:8}}>{t.transferNo}</td><td style={{padding:8}}>{shownDate(t.transferDate)}</td><td style={{padding:8,fontWeight:800}}>{t.fromCustodian.name}</td><td style={{padding:8,fontWeight:800}}>{t.toCustodian.name}</td><td style={{padding:8,color:GREEN,fontWeight:900}}>{money(t.amount)}</td><td style={{padding:8}}><StatusPill status={t.status}/></td><td style={{padding:8}}>{t.status==="pending"?<div style={{display:"flex",gap:5}}><button style={{...primary,padding:"6px 9px"}} onClick={()=>void confirmTransfer(t)}><CheckCircle2 size={11}/> Confirm Received</button>{isSuperAdmin&&<button style={{...secondary,padding:"6px 9px",color:"#9b2c2c"}} onClick={()=>void cancelTransfer(t)}>Cancel</button>}</div>:<small style={{color:"#777"}}>{t.confirmedByName||t.initiatedByName||"Recorded"}</small>}</td></tr>)}</tbody></table></div>}
+      </section>
+
       <section style={{...panel,marginBottom:18,borderColor:"#dfcf98"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:12}}><div><h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:"0 0 4px"}}>Payment Verification Queue</h2><p style={{margin:0,color:"#777",fontSize:12}}>Membership, business, matrimonial and manual payment proofs arrive here first. Pending items do not affect revenue or balance.</p></div><div style={{display:"flex",gap:7,flexWrap:"wrap"}}><input style={{...field,width:250}} placeholder="Search payer, sender, member no, reference..." value={paymentQuery} onChange={(e)=>setPaymentQuery(e.target.value)}/><select style={{...field,width:160}} value={paymentStatus} onChange={(e)=>setPaymentStatus(e.target.value as PaymentSubmissionStatus)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All</option></select><button style={secondary} onClick={()=>void load()}><RefreshCw size={13}/> Refresh</button></div></div>
-        <div style={{overflowX:"auto"}}><table className="payment-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:BG}}>{["Source / Submitted","Payer / Member","Sender on Slip","Amount","Reference","Proof / Documents","Status","Review"].map((h)=><th key={h} style={{padding:10,textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{payments.map((p)=><tr key={p.id} style={{borderTop:`1px solid ${BORDER}`}}><td style={{padding:10}}><strong style={{textTransform:"capitalize"}}>{p.sourceType.replace(/_/g," ")}</strong><small style={{display:"block",color:"#888"}}>{shownDate(p.submittedAt)}</small></td><td style={{padding:10}}><strong>{p.payerName}</strong>{p.memberNo&&<small style={{display:"block",color:"#888"}}>{p.memberNo}</small>}</td><td style={{padding:10}}><strong>{p.senderName}</strong>{p.paymentMethod&&<small style={{display:"block",color:"#888"}}>{p.paymentMethod}</small>}</td><td style={{padding:10,fontWeight:800,color:GREEN}}>{money(p.amount,p.currency)}</td><td style={{padding:10}}>{p.transactionReference||"-"}</td><td style={{padding:10}}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}><button style={secondary} onClick={()=>window.open(p.proofUrl,"_blank","noopener,noreferrer")}><Eye size={12}/> Slip</button>{(p.supportingDocuments||[]).map((url,i)=><button key={`${p.id}-${i}`} style={{...secondary,padding:"7px 9px"}} onClick={()=>window.open(url,"_blank","noopener,noreferrer")}><FileCheck2 size={11}/> Doc {i+1}</button>)}</div></td><td style={{padding:10}}><StatusPill status={p.status}/>{p.reviewedByName&&<small style={{display:"block",color:"#888",marginTop:4}}>{p.reviewedByName}</small>}</td><td style={{padding:10}}>{p.status==="pending"?<div style={{display:"flex",gap:6,flexWrap:"wrap"}}><button disabled={reviewingId===p.id} style={{...primary,padding:"8px 10px"}} onClick={()=>void reviewPayment(p,"approve")}><CheckCircle2 size={12}/> Approve</button><button disabled={reviewingId===p.id} style={{...secondary,color:"#9b2c2c",borderColor:"#e7b8b8",padding:"8px 10px"}} onClick={()=>void reviewPayment(p,"reject")}><XCircle size={12}/> Reject</button></div>:<small style={{color:"#777"}}>{p.reviewNote||"Reviewed"}</small>}</td></tr>)}{!payments.length&&<tr><td colSpan={8} style={{padding:30,textAlign:"center",color:"#888"}}>No payment submissions in this view.</td></tr>}</tbody></table></div>
+        <div style={{overflowX:"auto"}}><table className="payment-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:BG}}>{["Source / Submitted","Payer / Member","Sender on Slip","Amount","Reference","Proof / Documents","Status","Review"].map((h)=><th key={h} style={{padding:10,textAlign:"left",fontSize:10,color:"#777",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{payments.map((p)=><tr key={p.id} style={{borderTop:`1px solid ${BORDER}`}}><td style={{padding:10}}><strong style={{textTransform:"capitalize"}}>{p.sourceType.replace(/_/g," ")}</strong><small style={{display:"block",color:"#888"}}>{shownDate(p.submittedAt)}</small></td><td style={{padding:10}}><strong>{p.payerName}</strong>{p.memberNo&&<small style={{display:"block",color:"#888"}}>{p.memberNo}</small>}</td><td style={{padding:10}}><strong>{p.senderName}</strong>{p.paymentMethod&&<small style={{display:"block",color:"#888"}}>{p.paymentMethod}</small>}</td><td style={{padding:10,fontWeight:800,color:GREEN}}>{money(p.amount,p.currency)}</td><td style={{padding:10}}>{p.transactionReference||"-"}</td><td style={{padding:10}}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}><button style={secondary} onClick={()=>window.open(p.proofUrl,"_blank","noopener,noreferrer")}><Eye size={12}/> Slip</button>{(p.supportingDocuments||[]).map((url,i)=><button key={`${p.id}-${i}`} style={{...secondary,padding:"7px 9px"}} onClick={()=>window.open(url,"_blank","noopener,noreferrer")}><FileCheck2 size={11}/> Doc {i+1}</button>)}</div></td><td style={{padding:10}}><StatusPill status={p.status}/>{p.reviewedByName&&<small style={{display:"block",color:"#888",marginTop:4}}>{p.reviewedByName}</small>}</td><td style={{padding:10}}>{p.status==="pending"?<div style={{display:"grid",gap:6,minWidth:190}}><select style={{...field,minHeight:34,padding:"5px 7px",fontSize:11}} value={paymentCustodianIds[p.id]||""} onChange={(e)=>setPaymentCustodianIds({...paymentCustodianIds,[p.id]:e.target.value})}><option value="">Received into / held by...</option>{custodians.filter(x=>x.isActive).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><button disabled={reviewingId===p.id||!paymentCustodianIds[p.id]} style={{...primary,padding:"8px 10px",opacity:paymentCustodianIds[p.id]?1:.55}} onClick={()=>void reviewPayment(p,"approve")}><CheckCircle2 size={12}/> Approve</button><button disabled={reviewingId===p.id} style={{...secondary,color:"#9b2c2c",borderColor:"#e7b8b8",padding:"8px 10px"}} onClick={()=>void reviewPayment(p,"reject")}><XCircle size={12}/> Reject</button></div></div>:<small style={{color:"#777"}}>{p.reviewNote||"Reviewed"}</small>}</td></tr>)}{!payments.length&&<tr><td colSpan={8} style={{padding:30,textAlign:"center",color:"#888"}}>No payment submissions in this view.</td></tr>}</tbody></table></div>
       </section>
 
       <section style={{...panel,marginBottom:18}}>
@@ -360,6 +454,7 @@ export function AdminFinancePage() {
           {form.type!=="revenue"&&<Field title="Cash / C-in-book No."><input style={field} value={form.cashBookNo} onChange={(e)=>setForm({...form,cashBookNo:e.target.value})}/></Field>}
           <Field title="Payment method"><select style={field} value={form.paymentMethod} onChange={(e)=>setForm({...form,paymentMethod:e.target.value})}><option>Cash</option><option>Bank Transfer</option><option>Cheque</option><option>JazzCash</option><option>Easypaisa</option><option>Online</option><option>Other</option></select></Field>
           <Field title="Date"><input type="date" style={field} value={form.transactionDate} onChange={(e)=>setForm({...form,transactionDate:e.target.value})}/></Field>
+          <Field title={form.type==="expense"||form.direction==="debit"?"Paid from account / custodian":"Received into / held by"}><select style={field} value={form.custodianId} onChange={(e)=>setForm({...form,custodianId:e.target.value})}><option value="">Unassigned (allocate later)</option>{custodians.filter(x=>x.isActive).map(x=><option key={x.id} value={x.id}>{x.name}{x.accountLabel?` · ${x.accountLabel}`:""}</option>)}</select></Field>
           {form.type!=="revenue"&&<Field title={form.type==="expense"||form.direction==="debit"?"Paid / authorized by":"Handled by"}><select style={field} value={form.handledByAssignmentId} onChange={(e)=>setForm({...form,handledByAssignmentId:e.target.value})}><option value="">Current logged-in finance/admin user</option>{officers.map((o)=><option key={o.id} value={o.id}>{o.name} · {o.role}{o.unit?` · ${o.unit}`:""}</option>)}</select></Field>}
           <Field title={form.type==="revenue"?"Bank / wallet transaction reference":"External reference"}><input style={field} value={form.externalReference} onChange={(e)=>setForm({...form,externalReference:e.target.value})}/></Field>
           <Field title={form.type==="expense"?"Expense proof / voucher *":"Payment proof / slip *"}><label style={{...field,display:"flex",alignItems:"center",justifyContent:"center",gap:7,cursor:"pointer",borderStyle:"dashed",color:form.proofUrl?GREEN:"#777",fontWeight:700}}>{form.proofUrl?<><FileCheck2 size={15}/> Proof uploaded</>:<><Upload size={15}/> {uploading?"Uploading...":"Upload image / PDF"}</>}<input type="file" accept="image/*,.pdf" style={{display:"none"}} onChange={handleProofUpload}/></label>{form.proofUrl&&<button type="button" onClick={()=>window.open(form.proofUrl,"_blank","noopener,noreferrer")} style={{border:0,background:"transparent",color:GREEN,fontSize:10,cursor:"pointer",marginTop:4}}>View uploaded proof</button>}</Field>
@@ -370,14 +465,14 @@ export function AdminFinancePage() {
         <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}><button disabled={saving||uploading||Boolean(editingId&&!isSuperAdmin)} style={{...primary,opacity:saving||uploading?.6:1}} onClick={()=>void saveTransaction()}><Save size={14}/> {editingId?"Save Audited Correction":form.type==="revenue"?"Submit for Verification":"Post & Lock Entry"}</button>{editingId&&<button style={secondary} onClick={resetForm}>Cancel Edit</button>}</div>
       </section>
 
-      <section style={panel}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}><div><h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:0}}>One-Page Ledger</h2><small style={{color:"#888"}}>Credit = money received. Debit = money paid. Migrated legacy duplicates are hidden from this live ledger. Select any rows to export them to CSV.</small></div><div style={{display:"flex",gap:7,flexWrap:"wrap"}}><input style={{...field,width:260}} placeholder="Search name, head, receipt, member no..." value={ledgerQuery} onChange={(e)=>setLedgerQuery(e.target.value)}/><select style={{...field,width:145}} value={ledgerDirection} onChange={(e)=>setLedgerDirection(e.target.value as any)}><option value="all">Credit + Debit</option><option value="credit">Credit Only</option><option value="debit">Debit Only</option></select><select style={{...field,width:145}} value={ledgerType} onChange={(e)=>setLedgerType(e.target.value)}><option value="all">All Types</option><option value="revenue">Revenue</option><option value="expense">Expense</option><option value="adjustment">Adjustments</option></select><select style={{...field,width:165}} value={ledgerView} onChange={(e)=>setLedgerView(e.target.value as FinanceLedgerView)}><option value="active">Active Ledger</option><option value="archived">Archived Records</option>{isSuperAdmin&&<option value="all">All Records</option>}</select><button style={secondary} onClick={()=>void load()}><RefreshCw size={13}/> Refresh</button></div></div>
+      <section style={panel}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}><div><h2 style={{color:GREEN,fontFamily:"Playfair Display,serif",margin:0}}>One-Page Ledger</h2><small style={{color:"#888"}}>Official ledger: only verified/posted transactions affect these totals. Legacy/imported reference rows appear only in Super Admin “All Records”, never in current totals. Internal transfers are custody movements and are not income or expense.</small></div><div style={{display:"flex",gap:7,flexWrap:"wrap"}}><input style={{...field,width:260}} placeholder="Search name, head, receipt, member no..." value={ledgerQuery} onChange={(e)=>setLedgerQuery(e.target.value)}/><select style={{...field,width:145}} value={ledgerDirection} onChange={(e)=>setLedgerDirection(e.target.value as any)}><option value="all">Credit + Debit</option><option value="credit">Credit Only</option><option value="debit">Debit Only</option></select><select style={{...field,width:145}} value={ledgerType} onChange={(e)=>setLedgerType(e.target.value)}><option value="all">All Types</option><option value="revenue">Revenue</option><option value="expense">Expense</option><option value="adjustment">Adjustments</option></select><select style={{...field,width:165}} value={ledgerView} onChange={(e)=>setLedgerView(e.target.value as FinanceLedgerView)}><option value="active">Active Ledger</option><option value="archived">Archived Records</option>{isSuperAdmin&&<option value="all">All Records</option>}</select><button style={secondary} onClick={()=>void load()}><RefreshCw size={13}/> Refresh</button></div></div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10,padding:"9px 10px",background:BG,borderRadius:9,border:`1px solid ${BORDER}`}}>
           <strong style={{color:GREEN,fontSize:11}}>{selectedLedgerRows.length} selected</strong>
           <button type="button" style={secondary} onClick={()=>exportLedgerCsv(selectedLedgerRows,`finance-selected-${new Date().toISOString().slice(0,10)}.csv`)} disabled={!selectedLedgerRows.length}><Download size={12}/> Export Selected CSV</button>
           <button type="button" style={secondary} onClick={()=>exportLedgerCsv(visibleLedger,`finance-ledger-${ledgerDirection}-${new Date().toISOString().slice(0,10)}.csv`)} disabled={!visibleLedger.length}><Download size={12}/> Export Visible CSV</button>
           {selectedLedgerRows.length>0&&<button type="button" style={secondary} onClick={()=>setSelectedLedgerIds([])}>Clear Selection</button>}
         </div>
-        {loading?<div style={{padding:30,textAlign:"center",color:"#777"}}>Loading finance records...</div>:<div style={{overflowX:"auto"}}><table className="finance-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:BG}}><th style={{padding:10,textAlign:"center"}}><input type="checkbox" aria-label="Select all visible ledger rows" checked={visibleLedger.length>0&&visibleLedger.every((row)=>selectedLedgerIds.includes(row.id))} onChange={toggleAllVisibleLedger}/></th>{["S.No.","Date","Party / Sender","Head / Remarks","Receipt / Voucher","Cash Book","Credit","Debit","Received / Paid By","Proof / Action"].map(h=><th key={h} style={{padding:10,textAlign:"left",color:"#777",fontSize:10,textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{visibleLedger.map((r)=><tr key={r.id} style={{borderTop:`1px solid ${BORDER}`,opacity:r.status==="void"?.6:1,background:selectedLedgerIds.includes(r.id)?"#f0f7f3":r.status==="void"?"#fafafa":"transparent"}}><td style={{padding:10,textAlign:"center"}}><input type="checkbox" aria-label={`Select ${r.partyName}`} checked={selectedLedgerIds.includes(r.id)} onChange={()=>toggleLedgerRow(r.id)}/></td><td style={{padding:10}}>{r.serialNo??"Legacy"}{r.status==="void"&&<small style={{display:"block",color:"#9b2c2c",fontWeight:800}}>ARCHIVED</small>}</td><td style={{padding:10}}>{shownDate(r.transactionDate)}</td><td style={{padding:10}}><strong>{r.partyName}</strong>{r.paymentSenderName&&r.paymentSenderName!==r.partyName&&<small style={{display:"block",color:"#777"}}>Sender: {r.paymentSenderName}</small>}{r.member?.memberNo&&<small style={{display:"block",color:"#999"}}>{r.member.memberNo}</small>}</td><td style={{padding:10}}><strong>{r.category}</strong>{r.description&&<small style={{display:"block",color:"#888",maxWidth:240}}>{r.description}</small>}</td><td style={{padding:10}}>{r.receiptNo||r.voucherNo||r.transactionNo}</td><td style={{padding:10}}>{r.cashBookNo||"-"}</td><td style={{padding:10,color:GREEN,fontWeight:800}}>{r.direction==="credit"?money(r.amount):"-"}</td><td style={{padding:10,color:"#b42318",fontWeight:800}}>{r.direction==="debit"?money(r.amount):"-"}</td><td style={{padding:10}}>{r.handledByName||r.issuedByName||"Legacy"}<small style={{display:"block",color:"#999"}}>{r.handledByRole||r.issuedByRole?.replace(/_/g," ")||""}</small></td><td style={{padding:10}}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{r.proofUrl&&<button style={secondary} onClick={()=>window.open(r.proofUrl!,"_blank","noopener,noreferrer")}><Eye size={12}/> Proof</button>}{r.source==="ledger"&&<button style={secondary} onClick={()=>void downloadPdf(r)}><Download size={12}/> PDF</button>}{r.source==="ledger"&&<button style={secondary} onClick={()=>void openAudit(r)}><History size={12}/> Audit</button>}{r.source==="ledger"&&r.status!=="void"&&isSuperAdmin&&<button style={secondary} onClick={()=>editRow(r)}><Edit2 size={12}/> Edit</button>}{r.source==="ledger"&&r.status!=="void"&&isSuperAdmin&&<button style={{...secondary,color:"#9b2c2c",borderColor:"#e7b8b8"}} onClick={()=>void archiveRow(r)}><Trash2 size={12}/> Archive</button>}{r.source==="ledger"&&r.status==="void"&&isSuperAdmin&&<button style={secondary} onClick={()=>void restoreRow(r)}><RotateCcw size={12}/> Restore</button>}{r.source==="ledger"&&!isSuperAdmin&&<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"6px 8px",fontSize:10,color:"#6b756e",background:"#f2f5f3",borderRadius:6}}><Lock size={11}/> Locked</span>}</div></td></tr>)}{!visibleLedger.length&&<tr><td colSpan={11} style={{padding:30,textAlign:"center",color:"#888"}}>No ledger entries found in this view.</td></tr>}</tbody></table></div>}
+        {loading?<div style={{padding:30,textAlign:"center",color:"#777"}}>Loading finance records...</div>:<div style={{overflowX:"auto"}}><table className="finance-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:BG}}><th style={{padding:10,textAlign:"center"}}><input type="checkbox" aria-label="Select all visible ledger rows" checked={visibleLedger.length>0&&visibleLedger.every((row)=>selectedLedgerIds.includes(row.id))} onChange={toggleAllVisibleLedger}/></th>{["S.No.","Date","Party / Sender","Head / Remarks","Receipt / Voucher","Cash Book","Credit","Debit","Received / Paid By","Proof / Action"].map(h=><th key={h} style={{padding:10,textAlign:"left",color:"#777",fontSize:10,textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{visibleLedger.map((r)=><tr key={r.id} style={{borderTop:`1px solid ${BORDER}`,opacity:r.status==="void"?.6:1,background:selectedLedgerIds.includes(r.id)?"#f0f7f3":r.status==="void"?"#fafafa":"transparent"}}><td style={{padding:10,textAlign:"center"}}><input type="checkbox" aria-label={`Select ${r.partyName}`} checked={selectedLedgerIds.includes(r.id)} onChange={()=>toggleLedgerRow(r.id)}/></td><td style={{padding:10}}>{r.serialNo??"Legacy"}{r.status==="void"&&<small style={{display:"block",color:"#9b2c2c",fontWeight:800}}>ARCHIVED</small>}</td><td style={{padding:10}}>{shownDate(r.transactionDate)}</td><td style={{padding:10}}><strong>{r.partyName}</strong>{r.paymentSenderName&&r.paymentSenderName!==r.partyName&&<small style={{display:"block",color:"#777"}}>Sender: {r.paymentSenderName}</small>}{r.member?.memberNo&&<small style={{display:"block",color:"#999"}}>{r.member.memberNo}</small>}</td><td style={{padding:10}}><strong>{r.category}</strong>{r.description&&<small style={{display:"block",color:"#888",maxWidth:240}}>{r.description}</small>}</td><td style={{padding:10}}>{r.receiptNo||r.voucherNo||r.transactionNo}</td><td style={{padding:10}}>{r.cashBookNo||"-"}</td><td style={{padding:10,color:GREEN,fontWeight:800}}>{r.direction==="credit"?money(r.amount):"-"}</td><td style={{padding:10,color:"#b42318",fontWeight:800}}>{r.direction==="debit"?money(r.amount):"-"}</td><td style={{padding:10}}>{r.custodian?.name||r.handledByName||r.issuedByName||"Unassigned"}<small style={{display:"block",color:"#999"}}>{r.custodian?.accountLabel||r.handledByRole||r.issuedByRole?.replace(/_/g," ")||""}</small></td><td style={{padding:10}}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{r.proofUrl&&<button style={secondary} onClick={()=>window.open(r.proofUrl!,"_blank","noopener,noreferrer")}><Eye size={12}/> Proof</button>}{r.source==="ledger"&&<button style={secondary} onClick={()=>void downloadPdf(r)}><Download size={12}/> PDF</button>}{r.source==="ledger"&&<button style={secondary} onClick={()=>void openAudit(r)}><History size={12}/> Audit</button>}{r.source==="ledger"&&r.status!=="void"&&isSuperAdmin&&<button style={secondary} onClick={()=>editRow(r)}><Edit2 size={12}/> Edit</button>}{r.source==="ledger"&&r.status!=="void"&&isSuperAdmin&&<button style={{...secondary,color:"#9b2c2c",borderColor:"#e7b8b8"}} onClick={()=>void archiveRow(r)}><Trash2 size={12}/> Archive</button>}{r.source==="ledger"&&r.status==="void"&&isSuperAdmin&&<button style={secondary} onClick={()=>void restoreRow(r)}><RotateCcw size={12}/> Restore</button>}{r.source==="ledger"&&!isSuperAdmin&&<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"6px 8px",fontSize:10,color:"#6b756e",background:"#f2f5f3",borderRadius:6}}><Lock size={11}/> Locked</span>}</div></td></tr>)}{!visibleLedger.length&&<tr><td colSpan={11} style={{padding:30,textAlign:"center",color:"#888"}}>No ledger entries found in this view.</td></tr>}</tbody></table></div>}
       </section>
     </main>
     {auditFor&&<div style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,.55)",display:"grid",placeItems:"center",padding:16}}><div style={{width:"min(760px,96vw)",maxHeight:"88vh",overflow:"auto",background:"white",borderRadius:14,boxShadow:"0 24px 70px rgba(0,0,0,.25)"}}><div style={{padding:"16px 18px",borderBottom:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}><div><h3 style={{margin:0,color:GREEN,fontFamily:"Playfair Display,serif"}}>Audit History</h3><small style={{color:"#777"}}>{auditFor.receiptNo||auditFor.voucherNo||auditFor.transactionNo} · {auditFor.partyName}</small></div><button style={{border:0,background:"transparent",cursor:"pointer",color:"#777"}} onClick={()=>{setAuditFor(null);setAuditRows([]);}}><X size={20}/></button></div><div style={{padding:18}}>{auditLoading?<div style={{padding:20,textAlign:"center",color:"#777"}}>Loading audit history...</div>:auditRows.length?<div style={{display:"grid",gap:9}}>{auditRows.map((a)=><div key={a.id} style={{border:`1px solid ${BORDER}`,borderRadius:9,padding:"10px 12px"}}><div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><strong style={{color:GREEN,textTransform:"capitalize"}}>{a.action.replace(/_/g," ")}</strong><span style={{fontSize:10,color:"#888"}}>{new Date(a.createdAt).toLocaleString("en-GB")}</span></div><div style={{fontSize:11,color:"#666",marginTop:4}}>By: {a.actorName||"System / Admin"}</div></div>)}</div>:<div style={{padding:20,textAlign:"center",color:"#888"}}>No audit events found.</div>}</div></div></div>}
