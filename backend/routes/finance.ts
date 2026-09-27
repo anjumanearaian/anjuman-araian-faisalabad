@@ -4,6 +4,8 @@ import { z } from "zod";
 import prisma from "../lib/prisma";
 import { requireFinanceAdmin, requireSuperAdmin } from "../middleware/auth";
 import { createFinanceDocumentPdf } from "../lib/financeDocumentPdf";
+import { sendEmail } from "../lib/email";
+import { paymentApprovedEmail, paymentRejectedEmail } from "../lib/paymentNotificationEmail";
 
 const router = Router();
 
@@ -112,6 +114,53 @@ function serializeDocuments(value?: string[] | null) {
 
 function paymentView(row: PaymentSubmissionRow) {
   return { ...row, supportingDocuments: parseDocuments(row.supportingDocuments) };
+}
+
+async function resolvePaymentRecipient(submission: PaymentSubmissionRow) {
+  if (submission.memberId) {
+    const member = await prisma.member.findUnique({
+      where: { id: submission.memberId },
+      select: { email: true, fullName: true, memberNo: true },
+    }).catch(() => null);
+    if (member?.email) return { email: member.email.trim(), name: member.fullName || submission.payerName, memberNo: member.memberNo || null };
+  }
+
+  if (submission.sourceType === "membership" && submission.sourceRecordId) {
+    const member = await prisma.member.findUnique({
+      where: { id: submission.sourceRecordId },
+      select: { email: true, fullName: true, memberNo: true },
+    }).catch(() => null);
+    if (member?.email) return { email: member.email.trim(), name: member.fullName || submission.payerName, memberNo: member.memberNo || null };
+  }
+
+  if (submission.sourceType === "business" && submission.sourceRecordId) {
+    const business = await prisma.business.findUnique({
+      where: { id: submission.sourceRecordId },
+      select: { email: true, ownerName: true, businessName: true },
+    }).catch(() => null);
+    if (business?.email) return { email: business.email.trim(), name: business.ownerName || business.businessName || submission.payerName, memberNo: null };
+  }
+
+  if (submission.sourceType === "matrimonial" && submission.sourceRecordId) {
+    const profile = await prisma.matrimonial.findUnique({
+      where: { id: submission.sourceRecordId },
+      select: { name: true, authUser: { select: { email: true } } },
+    }).catch(() => null);
+    if (profile?.authUser?.email) return { email: profile.authUser.email.trim(), name: profile.name || submission.payerName, memberNo: null };
+  }
+
+  return null;
+}
+
+async function recordPaymentEmailAudit(submissionId: string, action: string, details: Record<string, unknown>) {
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO "PaymentSubmissionAuditLog" ("submissionId", "action", "actorName", "actorRole", "afterData")
+      VALUES (${submissionId}, ${action}, 'System Email', 'system', ${JSON.stringify(details)}::jsonb)
+    `;
+  } catch (error) {
+    console.error("Payment email audit log failed", error);
+  }
 }
 
 async function actor(req: Request) {
@@ -539,7 +588,37 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
       `;
       try { await updateSourcePaymentStatus(submission.sourceType, submission.sourceRecordId, "rejected"); } catch {}
       const rejected = await prisma.$queryRaw<PaymentSubmissionRow[]>`SELECT * FROM "PaymentSubmission" WHERE "id" = ${id} LIMIT 1`;
-      return void res.json(paymentView(rejected[0]));
+
+      let emailResult: any = { sent: false, reason: "No recipient email found" };
+      try {
+        const recipient = await resolvePaymentRecipient(rejected[0] || submission);
+        if (recipient?.email) {
+          const message = paymentRejectedEmail({
+            recipientName: recipient.name,
+            amount: Number(submission.amount || 0),
+            currency: submission.currency,
+            category: submission.category,
+            paymentMethod: submission.paymentMethod,
+            transactionReference: submission.transactionReference,
+            paymentDate: submission.submittedAt,
+            memberNo: recipient.memberNo,
+            reviewNote: review.reviewNote || "Payment proof did not match accounts.",
+          });
+          emailResult = await sendEmail(recipient.email, message.subject, message.html);
+          await recordPaymentEmailAudit(id, emailResult.sent ? "payment_rejection_email_sent" : "payment_rejection_email_skipped", {
+            email: recipient.email,
+            reason: emailResult.reason || null,
+          });
+        } else {
+          await recordPaymentEmailAudit(id, "payment_rejection_email_skipped", { reason: "No recipient email found" });
+        }
+      } catch (emailError: any) {
+        emailResult = { sent: false, reason: emailError?.message || "Email delivery failed" };
+        await recordPaymentEmailAudit(id, "payment_rejection_email_failed", { reason: emailResult.reason });
+        console.error("Payment rejection email failed", emailError);
+      }
+
+      return void res.json({ submission: paymentView(rejected[0]), notification: emailResult });
     }
 
     const currency = String(submission.currency || "PKR").toUpperCase();
@@ -583,7 +662,51 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
 
     try { await updateSourcePaymentStatus(submission.sourceType, submission.sourceRecordId, "verified"); } catch (sourceError) { console.error("Payment source status sync failed", sourceError); }
     const approved = await prisma.$queryRaw<PaymentSubmissionRow[]>`SELECT * FROM "PaymentSubmission" WHERE "id" = ${id} LIMIT 1`;
-    res.json({ submission: paymentView(approved[0]), transaction: created });
+
+    let emailResult: any = { sent: false, reason: "No recipient email found" };
+    try {
+      const recipient = await resolvePaymentRecipient(approved[0] || submission);
+      if (recipient?.email) {
+        const transaction = await prisma.financeTransaction.findUnique({
+          where: { id: created.id },
+          include: { member: { select: { memberNo: true, fullName: true } } },
+        });
+        if (!transaction) throw new Error("Verified transaction could not be reloaded for receipt email.");
+
+        const message = paymentApprovedEmail({
+          recipientName: recipient.name,
+          amount: Number(transaction.amount || ledgerAmount),
+          currency: "PKR",
+          category: transaction.category,
+          paymentMethod: transaction.paymentMethod,
+          transactionReference: transaction.externalReference,
+          receiptNo: transaction.receiptNo,
+          transactionNo: transaction.transactionNo,
+          paymentDate: transaction.transactionDate,
+          memberNo: recipient.memberNo || transaction.member?.memberNo || null,
+          reviewNote: review.reviewNote || null,
+        });
+        const receiptPdf = createFinanceDocumentPdf(transaction as any);
+        const receiptName = `${transaction.receiptNo || transaction.transactionNo || "payment-receipt"}.pdf`;
+        emailResult = await sendEmail(recipient.email, message.subject, message.html, [
+          { filename: receiptName, content: receiptPdf, contentType: "application/pdf" },
+        ]);
+        await recordPaymentEmailAudit(id, emailResult.sent ? "payment_receipt_email_sent" : "payment_receipt_email_skipped", {
+          email: recipient.email,
+          receiptNo: transaction.receiptNo || null,
+          transactionId: transaction.id,
+          reason: emailResult.reason || null,
+        });
+      } else {
+        await recordPaymentEmailAudit(id, "payment_receipt_email_skipped", { reason: "No recipient email found", transactionId: created.id });
+      }
+    } catch (emailError: any) {
+      emailResult = { sent: false, reason: emailError?.message || "Email delivery failed" };
+      await recordPaymentEmailAudit(id, "payment_receipt_email_failed", { reason: emailResult.reason, transactionId: created.id });
+      console.error("Payment receipt email failed", emailError);
+    }
+
+    res.json({ submission: paymentView(approved[0]), transaction: created, notification: emailResult });
   } catch (error: any) {
     if (error?.code === "P2002") return void res.status(409).json({ error: "Receipt, voucher or transaction number already exists." });
     next(error);
