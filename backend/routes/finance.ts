@@ -29,6 +29,7 @@ const TransactionSchema = z.object({
   description: z.string().max(4000).nullable().optional(),
   transactionDate: z.coerce.date().optional(),
   handledByAssignmentId: z.string().uuid().nullable().optional(),
+  custodianId: z.string().uuid().nullable().optional(),
   paymentSenderName: z.string().trim().max(180).nullable().optional(),
   proofUrl: StoredFileUrl.nullable().optional(),
   supportingDocuments: z.array(StoredFileUrl).max(20).optional().default([]),
@@ -56,6 +57,26 @@ const PaymentReviewSchema = z.object({
   cashBookNo: z.string().trim().max(100).nullable().optional(),
   reviewNote: z.string().trim().max(1000).nullable().optional(),
   ledgerAmount: z.coerce.number().positive().max(1000000000).nullable().optional(),
+  custodianId: z.string().uuid().nullable().optional(),
+});
+
+const CustodianSchema = z.object({
+  name: z.string().trim().min(2).max(180),
+  kind: z.enum(["person", "organization_account", "cash", "wallet", "other"]).optional().default("person"),
+  accountLabel: z.string().trim().max(180).nullable().optional(),
+  notes: z.string().trim().max(500).nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const InternalTransferSchema = z.object({
+  fromCustodianId: z.string().uuid(),
+  toCustodianId: z.string().uuid(),
+  amount: z.coerce.number().positive().max(1000000000),
+  paymentMethod: z.string().trim().max(80).nullable().optional(),
+  externalReference: z.string().trim().max(180).nullable().optional(),
+  proofUrl: StoredFileUrl.nullable().optional(),
+  remarks: z.string().trim().max(1000).nullable().optional(),
+  transferDate: z.coerce.date().optional(),
 });
 
 const HeadSchema = z.object({
@@ -286,10 +307,13 @@ function legacyLooksMigrated(legacy: any, current: any[]) {
 async function financeRows(view: LedgerView = "active") {
   const [transactions, legacy] = await Promise.all([
     prisma.financeTransaction.findMany({
-      include: { member: { select: { id: true, memberNo: true, fullName: true } } },
+      include: {
+        member: { select: { id: true, memberNo: true, fullName: true } },
+        custodian: { select: { id: true, name: true, kind: true, accountLabel: true } },
+      },
       orderBy: [{ transactionDate: "desc" }, { serialNo: "desc" }],
     }),
-    view === "archived" ? Promise.resolve([] as any[]) : prisma.revenueRecord.findMany({ orderBy: { date: "desc" } }),
+    view === "all" ? prisma.revenueRecord.findMany({ orderBy: { date: "desc" } }) : Promise.resolve([] as any[]),
   ]);
 
   const proofRows = transactions.length
@@ -350,7 +374,7 @@ async function financeRows(view: LedgerView = "active") {
   // Historical RevenueRecord rows can overlap with migrated FinanceTransaction
   // receipts. Keep the legacy data in storage, but suppress a legacy row from the
   // live ledger when a strong same-payment match already exists in the new ledger.
-  const visibleLegacy = old.filter((legacyRow) => !legacyLooksMigrated(legacyRow, current));
+  const visibleLegacy = view === "all" ? old.filter((legacyRow) => !legacyLooksMigrated(legacyRow, current)) : [];
 
   return [...current, ...visibleLegacy].sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
 }
@@ -378,6 +402,7 @@ async function createPostedTransaction(tx: any, data: any, who: { id: string | n
       handledByMemberId: handler?.memberId || null,
       handledByName: handler?.name || who.name,
       handledByRole: handler?.role || who.role,
+      custodianId: data.custodianId || null,
       transactionDate: data.transactionDate || new Date(),
     },
   });
@@ -472,11 +497,23 @@ router.patch("/heads/:id", requireFinanceAdmin, async (req, res, next) => {
 
 router.get("/summary", requireFinanceAdmin, async (_req, res, next) => {
   try {
-    const rows = await financeRows("active");
-    const credits = rows.filter((x: any) => x.direction === "credit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
-    const debits = rows.filter((x: any) => x.direction === "debit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
-    const pendingResult = await prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "PaymentSubmission" WHERE "status" = 'pending'`;
-    res.json({ credits, debits, balance: credits - debits, count: rows.length, legacyCount: rows.filter((x: any) => x.source === "legacy").length, pendingPayments: Number(pendingResult[0]?.count || 0) });
+    const rows = await prisma.financeTransaction.findMany({ where: { status: "posted" }, select: { direction: true, amount: true } });
+    const credits = rows.filter((x) => x.direction === "credit").reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const debits = rows.filter((x) => x.direction === "debit").reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const [pendingResult, legacyResult, transferResult] = await Promise.all([
+      prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "PaymentSubmission" WHERE "status" = 'pending'`,
+      prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "RevenueRecord"`,
+      prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "FinanceInternalTransfer" WHERE "status" = 'pending'`,
+    ]);
+    res.json({
+      credits,
+      debits,
+      balance: credits - debits,
+      count: rows.length,
+      legacyCount: Number(legacyResult[0]?.count || 0),
+      pendingPayments: Number(pendingResult[0]?.count || 0),
+      pendingTransfers: Number(transferResult[0]?.count || 0),
+    });
   } catch (error) { next(error); }
 });
 
@@ -495,6 +532,179 @@ router.get("/ledger", requireFinanceAdmin, async (req, res, next) => {
       ], q);
     });
     res.json(filtered);
+  } catch (error) { next(error); }
+});
+
+// ─── Funds custody / internal transfers ───────────────────────────────────────
+router.get("/custodians", requireFinanceAdmin, async (_req, res, next) => {
+  try {
+    const rows = await prisma.financeCustodian.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }] });
+    res.json(rows);
+  } catch (error) { next(error); }
+});
+
+router.post("/custodians", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const data = CustodianSchema.parse(req.body);
+    const who = await actor(req);
+    const row = await prisma.financeCustodian.upsert({
+      where: { name: data.name },
+      update: {
+        kind: data.kind,
+        accountLabel: data.accountLabel || null,
+        notes: data.notes || null,
+        isActive: data.isActive ?? true,
+      },
+      create: {
+        name: data.name,
+        kind: data.kind,
+        accountLabel: data.accountLabel || null,
+        notes: data.notes || null,
+        isActive: data.isActive ?? true,
+      },
+    });
+    await prisma.financeAuditLog.create({
+      data: { action: "custodian_saved", actorAdminId: who.id, actorName: who.name, afterData: row as any },
+    });
+    res.status(201).json(row);
+  } catch (error) { next(error); }
+});
+
+router.get("/custody-summary", requireFinanceAdmin, async (_req, res, next) => {
+  try {
+    const [custodians, transactions, transfers] = await Promise.all([
+      prisma.financeCustodian.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+      prisma.financeTransaction.findMany({
+        where: { status: "posted" },
+        select: { custodianId: true, direction: true, amount: true },
+      }),
+      prisma.financeInternalTransfer.findMany({
+        where: { status: "confirmed" },
+        select: { fromCustodianId: true, toCustodianId: true, amount: true },
+      }),
+    ]);
+
+    const balances = new Map<string, number>();
+    let unassigned = 0;
+    for (const row of transactions) {
+      const signed = row.direction === "debit" ? -Number(row.amount || 0) : Number(row.amount || 0);
+      if (row.custodianId) balances.set(row.custodianId, (balances.get(row.custodianId) || 0) + signed);
+      else unassigned += signed;
+    }
+    for (const transfer of transfers) {
+      const amount = Number(transfer.amount || 0);
+      balances.set(transfer.fromCustodianId, (balances.get(transfer.fromCustodianId) || 0) - amount);
+      balances.set(transfer.toCustodianId, (balances.get(transfer.toCustodianId) || 0) + amount);
+    }
+    const rows = custodians.map((x) => ({ ...x, balance: balances.get(x.id) || 0 }));
+    const assignedTotal = rows.reduce((sum, x) => sum + Number(x.balance || 0), 0);
+    res.json({ rows, unassigned, total: assignedTotal + unassigned });
+  } catch (error) { next(error); }
+});
+
+router.get("/internal-transfers", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const requested = String(req.query.status || "all");
+    const status = ["pending", "confirmed", "cancelled"].includes(requested) ? requested : null;
+    const rows = await prisma.financeInternalTransfer.findMany({
+      where: status ? { status } : undefined,
+      include: {
+        fromCustodian: { select: { id: true, name: true, kind: true, accountLabel: true } },
+        toCustodian: { select: { id: true, name: true, kind: true, accountLabel: true } },
+      },
+      orderBy: [{ transferDate: "desc" }, { createdAt: "desc" }],
+      take: 500,
+    });
+    res.json(rows);
+  } catch (error) { next(error); }
+});
+
+router.post("/internal-transfers", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const data = InternalTransferSchema.parse(req.body);
+    if (data.fromCustodianId === data.toCustodianId) return void res.status(400).json({ error: "Transfer source and destination must be different." });
+    const [from, to] = await Promise.all([
+      prisma.financeCustodian.findUnique({ where: { id: data.fromCustodianId } }),
+      prisma.financeCustodian.findUnique({ where: { id: data.toCustodianId } }),
+    ]);
+    if (!from?.isActive || !to?.isActive) return void res.status(400).json({ error: "Select active source and destination accounts/custodians." });
+
+    const summaryTransactions = await prisma.financeTransaction.findMany({
+      where: { status: "posted", custodianId: data.fromCustodianId },
+      select: { direction: true, amount: true },
+    });
+    const summaryTransfers = await prisma.financeInternalTransfer.findMany({
+      where: { status: "confirmed", OR: [{ fromCustodianId: data.fromCustodianId }, { toCustodianId: data.fromCustodianId }] },
+      select: { fromCustodianId: true, toCustodianId: true, amount: true },
+    });
+    let available = summaryTransactions.reduce((sum, row) => sum + (row.direction === "debit" ? -Number(row.amount || 0) : Number(row.amount || 0)), 0);
+    for (const row of summaryTransfers) available += row.toCustodianId === data.fromCustodianId ? Number(row.amount || 0) : -Number(row.amount || 0);
+    if (Number(data.amount) > available + 0.005) return void res.status(400).json({ error: `Transfer exceeds available balance of Rs. ${available.toLocaleString("en-PK")} with this custodian/account.` });
+
+    const who = await actor(req);
+    const row = await prisma.financeInternalTransfer.create({
+      data: {
+        transferNo: `TRF-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${randomUUID().slice(0, 8).toUpperCase()}`,
+        fromCustodianId: data.fromCustodianId,
+        toCustodianId: data.toCustodianId,
+        amount: data.amount,
+        paymentMethod: data.paymentMethod || null,
+        externalReference: data.externalReference || null,
+        proofUrl: data.proofUrl || null,
+        remarks: data.remarks || null,
+        status: "pending",
+        initiatedByAdminId: who.id,
+        initiatedByName: who.name,
+        initiatedByRole: who.role,
+        transferDate: data.transferDate || new Date(),
+      },
+      include: { fromCustodian: true, toCustodian: true },
+    });
+    await prisma.financeAuditLog.create({
+      data: { action: "internal_transfer_initiated", actorAdminId: who.id, actorName: who.name, afterData: row as any },
+    });
+    res.status(201).json(row);
+  } catch (error) { next(error); }
+});
+
+router.patch("/internal-transfers/:id/confirm", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const who = await actor(req);
+    const existing = await prisma.financeInternalTransfer.findUnique({ where: { id }, include: { fromCustodian: true, toCustodian: true } });
+    if (!existing) return void res.status(404).json({ error: "Internal transfer not found." });
+    if (existing.status === "confirmed") return void res.json(existing);
+    if (existing.status !== "pending") return void res.status(409).json({ error: "Only pending transfers can be confirmed." });
+
+    const updated = await prisma.financeInternalTransfer.update({
+      where: { id },
+      data: {
+        status: "confirmed",
+        confirmedByAdminId: who.id,
+        confirmedByName: who.name,
+        confirmedByRole: who.role,
+        confirmedAt: new Date(),
+      },
+      include: { fromCustodian: true, toCustodian: true },
+    });
+    await prisma.financeAuditLog.create({
+      data: { action: "internal_transfer_confirmed", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: updated as any },
+    });
+    res.json(updated);
+  } catch (error) { next(error); }
+});
+
+router.patch("/internal-transfers/:id/cancel", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const who = await actor(req);
+    const existing = await prisma.financeInternalTransfer.findUnique({ where: { id } });
+    if (!existing) return void res.status(404).json({ error: "Internal transfer not found." });
+    if (existing.status !== "pending") return void res.status(409).json({ error: "Only pending transfers can be cancelled." });
+    const reason = z.string().trim().min(3).max(500).parse(req.body?.reason || "Cancelled by Super Admin");
+    const updated = await prisma.financeInternalTransfer.update({ where: { id }, data: { status: "cancelled", remarks: [existing.remarks, `Cancellation: ${reason}`].filter(Boolean).join("\n") } });
+    await prisma.financeAuditLog.create({ data: { action: "internal_transfer_cancelled", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: updated as any } });
+    res.json(updated);
   } catch (error) { next(error); }
 });
 
@@ -644,6 +854,7 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
         paymentSenderName: submission.senderName,
         proofUrl: submission.proofUrl,
         supportingDocuments: parseDocuments(submission.supportingDocuments),
+        custodianId: review.custodianId || null,
       }, who, { memberId: null, name: who.name, role: who.role });
 
       await tx.$executeRaw`
@@ -769,6 +980,7 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
           handledByMemberId: handler?.memberId || null,
           handledByName: handler?.name || null,
           handledByRole: handler?.role || null,
+          custodianId: data.custodianId || existing.custodianId || null,
           transactionDate: data.transactionDate || existing.transactionDate,
         },
       });
