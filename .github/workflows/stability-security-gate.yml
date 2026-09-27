@@ -38,6 +38,9 @@ jobs:
       - name: Run authentication regression suite
         run: npm run test:auth
 
+      - name: Verify public payment settings and updates
+        run: npm run test:payments
+
       - name: Block critical production dependency vulnerabilities
         run: npm audit --omit=dev --audit-level=critical
 

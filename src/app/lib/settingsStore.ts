@@ -67,6 +67,20 @@ const defaultSettings: SiteSettings = {
 };
 
 let cachedSettings: SiteSettings = defaultSettings;
+const settingsListeners = new Set<() => void>();
+let settingsRevision = 0;
+let settingsRequest: Promise<SiteSettings> | undefined;
+
+function publishSettings(settings: SiteSettings) {
+  cachedSettings = settings;
+  settingsListeners.forEach((listener) => listener());
+  return cachedSettings;
+}
+
+export function subscribeSiteSettings(listener: () => void) {
+  settingsListeners.add(listener);
+  return () => { settingsListeners.delete(listener); };
+}
 
 import { apiClient } from "./apiClient";
 
@@ -90,15 +104,24 @@ function publicSafePaymentMethods(methods: unknown): PaymentMethod[] {
   });
 }
 
-export async function fetchSiteSettings(): Promise<SiteSettings> {
+export async function fetchSiteSettings(options: { throwOnError?: boolean } = {}): Promise<SiteSettings> {
   try {
-    const data = await apiClient("/settings") as any;
-    data.paymentMethods = publicSafePaymentMethods(data.paymentMethods);
-    if (!data.membershipTiers) data.membershipTiers = defaultSettings.membershipTiers;
-    if (!data.matrimonialPackages) data.matrimonialPackages = defaultSettings.matrimonialPackages;
-    cachedSettings = data as SiteSettings;
-    return cachedSettings;
+    if (!settingsRequest) {
+      const revision = settingsRevision;
+      settingsRequest = apiClient<SiteSettings>("/settings", { cache: "no-store" }).then((data) => {
+        // A read started before an admin save must not restore the old accounts.
+        if (revision !== settingsRevision) return cachedSettings;
+        return publishSettings({
+          ...defaultSettings, ...data,
+          paymentMethods: publicSafePaymentMethods(data.paymentMethods),
+          membershipTiers: data.membershipTiers ?? defaultSettings.membershipTiers,
+          matrimonialPackages: data.matrimonialPackages ?? defaultSettings.matrimonialPackages,
+        });
+      }).finally(() => { settingsRequest = undefined; });
+    }
+    return await settingsRequest;
   } catch (e) {
+    if (options.throwOnError) throw e;
     console.error("Failed to fetch settings:", e);
     return cachedSettings;
   }
@@ -109,8 +132,8 @@ export async function updateSiteSettings(settings: Partial<SiteSettings>): Promi
     method: "PUT",
     body: JSON.stringify(settings),
   }) as SiteSettings;
-  cachedSettings = { ...cachedSettings, ...data, paymentMethods: publicSafePaymentMethods(data.paymentMethods ?? settings.paymentMethods ?? cachedSettings.paymentMethods) };
-  return cachedSettings;
+  settingsRevision++;
+  return publishSettings({ ...cachedSettings, ...data, paymentMethods: publicSafePaymentMethods(data.paymentMethods ?? settings.paymentMethods ?? cachedSettings.paymentMethods) });
 }
 
 export function getSiteSettings(): SiteSettings {
@@ -118,5 +141,6 @@ export function getSiteSettings(): SiteSettings {
 }
 
 export function saveSiteSettings(settings: SiteSettings) {
-  cachedSettings = { ...settings, paymentMethods: publicSafePaymentMethods(settings.paymentMethods) };
+  settingsRevision++;
+  publishSettings({ ...settings, paymentMethods: publicSafePaymentMethods(settings.paymentMethods) });
 }

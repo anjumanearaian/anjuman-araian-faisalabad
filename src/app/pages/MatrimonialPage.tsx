@@ -8,7 +8,9 @@ import { BehaviorQuestionnaire, ReadinessPanel, TimelineField } from "../compone
 import { apiClient } from "../lib/apiClient";
 import { uploadFile } from "../lib/upload";
 import { createMatrimonial, fetchMyMatrimonialProfiles, MatrimonialProfile } from "../lib/matrimonialStore";
-import { fetchSiteSettings, getSiteSettings, SiteSettings } from "../lib/settingsStore";
+import { fetchSiteSettings } from "../lib/settingsStore";
+import { useSiteSettings } from "../lib/useSiteSettings";
+import { PaymentInstructions } from "../components/PaymentInstructions";
 import { citiesForProvince, pakistanCitiesByProvince } from "../lib/pakistanLocations";
 import {
   CONTACT_PRIVACY_OPTIONS, EDUCATION_OPTIONS, EMPLOYMENT_TYPE_OPTIONS, FAMILY_SETUP_OPTIONS, IMPORTANCE_OPTIONS, INCOME_BANDS,
@@ -82,7 +84,7 @@ export function MatrimonialPage() {
   const [params] = useSearchParams();
   const requestedId = params.get("profileId") || "";
   const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem("araian_member_token")));
-  const [settings, setSettings] = useState<SiteSettings>(() => getSiteSettings());
+  const { settings, status: settingsStatus, refresh: refreshSettings } = useSiteSettings();
   const [form, setForm] = useState<FormState>(() => blank());
   const [initializing, setInitializing] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -103,7 +105,6 @@ export function MatrimonialPage() {
       try {
         const [site, profiles] = await Promise.all([fetchSiteSettings(), fetchMyMatrimonialProfiles()]);
         if (cancelled) return;
-        setSettings(site);
         const existing = requestedId ? profiles.find((p) => p.id === requestedId) : undefined;
         const next = existing ? fromProfile(existing) : blank();
         if (!next.paymentMethod && site.paymentMethods?.[0]?.bankName) next.paymentMethod = site.paymentMethods[0].bankName;
@@ -273,10 +274,13 @@ export function MatrimonialPage() {
           <Toggle label="Allow broad city/region on anonymized match card" checked={form.broadLocation} onChange={(v) => set("broadLocation", v)}/>
           <Toggle label="Allow height on anonymized match card" checked={form.showHeight} onChange={(v) => set("showHeight", v)}/>
           <UploadBox title="Candidate Photo *" value={form.photoUrl} loading={Boolean(uploading.photoUrl)} accept="image/*" onChange={upload("photoUrl")} error={errors.photoUrl} image/>
-          <UploadBox title="Payment Slip / Receipt (can be added before approval)" value={form.paymentProofUrl} loading={Boolean(uploading.paymentProofUrl)} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")}/>
         </div>
         <div style={{ marginTop: 12 }}><MultiImageUpload label="Additional Candidate Documents / Photos (private)" images={form.additionalPhotos} onChange={(images) => set("additionalPhotos", images)}/></div>
-        {settings.paymentMethods?.length ? <div style={{ background: "#fff9ef", border: "1px solid #ead9a8", padding: 12, borderRadius: 9, marginTop: 14 }}><strong style={{ color: GREEN, fontSize: 12 }}>Official payment methods</strong><div style={{ display: "grid", gap: 5, marginTop: 6 }}>{settings.paymentMethods.map((pm) => <label key={pm.id} style={{ fontSize: 11, color: "#555" }}><input type="radio" name="paymentMethod" checked={form.paymentMethod === pm.bankName} onChange={() => set("paymentMethod", pm.bankName)}/> {pm.bankName}: {pm.accountTitle} · {pm.accountNo}</label>)}</div></div> : <div style={{ background: "#f8f5ef", padding: 11, borderRadius: 8, marginTop: 14, color: "#777", fontSize: 11 }}>Official payment details are not currently displayed. The profile may still be submitted for review; payment proof can be added before final approval.</div>}
+        <Section n="6" title="Payment Details & Receipt" subtitle="Use an official account below. Your receipt can be added before final approval."/>
+        <PaymentInstructions settings={settings} status={settingsStatus} onRetry={refreshSettings} selectedMethod={form.paymentMethod} onSelectMethod={(method) => set("paymentMethod", method)} />
+        <div style={{ maxWidth: 430 }}>
+          <UploadBox title="Payment Slip / Receipt (can be added before approval)" value={form.paymentProofUrl} loading={Boolean(uploading.paymentProofUrl)} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")}/>
+        </div>
 
         <div style={{ background: "#eef6ff", border: "1px solid #cfe4fb", color: "#315f7d", borderRadius: 9, padding: 12, fontSize: 11, lineHeight: 1.7, marginTop: 18 }}><ShieldCheck size={14} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Compatibility scores are decision support, not a guarantee of suitability. Timeline and behavior answers are soft matching signals. Unknown information lowers confidence rather than automatically counting as a mismatch.</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, flexWrap: "wrap" }}><Link to="/matrimonial" style={secondaryLink}>Cancel</Link><button type="submit" disabled={saving || Object.values(uploading).some(Boolean)} style={{ ...primaryButton, opacity: saving ? .6 : 1 }}>{saving ? <><Loader2 size={14} className="spin"/> Saving...</> : <><Heart size={14}/> Save & Submit for Review</>}</button></div>

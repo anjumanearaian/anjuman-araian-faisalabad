@@ -4,7 +4,9 @@ import { ArrowLeft, Briefcase, CheckCircle, ChevronDown, DollarSign, FileCheck2,
 import { PageHeader } from "../components/PageHeader";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import { businessCategories, createBusiness, sponsorshipPackages } from "../lib/businessStore";
-import { fetchSiteSettings, getSiteSettings, SiteSettings } from "../lib/settingsStore";
+import { fetchSiteSettings } from "../lib/settingsStore";
+import { useSiteSettings } from "../lib/useSiteSettings";
+import { PaymentInstructions } from "../components/PaymentInstructions";
 import { uploadFile } from "../lib/upload";
 import { apiClient } from "../lib/apiClient";
 
@@ -61,7 +63,7 @@ function apiErrorText(error: any, fallback: string) {
 }
 
 export function BusinessSubmitVerifiedPage() {
-  const [settings, setSettings] = useState<SiteSettings>(() => getSiteSettings());
+  const { settings, status: settingsStatus, refresh: refreshSettings } = useSiteSettings();
   const [form, setForm] = useState<FormState>(() => readLocalDraft() || blankForm());
   const [ready, setReady] = useState(false);
   const [receipt, setReceipt] = useState<SubmissionReceipt | null>(null);
@@ -77,7 +79,6 @@ export function BusinessSubmitVerifiedPage() {
     let active = true;
     fetchSiteSettings().then((value) => {
       if (!active) return;
-      setSettings(value);
       setForm((old) => old.paymentMethod || !value.paymentMethods?.length ? old : { ...old, paymentMethod: value.paymentMethods[0].bankName });
     }).finally(() => { if (active) setReady(true); });
 
@@ -267,13 +268,8 @@ export function BusinessSubmitVerifiedPage() {
             })}
           </div>
 
-          <StepHeading step="3" icon={<DollarSign size={17}/>} title="Payment Proof" subtitle="No transaction number or sender name is required. Select the account used and upload the slip."/>
-          <div className="pay-methods" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9, marginBottom: 14 }}>
-            {settings.paymentMethods?.length ? settings.paymentMethods.map((pm) => {
-              const active = form.paymentMethod === pm.bankName;
-              return <button type="button" key={pm.id} onClick={() => set("paymentMethod", pm.bankName)} style={{ textAlign: "left", background: active ? "#f0f7f3" : "#fafafa", border: `1px solid ${active ? GREEN : "#e5e7eb"}`, borderRadius: 9, padding: 12, cursor: "pointer" }}><strong style={{ color: GREEN, display: "block" }}>{pm.bankName}</strong><span style={{ fontSize: 11, color: "#666", display: "block", marginTop: 3 }}>{pm.accountTitle}</span><span style={{ fontSize: 12, fontWeight: 800 }}>{pm.accountNo}</span></button>;
-            }) : <div style={{ fontSize: 12, color: "#777" }}>No payment method is configured. Please contact the office.</div>}
-          </div>
+          <StepHeading step="3" icon={<DollarSign size={17}/>} title="Payment Details & Proof" subtitle="Deposit the listing fee, select the account used and upload your receipt."/>
+          <PaymentInstructions settings={settings} status={settingsStatus} onRetry={refreshSettings} selectedMethod={form.paymentMethod} onSelectMethod={(method) => set("paymentMethod", method)} />
           <div style={{ maxWidth: 430 }}><UploadBox title="Payment Slip / Receipt *" value={form.paymentProofUrl} loading={uploading} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")} error={errors.paymentProofUrl}/></div>
 
           <details style={{ marginTop: 22, border: "1px solid #e5e7eb", borderRadius: 10, padding: "0 14px" }}>

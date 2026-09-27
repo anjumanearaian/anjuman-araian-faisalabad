@@ -2222,7 +2222,7 @@ function SettingsTab() {
         <h3 style={{ color: GREEN, fontSize: 16, fontWeight: 700, marginTop: 40, marginBottom: 16, borderBottom: "1px solid #eee", paddingBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
           <DollarSign size={18} /> Payment Methods
         </h3>
-        <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>Configure bank accounts and digital wallets for members to pay fees. These will be shown on the registration page.</p>
+        <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>Configure bank accounts and digital wallets for membership, business and matrimonial payments. Save Changes publishes these details to all three forms; open forms refresh automatically within 30 seconds or when the applicant returns to the tab.</p>
 
         <div style={{ display: "grid", gap: 16, marginBottom: 20 }}>
           {(settings.paymentMethods || []).map((method, idx) => (
