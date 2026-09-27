@@ -122,6 +122,23 @@ export function MatrimonialPage() {
   }, [authenticated, requestedId]);
 
   useEffect(() => {
+    if (!authenticated) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      fetchSiteSettings().then((site) => {
+        if (!active) return;
+        setSettings(site);
+        setForm((old) => {
+          const stillValid = site.paymentMethods?.some((pm) => pm.bankName === old.paymentMethod);
+          if (stillValid || !site.paymentMethods?.length) return old;
+          return { ...old, paymentMethod: site.paymentMethods[0].bankName };
+        });
+      }).catch(() => {});
+    }, 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [authenticated]);
+
+  useEffect(() => {
     if (!authenticated || !hydrated.current || initializing || submitted) return;
     setSaveState("Saving draft...");
     const timer = window.setTimeout(() => {
@@ -276,7 +293,23 @@ export function MatrimonialPage() {
           <UploadBox title="Payment Slip / Receipt (can be added before approval)" value={form.paymentProofUrl} loading={Boolean(uploading.paymentProofUrl)} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")}/>
         </div>
         <div style={{ marginTop: 12 }}><MultiImageUpload label="Additional Candidate Documents / Photos (private)" images={form.additionalPhotos} onChange={(images) => set("additionalPhotos", images)}/></div>
-        {settings.paymentMethods?.length ? <div style={{ background: "#fff9ef", border: "1px solid #ead9a8", padding: 12, borderRadius: 9, marginTop: 14 }}><strong style={{ color: GREEN, fontSize: 12 }}>Official payment methods</strong><div style={{ display: "grid", gap: 5, marginTop: 6 }}>{settings.paymentMethods.map((pm) => <label key={pm.id} style={{ fontSize: 11, color: "#555" }}><input type="radio" name="paymentMethod" checked={form.paymentMethod === pm.bankName} onChange={() => set("paymentMethod", pm.bankName)}/> {pm.bankName}: {pm.accountTitle} · {pm.accountNo}</label>)}</div></div> : <div style={{ background: "#f8f5ef", padding: 11, borderRadius: 8, marginTop: 14, color: "#777", fontSize: 11 }}>Official payment details are not currently displayed. The profile may still be submitted for review; payment proof can be added before final approval.</div>}
+        {settings.paymentMethods?.length ? <div style={{ background: "#fff9ef", border: "1px solid #ead9a8", padding: 12, borderRadius: 9, marginTop: 14 }}>
+          <strong style={{ color: GREEN, fontSize: 12 }}>Where to deposit your payment</strong>
+          <div style={{ color: "#74684d", fontSize: 10, lineHeight: 1.5, marginTop: 3 }}>Select the account you used, deposit the applicable matrimonial fee, then upload the receipt. Admin changes refresh automatically.</div>
+          <div className="payment-account-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginTop: 9 }}>
+            {settings.paymentMethods.map((pm) => {
+              const active = form.paymentMethod === pm.bankName;
+              return <div key={pm.id} onClick={() => set("paymentMethod", pm.bankName)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") set("paymentMethod", pm.bankName); }} style={{ cursor: "pointer", border: `1px solid ${active ? GREEN : "#e4dcc8"}`, background: active ? "#f0f7f3" : "white", borderRadius: 9, padding: 10 }}>
+                <label style={{ display: "flex", gap: 7, alignItems: "center", cursor: "pointer", color: GREEN, fontSize: 11, fontWeight: 800 }}><input type="radio" name="paymentMethod" checked={active} onChange={() => set("paymentMethod", pm.bankName)}/>{pm.bankName}</label>
+                <div style={{ color: "#666", fontSize: 10, marginTop: 4 }}>{pm.accountTitle}</div>
+                <div style={{ display: "flex", gap: 7, justifyContent: "space-between", alignItems: "center", marginTop: 5 }}>
+                  <strong style={{ color: "#2b332d", fontSize: 11, overflowWrap: "anywhere" }}>{pm.accountNo}</strong>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(pm.accountNo); }} style={{ border: "1px solid #d8cfb9", background: "white", color: GREEN, borderRadius: 6, padding: "4px 8px", fontSize: 9, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Copy</button>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div> : <div style={{ background: "#f8f5ef", padding: 11, borderRadius: 8, marginTop: 14, color: "#777", fontSize: 11 }}>No official payment account is configured. Please contact the Anjuman office before sending payment. The profile may still be saved for review.</div>}
 
         <div style={{ background: "#eef6ff", border: "1px solid #cfe4fb", color: "#315f7d", borderRadius: 9, padding: 12, fontSize: 11, lineHeight: 1.7, marginTop: 18 }}><ShieldCheck size={14} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Compatibility scores are decision support, not a guarantee of suitability. Timeline and behavior answers are soft matching signals. Unknown information lowers confidence rather than automatically counting as a mismatch.</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, flexWrap: "wrap" }}><Link to="/matrimonial" style={secondaryLink}>Cancel</Link><button type="submit" disabled={saving || Object.values(uploading).some(Boolean)} style={{ ...primaryButton, opacity: saving ? .6 : 1 }}>{saving ? <><Loader2 size={14} className="spin"/> Saving...</> : <><Heart size={14}/> Save & Submit for Review</>}</button></div>
@@ -294,7 +327,7 @@ function RangePreference({ title, min, max, importance, onMin, onMax, onImportan
 function PreferenceLayer({ title: text, value, onChange, hint }: { title: string; value: Layer; onChange: (k:keyof Layer,v:string)=>void; hint?: string }) { return <div style={{ border: "1px solid #ece7de", borderRadius: 10, padding: 13, marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}><strong style={{ color: GREEN, fontSize: 12 }}>{text}</strong><select style={{ ...input, width: 160 }} value={value.importance} onChange={(e) => onChange("importance", e.target.value)}>{IMPORTANCE_OPTIONS.map((x) => <option key={x}>{x}</option>)}</select></div>{hint && <div style={{ color: "#999", fontSize: 10, margin: "5px 0" }}>{hint}</div>}<div className="pref-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 8 }}><input style={input} placeholder="Primary · پہلی ترجیح" value={value.primary} onChange={(e) => onChange("primary", e.target.value)}/><input style={input} placeholder="Secondary · دوسری ترجیح" value={value.secondary} onChange={(e) => onChange("secondary", e.target.value)}/><input style={input} placeholder="Acceptable · قابلِ قبول" value={value.acceptable} onChange={(e) => onChange("acceptable", e.target.value)}/></div></div>; }
 function Toggle({ label, checked, onChange }: { label:string; checked:boolean; onChange:(v:boolean)=>void }) { return <label style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #e4e9e5", borderRadius: 8, padding: 11, color: "#556059", fontSize: 11, cursor: "pointer" }}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}/>{label}</label>; }
 function UploadBox({ title: text, value, loading, accept, onChange, error, image = false }: any) { return <div data-error={error ? "true" : undefined}><label style={labelStyle}>{text}</label><label style={{ minHeight: 112, border: `2px dashed ${error ? "#ef4444" : value ? GOLD : "#ccd8cf"}`, borderRadius: 9, display: "grid", placeItems: "center", cursor: "pointer", background: value ? "#fff9ef" : "#fafbf9", padding: 9, textAlign: "center" }}>{loading ? <Loader2 className="spin"/> : value ? (image ? <img src={value} alt="Private candidate preview" style={{ maxHeight: 95, maxWidth: "100%", objectFit: "contain" }}/> : <div style={{ color: GREEN, fontWeight: 800 }}><FileCheck2 size={20}/><div style={{ fontSize: 11 }}>File uploaded · click to replace</div></div>) : <div style={{ color: "#888", fontSize: 11 }}><Upload size={20}/><div>Click to upload</div></div>}<input type="file" accept={accept} style={{ display: "none" }} onChange={onChange}/></label>{error && <div style={{ color: "#b91c1c", fontSize: 10, marginTop: 4 }}>{error}</div>}</div>; }
-function Responsive() { return <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .9s linear infinite}@media(max-width:760px){.grid2,.pref-grid,.timeline-grid,.readiness-grid{grid-template-columns:1fr!important}.grid2>[style*="span 2"]{grid-column:span 1!important}input,select,textarea{font-size:16px!important}}`}</style>; }
+function Responsive() { return <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .9s linear infinite}@media(max-width:760px){.grid2,.pref-grid,.timeline-grid,.readiness-grid,.payment-account-grid{grid-template-columns:1fr!important}.grid2>[style*="span 2"]{grid-column:span 1!important}input,select,textarea{font-size:16px!important}}`}</style>; }
 const input: React.CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid rgba(26,77,46,.2)", borderRadius: 8, padding: "10px 11px", background: "white", color: "#26352d", fontSize: 12 };
 const inputError = (error?: string): React.CSSProperties => error ? { ...input, borderColor: "#ef4444", boxShadow: "0 0 0 2px rgba(239,68,68,.08)" } : input;
 const labelStyle: React.CSSProperties = { display: "block", color: GREEN, fontSize: 11, fontWeight: 800, marginBottom: 5 };
