@@ -147,6 +147,25 @@ export function AdminMemberCenterPage() {
     });
   }, [members, search, statusFilter, membershipFilter, expiryFilter]);
 
+  const birthdaysToday = useMemo(() => {
+    const now = new Date();
+    const md = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const monthDay = (value?: string | null) => {
+      const raw = String(value || "").trim();
+      const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return `${iso[2]}-${iso[3]}`;
+      const dmy = raw.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+      return dmy ? `${dmy[2]}-${dmy[1]}` : "";
+    };
+    return members.flatMap((m) => {
+      if (m.status !== "approved") return [];
+      const rows: Array<{ label: string; memberNo: string }> = [];
+      if (monthDay(m.dob) === md) rows.push({ label: m.fullName, memberNo: m.memberNo });
+      for (const child of m.children || []) if (monthDay(child.dob) === md) rows.push({ label: `${child.fullName} (child of ${m.fullName})`, memberNo: m.memberNo });
+      return rows;
+    });
+  }, [members]);
+
   const filteredArchived = useMemo(() => smartSearchSort(
     archivedMembers,
     search,
@@ -278,7 +297,7 @@ export function AdminMemberCenterPage() {
 
       {view === "members" && <>
         <div style={{ padding: "10px 13px", border: "1px solid #d7e2da", background: "#f2f8f4", borderRadius: 8, marginBottom: 14, color: "#526059", fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}><Lock size={15} color={GREEN}/><span><b>Record protection:</b> member records are never physically deleted. Only Super Admin can archive them, and every create/update/archive/restore is retained in the permanent audit trail.</span></div>
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 12, marginBottom: 20 }} className="stats-grid"><Stat label="Total Members" value={members.length} /><Stat label="Pending" value={members.filter((m) => m.status === "pending").length} /><Stat label="Approved" value={members.filter((m) => m.status === "approved").length} /><Stat label="Expiring ≤30 Days" value={members.filter((m) => annualExpiryState(m) === "expiring").length} /><Stat label="Expired / Renewal Due" value={members.filter((m) => annualExpiryState(m) === "expired").length} /><Stat label="Suspended" value={members.filter((m) => m.status === "suspended").length} /><Stat label="Payment Pending" value={members.filter((m) => !["received", "verified", "recorded"].includes(String(m.paymentStatus || ""))).length} /></section>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(8,minmax(0,1fr))", gap: 12, marginBottom: 12 }} className="stats-grid"><Stat label="Total Members" value={members.length} /><Stat label="Pending" value={members.filter((m) => m.status === "pending").length} /><Stat label="Approved" value={members.filter((m) => m.status === "approved").length} /><Stat label="Expiring ≤30 Days" value={members.filter((m) => annualExpiryState(m) === "expiring").length} /><Stat label="Expired / Renewal Due" value={members.filter((m) => annualExpiryState(m) === "expired").length} /><Stat label="Birthdays Today" value={birthdaysToday.length} /><Stat label="Suspended" value={members.filter((m) => m.status === "suspended").length} /><Stat label="Payment Pending" value={members.filter((m) => !["received", "verified", "recorded"].includes(String(m.paymentStatus || ""))).length} /></section>{birthdaysToday.length > 0 && <div style={{ padding: "9px 12px", background: "#fff8e7", border: "1px solid #ead8a4", borderRadius: 8, marginBottom: 20, color: "#6f5a23", fontSize: 11 }}><strong>Today's birthdays:</strong> {birthdaysToday.slice(0, 8).map((x) => `${x.label} · ${x.memberNo}`).join(" | ")}{birthdaysToday.length > 8 ? ` +${birthdaysToday.length - 8} more` : ""}</div>
         <section style={panelStyle}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0, fontSize: 20 }}>Member Registry</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Smart partial/fuzzy search. Approve, edit, upload documents, print and publish from one protected registry.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button onClick={() => void loadMembers()} style={secondaryButton}><RefreshCw size={14} /> Refresh</button><MemberDataExportPanel members={members} /><button onClick={startAdd} style={primaryButton}><Plus size={14} /> Add Member</button></div></div>
           <div style={{ display: "grid", gridTemplateColumns: "1.5fr .7fr .8fr .8fr auto", gap: 10, marginBottom: 16 }} className="filter-grid"><div style={{ position: "relative" }}><Search size={16} color="#999" style={{ position: "absolute", left: 12, top: 11 }} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, CNIC, phone, Registration / Member No..." style={{ ...fieldStyle, paddingLeft: 36 }} /></div><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={fieldStyle}><option value="all">All Statuses</option>{["pending","approved","expired","rejected","inactive","suspended","deceased"].map((x) => <option key={x} value={x}>{x}</option>)}</select><select value={membershipFilter} onChange={(e) => setMembershipFilter(e.target.value)} style={fieldStyle}><option value="all">All Memberships</option><option value="ordinary">Annual Membership</option><option value="life">Lifetime Membership</option><option value="patron">Patron Membership</option><option value="overseas">Overseas Membership</option></select><select value={expiryFilter} onChange={(e) => setExpiryFilter(e.target.value as any)} style={fieldStyle}><option value="all">All Expiry States</option><option value="active">Annual: Active</option><option value="expiring">Expiring ≤30 Days</option><option value="expired">Expired / Renewal Due</option></select><button onClick={() => { setSearch(""); setStatusFilter("all"); setMembershipFilter("all"); setExpiryFilter("all"); }} style={secondaryButton}>Reset</button></div>
