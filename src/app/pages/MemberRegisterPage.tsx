@@ -250,8 +250,6 @@ export function MemberRegisterPage() {
       if (!form.cnicFrontUrl) errs.cnicFrontUrl = "CNIC Front image is required.";
       if (!form.cnicBackUrl) errs.cnicBackUrl = "CNIC Back image is required.";
       if (!form.paymentProofUrl) errs.paymentProofUrl = "Payment proof is required.";
-      if (form.paymentSenderName.trim().length < 2) errs.paymentSenderName = "Enter the sender/account-holder name shown on the payment slip.";
-      if (!form.paymentMethod.trim()) errs.paymentMethod = "Select the payment method.";
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -292,9 +290,6 @@ export function MemberRegisterPage() {
           membershipType: form.membershipType,
           familyInfoPublic: false,
           referrerMemberId: selectedReferrer?.id || null,
-          paymentSenderName: form.paymentSenderName,
-          paymentMethod: form.paymentMethod,
-          paymentReference: form.paymentReference,
           photoUrl: form.photoUrl,
           cnicFrontUrl: form.cnicFrontUrl,
           cnicBackUrl: form.cnicBackUrl,
@@ -319,7 +314,7 @@ export function MemberRegisterPage() {
   }
 
   if (done) {
-    return <div><PageHeader title="Registration Submitted" breadcrumb={["Home", "Member Portal", "Register"]} /><div style={{ maxWidth: 560, margin: "70px auto", padding: "0 24px", textAlign: "center" }}><div style={{ width: 78, height: 78, borderRadius: "50%", background: "#dcfce7", display: "grid", placeItems: "center", margin: "0 auto 22px" }}><CheckCircle size={38} color="#15803d" /></div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif" }}>Application Received</h2><p style={{ color: "#555", lineHeight: 1.8 }}>Your form and payment proof have been received. The payment remains pending until Finance/Accounts matches the sender, reference and slip. It is not counted in the ledger before verification. After payment verification, the administration can complete membership approval.</p><Link to="/member/login" style={{ display: "inline-block", marginTop: 18, background: GREEN, color: "white", padding: "11px 24px", borderRadius: 8, textDecoration: "none", fontWeight: 700 }}>Member Login</Link></div></div>;
+    return <div><PageHeader title="Registration Submitted" breadcrumb={["Home", "Member Portal", "Register"]} /><div style={{ maxWidth: 560, margin: "70px auto", padding: "0 24px", textAlign: "center" }}><div style={{ width: 78, height: 78, borderRadius: "50%", background: "#dcfce7", display: "grid", placeItems: "center", margin: "0 auto 22px" }}><CheckCircle size={38} color="#15803d" /></div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif" }}>Application Received</h2><p style={{ color: "#555", lineHeight: 1.8 }}>Your form and payment proof have been received. The payment remains pending until Finance/Accounts verifies the uploaded receipt. It is not counted in the ledger before verification. After payment verification, the administration can complete membership approval.</p><Link to="/member/login" style={{ display: "inline-block", marginTop: 18, background: GREEN, color: "white", padding: "11px 24px", borderRadius: 8, textDecoration: "none", fontWeight: 700 }}>Member Login</Link></div></div>;
   }
 
   return (
@@ -374,8 +369,7 @@ export function MemberRegisterPage() {
             <p style={{ color: GREEN, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", marginTop: 24 }}>Emergency Contact</p><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="form-grid"><Field label="Emergency Contact Name"><input style={inputStyle} value={family.emergencyContactName} onChange={(e) => setFam("emergencyContactName", e.target.value)} /></Field><Field label="Emergency Contact Number"><input type="tel" style={inputStyle} value={family.emergencyContactNumber} onChange={(e) => setFam("emergencyContactNumber", e.target.value)} /></Field><Field label="Relationship"><select style={inputStyle} value={family.emergencyRelationship} onChange={(e) => setFam("emergencyRelationship", e.target.value)}><option value="">Select relationship…</option>{relationships.map((x) => <option key={x}>{x}</option>)}</select></Field></div>
           </div>}
 
-          {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Payment stays pending until Finance/Accounts verifies the slip against the sender/reference. Pending payment is not added to the ledger." />
-            <div style={{ background: "#fff9e9", border: "1px solid #ead39a", borderRadius: 10, padding: 14, marginBottom: 18 }}><div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.2fr", gap: 12 }} className="form-grid"><Field label="Sender / Account-Holder Name *" error={errors.paymentSenderName} hint="Enter the name exactly as it appears on the bank, JazzCash, Easypaisa or other payment slip."><input style={inputStyle} value={form.paymentSenderName} onChange={(e) => set("paymentSenderName", e.target.value)} placeholder="Name shown on payment proof" /></Field><Field label="Payment Method *" error={errors.paymentMethod}><select style={inputStyle} value={form.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>Easypaisa</option><option>Cheque</option><option>Cash</option><option>Other</option></select></Field><Field label="Transaction / Reference No." hint="Enter the bank/wallet reference if available. Finance will match it with the slip."><input style={inputStyle} value={form.paymentReference} onChange={(e) => set("paymentReference", e.target.value)} /></Field></div></div>
+          {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Deposit the applicable fee into any official account shown below and upload the payment receipt. Pending payment is not added to the ledger until Finance verifies it." />
             <div style={{ marginBottom: 18 }}>
               <div style={{ color: GREEN, fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Where to deposit your payment</div>
               <div style={{ color: "#6b7280", fontSize: 11, lineHeight: 1.55, marginBottom: 9 }}>Use any official bank or wallet account below, then upload the receipt. These details are controlled from Admin → Site Settings and refresh automatically.</div>
