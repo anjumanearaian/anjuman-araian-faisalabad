@@ -116,9 +116,55 @@ function Dashboard() {
   };
   const [tab, setTab] = useState<"dashboard" | "news" | "events" | "members" | "forms" | "businesses" | "matrimonial" | "leadership" | "media" | "overseas" | "settings" | "messages" | "analytics" | "admins">(getInitialTab as any);
   const [formDrafts, setFormDrafts] = useState<any[]>([]);
+  const [formStatusFilter, setFormStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
   const [importMessage, setImportMessage] = useState("");
 
   useEffect(() => { if (tab === "forms") apiClient<any[]>("/forms/admin/all").then(setFormDrafts).catch(() => setFormDrafts([])); }, [tab]);
+
+  const formApplicantDetails = (draft: any) => {
+    const data = draft?.data && typeof draft.data === "object" ? draft.data : {};
+    const nestedForm = data?.form && typeof data.form === "object" ? data.form : {};
+    const primary = Object.keys(nestedForm).length ? nestedForm : data;
+    const family = data?.family && typeof data.family === "object" ? data.family : {};
+    const type = String(draft?.formType || "").toLowerCase();
+    const name = String(
+      primary.fullName ||
+      primary.name ||
+      primary.ownerName ||
+      primary.contactPerson ||
+      draft?.authUser?.name ||
+      "Applicant"
+    ).trim();
+    const phone = String(
+      primary.phone ||
+      primary.mobile ||
+      primary.whatsapp ||
+      primary.contact ||
+      primary.contactNumber ||
+      ""
+    ).trim();
+    const city = String(
+      primary.city ||
+      primary.businessCity ||
+      family.familyCity ||
+      ""
+    ).trim();
+    const email = String(
+      primary.email ||
+      draft?.authUser?.email ||
+      ""
+    ).trim();
+    const interestShown = draft?.status !== "submitted" && Number(draft?.completion || 0) > 0;
+    return { name, phone, city, email, type, interestShown };
+  };
+
+  const visibleFormDrafts = useMemo(() => {
+    return formDrafts.filter((draft) => {
+      if (formStatusFilter === "submitted") return draft.status === "submitted";
+      if (formStatusFilter === "not_submitted") return draft.status !== "submitted";
+      return true;
+    });
+  }, [formDrafts, formStatusFilter]);
 
   const importMembers = async (file?: File) => {
     if (!file) return;
@@ -1018,7 +1064,64 @@ return (
         </div>
       )}
 
-      {tab === "forms" && <div><div style={{ marginBottom: 20 }}><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, margin: 0 }}>Saved and Submitted Forms</h2><p style={{ color: "#666", fontSize: 14 }}>Incomplete forms remain visible here while applicants continue across multiple sessions.</p></div><div style={{ background: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}><thead><tr style={{ background: "#f8f5ef" }}>{["Applicant", "Form", "Progress", "Status", "Last Activity"].map(h => <th key={h} style={{ textAlign: "left", padding: 14, color: "#777", fontSize: 12 }}>{h}</th>)}</tr></thead><tbody>{formDrafts.map(d => <tr key={d.id} style={{ borderTop: "1px solid #eee" }}><td style={{ padding: 14 }}><strong style={{ color: GREEN }}>{d.authUser?.name || "Applicant"}</strong><div style={{ fontSize: 12, color: "#777" }}>{d.authUser?.email}</div></td><td style={{ padding: 14, textTransform: "capitalize" }}>{d.formType}</td><td style={{ padding: 14 }}><div style={{ width: 140, background: "#e5e7eb", height: 8, borderRadius: 8 }}><div style={{ width: `${d.completion}%`, height: 8, borderRadius: 8, background: d.status === "submitted" ? "#15803d" : GOLD }} /></div><small>{d.completion}%</small></td><td style={{ padding: 14 }}><span style={{ background: d.status === "submitted" ? "#dcfce7" : "#fef9c3", color: d.status === "submitted" ? "#166534" : "#854d0e", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{d.status === "submitted" ? "Submitted" : "Incomplete"}</span></td><td style={{ padding: 14, color: "#666", fontSize: 13 }}>{new Date(d.updatedAt).toLocaleString()}</td></tr>)}</tbody></table>{!formDrafts.length && <div style={{ padding: 40, textAlign: "center", color: "#999" }}>No saved forms yet.</div>}</div></div>}
+      {tab === "forms" && <div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, margin: 0 }}>Saved and Submitted Forms</h2>
+              <p style={{ color: "#666", fontSize: 14, marginBottom: 0 }}>Applicant details appear as soon as they have entered them. Incomplete forms remain visible while applicants continue across multiple sessions.</p>
+            </div>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+              {([
+                ["all", "All", formDrafts.length],
+                ["submitted", "Submitted", formDrafts.filter((d) => d.status === "submitted").length],
+                ["not_submitted", "Non-Submitted", formDrafts.filter((d) => d.status !== "submitted").length],
+              ] as const).map(([key, label, count]) => (
+                <button key={key} onClick={() => setFormStatusFilter(key)} style={{ padding: "7px 13px", borderRadius: 20, border: `1px solid ${formStatusFilter === key ? GREEN : "#d8ddd9"}`, background: formStatusFilter === key ? GREEN : "white", color: formStatusFilter === key ? "white" : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  {label} ({count})
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ background: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1040 }}>
+            <thead>
+              <tr style={{ background: "#f8f5ef" }}>
+                {["Applicant", "Mobile", "City", "Form", "Progress", "Status", "Last Activity"].map(h => <th key={h} style={{ textAlign: "left", padding: 14, color: "#777", fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleFormDrafts.map(d => {
+                const details = formApplicantDetails(d);
+                const submitted = d.status === "submitted";
+                return <tr key={d.id} style={{ borderTop: "1px solid #eee", background: submitted ? "#fbfffc" : "white" }}>
+                  <td style={{ padding: 14, minWidth: 210 }}>
+                    <strong style={{ color: GREEN }}>{details.name || "Applicant"}</strong>
+                    <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>{details.email || "Email not entered yet"}</div>
+                  </td>
+                  <td style={{ padding: 14, color: details.phone ? "#444" : "#aaa", whiteSpace: "nowrap" }}>{details.phone || "Not entered"}</td>
+                  <td style={{ padding: 14, color: details.city ? "#444" : "#aaa", whiteSpace: "nowrap" }}>{details.city || "Not entered"}</td>
+                  <td style={{ padding: 14, textTransform: "capitalize", whiteSpace: "nowrap" }}>{String(d.formType || "").replace(/:/g, " · ")}</td>
+                  <td style={{ padding: 14 }}>
+                    <div style={{ width: 140, background: "#e5e7eb", height: 8, borderRadius: 8 }}>
+                      <div style={{ width: `${Math.max(0, Math.min(100, Number(d.completion || 0)))}%`, height: 8, borderRadius: 8, background: submitted ? "#15803d" : GOLD }} />
+                    </div>
+                    <small>{d.completion}%</small>
+                  </td>
+                  <td style={{ padding: 14 }}>
+                    <span style={{ background: submitted ? "#dcfce7" : details.interestShown ? "#fef3c7" : "#f3f4f6", color: submitted ? "#166534" : details.interestShown ? "#92400e" : "#6b7280", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {submitted ? "Submitted" : details.interestShown ? "Interest Shown · Incomplete" : "Not Started"}
+                    </span>
+                  </td>
+                  <td style={{ padding: 14, color: "#666", fontSize: 13, whiteSpace: "nowrap" }}>{new Date(d.updatedAt).toLocaleString()}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+          {!visibleFormDrafts.length && <div style={{ padding: 40, textAlign: "center", color: "#999" }}>No forms match this filter.</div>}
+        </div>
+      </div>}
 
       {/* ── BUSINESSES TAB ── */}
       {tab === "businesses" && (
