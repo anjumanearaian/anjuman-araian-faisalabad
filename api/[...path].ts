@@ -8,6 +8,8 @@ const prisma = prismaModule.default ?? prismaModule.prisma;
 const manualFlowModule = require("../backend/dist/serverless/manualMatrimonialFlow.js");
 const manualMatrimonialFlow = manualFlowModule.manualMatrimonialFlow;
 const managerRoleModule = require("../backend/dist/serverless/matrimonialManagerRole.js");
+const memberAutomationModule = require("../backend/dist/serverless/memberAutomation.js");
+const memberAutomation = memberAutomationModule.memberAutomation;
 const createMatrimonialManagerAdmin = managerRoleModule.createMatrimonialManagerAdmin;
 const assignMatrimonialManagerRole = managerRoleModule.assignMatrimonialManagerRole;
 const jwt = require("jsonwebtoken");
@@ -215,7 +217,7 @@ async function createAdminMember(req: any, res: any) {
 
   const familyInfo = b.familyInfo && typeof b.familyInfo === "object" ? b.familyInfo : null;
   const children = Array.isArray(b.children) ? b.children.filter((c: any) => text(c?.fullName)).slice(0, 20) : [];
-  const validStatuses = ["pending", "approved", "rejected", "inactive", "suspended", "deceased"];
+  const validStatuses = ["pending", "approved", "expired", "rejected", "inactive", "suspended", "deceased"];
   const validPayments = ["pending", "submitted", "received", "verified", "recorded", "rejected"];
   const status = validStatuses.includes(text(b.status)) ? text(b.status) : "pending";
   const paymentStatus = validPayments.includes(text(b.paymentStatus)) ? text(b.paymentStatus) : "pending";
@@ -439,6 +441,10 @@ export default async function handler(req: any, res: any) {
   const pathname = String(req.url || "").split("?")[0];
   const method = String(req.method || "").toUpperCase();
   const requestBody = bodyOf(req);
+
+  if (pathname === "/api/automation/daily-membership" && (method === "GET" || method === "POST")) {
+    return memberAutomation(req, res);
+  }
 
   if (pathname === "/api/social-update" && method === "GET") {
     try {
