@@ -378,9 +378,9 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     if (["approved", "rejected", "suspended"].includes(status)) {
       void sendEmail(
         result.member.email,
-        status === "approved" ? "Your membership is approved" : "Membership application update",
-        emailFrame(status === "approved" ? "Membership approved" : "Application update", status === "approved"
-          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
+        status === "approved" ? (isRenewal ? "Your membership has been renewed" : "Your membership is approved") : "Membership application update",
+        emailFrame(status === "approved" ? (isRenewal ? "Membership renewed" : "Membership approved") : "Application update", status === "approved"
+          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual","overseas"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
           : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
       ).catch(console.error);
     }
@@ -403,7 +403,7 @@ router.get("/:id/receipt", requireMember, async (req: Request, res: Response, ne
     const ownsLegacy = user.role === "member" && user.id === member.id;
     const ownsVerified = user.role === "applicant" && user.id === member.authUserId;
     if (!isAdmin && !ownsLegacy && !ownsVerified) return void res.status(403).json({ error: "You cannot access this receipt" });
-    const record = await prisma.revenueRecord.findUnique({ where: { reference: `membership:${id}` } });
+    const record = await prisma.revenueRecord.findFirst({ where: { reference: { startsWith: `membership:${id}` } }, orderBy: { date: "desc" } });
     if (!record || !record.receiptNo) return void res.status(404).json({ error: "No official receipt has been generated for this member yet" });
     const pdf = createReceiptPdf({ receiptNo: record.receiptNo, date: record.date, payerName: record.customerName, memberNo: member.memberNo, itemName: record.itemName, amount: record.amount, paymentStatus: "Verified", reference: record.reference });
     res.setHeader("Content-Type", "application/pdf");
