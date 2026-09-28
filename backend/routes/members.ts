@@ -171,7 +171,7 @@ router.post("/login", loginLimiter, validate(LoginSchema), async (req: Request, 
     const isMatch = member.password ? await bcrypt.compare(password, member.password) : false;
     if (!isMatch) return void res.status(401).json({ error: "Invalid credentials" });
     if (member.status === "pending") return void res.status(403).json({ error: "Your account is pending admin approval. Please wait for an email or contact the administration." });
-    if (["rejected", "suspended", "deceased", "inactive"].includes(member.status)) return void res.status(403).json({ error: "Your membership is not currently active. Please contact the administration." });
+    if (["rejected", "suspended", "deceased", "inactive", "expired"].includes(member.status)) return void res.status(403).json({ error: "Your membership is not currently active. Please contact the administration." });
     const token = jwt.sign({ id: member.id, role: "member" }, getJwtSecret(), { expiresIn: "24h" });
     res.json({ token, expiresAt: new Date(Date.now() + 86400000).toISOString(), member: stripPassword(member) });
   } catch (err) { next(err); }
@@ -264,7 +264,7 @@ router.post("/import", requireWelfareAdmin, async (req: Request, res: Response, 
       const statusRaw = value(row, "status", "memberStatus").toLowerCase();
       const paymentRaw = value(row, "paymentStatus", "payment", "feeStatus").toLowerCase();
       const gender = genderRaw.startsWith("f") ? "female" : genderRaw.startsWith("o") ? "other" : "male";
-      const validStatus = ["pending", "approved", "rejected", "inactive", "suspended", "deceased"].includes(statusRaw) ? statusRaw : "approved";
+      const validStatus = ["pending", "approved", "expired", "rejected", "inactive", "suspended", "deceased"].includes(statusRaw) ? statusRaw : "approved";
       const validPayment = ["pending", "submitted", "received", "verified", "recorded", "rejected"].includes(paymentRaw) ? paymentRaw : "recorded";
       const photo = value(row, "photoUrl", "photo", "imageUrl", "profilePhoto");
       return {
@@ -343,7 +343,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     const id = String(req.params.id);
     if ((await archiveState(id))?.isArchived) return void res.status(409).json({ error: "Archived members are locked. Super Admin must restore the record before changing status." });
     const { status, adminNote, rejectionReason } = req.body;
-    const validStatuses = ["pending", "approved", "rejected", "inactive", "suspended", "deceased"];
+    const validStatuses = ["pending", "approved", "expired", "rejected", "inactive", "suspended", "deceased"];
     if (!validStatuses.includes(status)) return void res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
 
     const current = await prisma.member.findUnique({ where: { id }, select: { id: true, memberNo: true, fullName: true, email: true, membershipType: true, paymentStatus: true } });
@@ -378,7 +378,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
         result.member.email,
         status === "approved" ? "Your membership is approved" : "Membership application update",
         emailFrame(status === "approved" ? "Membership approved" : "Application update", status === "approved"
-          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been approved.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong></p><p>Your official PDF receipt is available from your member record.</p>`
+          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been approved.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
           : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
       ).catch(console.error);
     }
