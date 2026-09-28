@@ -346,7 +346,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     const validStatuses = ["pending", "approved", "expired", "rejected", "inactive", "suspended", "deceased"];
     if (!validStatuses.includes(status)) return void res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
 
-    const current = await prisma.member.findUnique({ where: { id }, select: { id: true, memberNo: true, fullName: true, email: true, membershipType: true, paymentStatus: true } });
+    const current = await prisma.member.findUnique({ where: { id }, select: { id: true, memberNo: true, fullName: true, email: true, membershipType: true, paymentStatus: true, status: true, approvedAt: true } });
     if (!current) return void res.status(404).json({ error: "Member not found" });
     if (status === "approved" && !["received", "verified", "recorded"].includes(String(current.paymentStatus || ""))) return void res.status(400).json({ error: "Verify or record the membership fee before approving this member." });
 
@@ -354,8 +354,10 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     const tiers = ((settings?.membershipTiers as any[])?.length ? settings?.membershipTiers as any[] : defaultTiers);
     const tier = tiers.find((t: any) => String(t.type) === current.membershipType) || defaultTiers.find((t) => t.type === current.membershipType) || defaultTiers[0];
     const amount = parseAmount(tier?.fee || "0");
-    const reference = `membership:${current.id}`;
-    const receiptNo = `AAF-RCP-${current.memberNo}`;
+    const isRenewal = status === "approved" && current.status === "expired";
+    const renewalStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const reference = isRenewal ? `membership:${current.id}:renewal:${renewalStamp}` : `membership:${current.id}`;
+    const receiptNo = isRenewal ? `AAF-RCP-${current.memberNo}-R${renewalStamp}` : `AAF-RCP-${current.memberNo}`;
 
     const result = await prisma.$transaction(async (tx) => {
       const member = await tx.member.update({
@@ -378,7 +380,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
         result.member.email,
         status === "approved" ? "Your membership is approved" : "Membership application update",
         emailFrame(status === "approved" ? "Membership approved" : "Application update", status === "approved"
-          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been approved.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
+          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
           : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
       ).catch(console.error);
     }
