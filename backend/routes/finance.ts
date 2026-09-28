@@ -977,7 +977,14 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
     if (existing.status === "void") return void res.status(400).json({ error: "An archived transaction cannot be edited. Restore it first." });
     const nextDirection = lineDirection(data.type, data.direction);
     if (data.type !== existing.type || nextDirection !== existing.direction) return void res.status(400).json({ error: "Transaction type/direction cannot be changed after posting. Archive the entry and create a corrected transaction instead." });
-    await validateLinkedMember(data.memberId);
+    // Super Admin correction must be able to repair historical ledger rows even
+    // when the linked member is still pending. Preserve the existing link without
+    // re-validating approval status; if Super Admin explicitly changes the member
+    // link, only require that the target member actually exists.
+    if (data.memberId && data.memberId !== existing.memberId) {
+      const targetMember = await prisma.member.findUnique({ where: { id: data.memberId }, select: { id: true } });
+      if (!targetMember) return void res.status(400).json({ error: "Selected member record was not found." });
+    }
     if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
     const who = await actor(req);
     // Super Admin correction may repair historical records even when old proof or
