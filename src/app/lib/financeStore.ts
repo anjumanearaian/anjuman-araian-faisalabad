@@ -100,6 +100,7 @@ export interface FinanceTransactionInput {
   transactionDate?: string | Date;
   handledByAssignmentId?: string | null;
   custodianId?: string | null;
+  correctionReason?: string | null;
 }
 
 export interface FinanceCustodian {
