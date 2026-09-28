@@ -123,31 +123,34 @@ function Dashboard() {
 
   const formApplicantDetails = (draft: any) => {
     const data = draft?.data && typeof draft.data === "object" ? draft.data : {};
+    const nestedForm = data?.form && typeof data.form === "object" ? data.form : {};
+    const primary = Object.keys(nestedForm).length ? nestedForm : data;
+    const family = data?.family && typeof data.family === "object" ? data.family : {};
     const type = String(draft?.formType || "").toLowerCase();
     const name = String(
-      data.fullName ||
-      data.name ||
-      data.ownerName ||
-      data.contactPerson ||
+      primary.fullName ||
+      primary.name ||
+      primary.ownerName ||
+      primary.contactPerson ||
       draft?.authUser?.name ||
       "Applicant"
     ).trim();
     const phone = String(
-      data.phone ||
-      data.mobile ||
-      data.whatsapp ||
-      data.contact ||
-      data.contactNumber ||
+      primary.phone ||
+      primary.mobile ||
+      primary.whatsapp ||
+      primary.contact ||
+      primary.contactNumber ||
       ""
     ).trim();
     const city = String(
-      data.city ||
-      data.familyCity ||
-      data.businessCity ||
+      primary.city ||
+      primary.businessCity ||
+      family.familyCity ||
       ""
     ).trim();
     const email = String(
-      data.email ||
+      primary.email ||
       draft?.authUser?.email ||
       ""
     ).trim();
