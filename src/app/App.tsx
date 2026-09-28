@@ -35,6 +35,11 @@ const SEO: Record<string, { title: string; description: string }> = {
   "/business": { title: `Business Directory | ${SITE_NAME}`, description: "Discover businesses and professional services connected with the Anjuman-e-Araian Faisalabad community." },
   "/matrimonial": { title: `Private Matrimonial Service | ${SITE_NAME}`, description: "A privacy-first matrimonial service for approved members and verified applicants." },
   "/contact": { title: `Contact Us | ${SITE_NAME}`, description: "Contact Anjuman-e-Araian Faisalabad for membership, welfare, business and community services." },
+  "/privacy-policy": { title: `Privacy Policy | ${SITE_NAME}`, description: "Read how Anjuman-e-Araian Faisalabad collects, uses and protects personal information across its digital services." },
+  "/terms": { title: `Terms & Conditions | ${SITE_NAME}`, description: "Terms and conditions for using the official Anjuman-e-Araian Faisalabad digital platform." },
+  "/cookie-policy": { title: `Cookie Policy | ${SITE_NAME}`, description: "Learn how essential browser storage and cookies are used on the Anjuman-e-Araian Faisalabad website." },
+  "/payment-refund-policy": { title: `Payment & Refund Policy | ${SITE_NAME}`, description: "Payment verification, receipt and refund policy for Anjuman-e-Araian Faisalabad digital services." },
+  "/disclaimer": { title: `Website Disclaimer | ${SITE_NAME}`, description: "Important disclaimer covering community information, business listings, matrimonial services and external links." },
 };
 
 function upsertMeta(selector: string, attrs: Record<string, string>) {
