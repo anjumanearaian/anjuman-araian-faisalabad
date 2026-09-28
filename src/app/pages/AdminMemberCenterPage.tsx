@@ -52,7 +52,7 @@ function membershipTypeLabel(value?: string | null) {
 
 function annualExpiryDate(member: Member) {
   const type = String(member.membershipType || "").toLowerCase();
-  if (!["ordinary", "annual"].includes(type) || !member.approvedAt) return null;
+  if (!["ordinary", "annual", "overseas"].includes(type) || !member.approvedAt) return null;
   const approved = new Date(member.approvedAt);
   if (Number.isNaN(approved.getTime())) return null;
   const expiry = new Date(approved);
