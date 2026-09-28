@@ -106,7 +106,6 @@ export function MatrimonialPage() {
         setSettings(site);
         const existing = requestedId ? profiles.find((p) => p.id === requestedId) : undefined;
         const next = existing ? fromProfile(existing) : blank();
-        if (!next.paymentMethod && site.paymentMethods?.[0]?.bankName) next.paymentMethod = site.paymentMethods[0].bankName;
         const draftType = `matrimonial:${requestedId || "new"}`;
         const draft = await apiClient<any>(`/forms/${encodeURIComponent(draftType)}`).catch(() => null);
         const draftData = draft?.data && draft.status !== "submitted" ? draft.data : null;
@@ -128,11 +127,6 @@ export function MatrimonialPage() {
       fetchSiteSettings().then((site) => {
         if (!active) return;
         setSettings(site);
-        setForm((old) => {
-          const stillValid = site.paymentMethods?.some((pm) => pm.bankName === old.paymentMethod);
-          if (stillValid || !site.paymentMethods?.length) return old;
-          return { ...old, paymentMethod: site.paymentMethods[0].bankName };
-        });
       }).catch(() => {});
     }, 30000);
     return () => { active = false; window.clearInterval(timer); };
@@ -210,7 +204,7 @@ export function MatrimonialPage() {
         familyBackground, requirements, profileData, preferenceData,
         privacyData: { profileVisibility: "matches_only", photoVisibility: form.photoVisibility, contactVisibility: form.contactVisibility, broadLocation: form.broadLocation, showHeight: form.showHeight },
         candidateConsent: form.candidateConsent, applicationSource: form.relationToCandidate === "Self" ? "self_service" : "guardian_service",
-        photoUrl: form.photoUrl, additionalPhotos: form.additionalPhotos, paymentProofUrl: form.paymentProofUrl || undefined, paymentMethod: form.paymentMethod || undefined,
+        photoUrl: form.photoUrl, additionalPhotos: form.additionalPhotos, paymentProofUrl: form.paymentProofUrl || undefined,
       });
       setSubmitted(saved);
       setSaveState("Submitted for review");
@@ -295,19 +289,18 @@ export function MatrimonialPage() {
         <div style={{ marginTop: 12 }}><MultiImageUpload label="Additional Candidate Documents / Photos (private)" images={form.additionalPhotos} onChange={(images) => set("additionalPhotos", images)}/></div>
         {settings.paymentMethods?.length ? <div style={{ background: "#fff9ef", border: "1px solid #ead9a8", padding: 12, borderRadius: 9, marginTop: 14 }}>
           <strong style={{ color: GREEN, fontSize: 12 }}>Where to deposit your payment</strong>
-          <div style={{ color: "#74684d", fontSize: 10, lineHeight: 1.5, marginTop: 3 }}>Select the account you used, deposit the applicable matrimonial fee, then upload the receipt. Admin changes refresh automatically.</div>
+          <div style={{ color: "#74684d", fontSize: 10, lineHeight: 1.5, marginTop: 3 }}>Deposit the applicable matrimonial fee into any official account below, then upload the receipt. Admin changes refresh automatically.</div>
           <div className="payment-account-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginTop: 9 }}>
-            {settings.paymentMethods.map((pm) => {
-              const active = form.paymentMethod === pm.bankName;
-              return <div key={pm.id} onClick={() => set("paymentMethod", pm.bankName)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") set("paymentMethod", pm.bankName); }} style={{ cursor: "pointer", border: `1px solid ${active ? GREEN : "#e4dcc8"}`, background: active ? "#f0f7f3" : "white", borderRadius: 9, padding: 10 }}>
-                <label style={{ display: "flex", gap: 7, alignItems: "center", cursor: "pointer", color: GREEN, fontSize: 11, fontWeight: 800 }}><input type="radio" name="paymentMethod" checked={active} onChange={() => set("paymentMethod", pm.bankName)}/>{pm.bankName}</label>
+            {settings.paymentMethods.map((pm) => (
+              <div key={pm.id} style={{ border: "1px solid #e4dcc8", background: "white", borderRadius: 9, padding: 10 }}>
+                <strong style={{ display: "block", color: GREEN, fontSize: 11, fontWeight: 800 }}>{pm.bankName}</strong>
                 <div style={{ color: "#666", fontSize: 10, marginTop: 4 }}>{pm.accountTitle}</div>
                 <div style={{ display: "flex", gap: 7, justifyContent: "space-between", alignItems: "center", marginTop: 5 }}>
                   <strong style={{ color: "#2b332d", fontSize: 11, overflowWrap: "anywhere" }}>{pm.accountNo}</strong>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(pm.accountNo); }} style={{ border: "1px solid #d8cfb9", background: "white", color: GREEN, borderRadius: 6, padding: "4px 8px", fontSize: 9, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Copy</button>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(pm.accountNo)} style={{ border: "1px solid #d8cfb9", background: "white", color: GREEN, borderRadius: 6, padding: "4px 8px", fontSize: 9, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Copy</button>
                 </div>
-              </div>;
-            })}
+              </div>
+            ))}
           </div>
         </div> : <div style={{ background: "#f8f5ef", padding: 11, borderRadius: 8, marginTop: 14, color: "#777", fontSize: 11 }}>No official payment account is configured. Please contact the Anjuman office before sending payment. The profile may still be saved for review.</div>}
 
