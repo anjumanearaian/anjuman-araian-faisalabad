@@ -260,6 +260,13 @@ async function validateLinkedMember(memberId?: string | null) {
   if (!member || member.status !== "approved") throw new Error("Linked member must be an approved member.");
 }
 
+async function validateActiveCustodian(custodianId?: string | null) {
+  if (!custodianId) return null;
+  const custodian = await prisma.financeCustodian.findUnique({ where: { id: custodianId } });
+  if (!custodian || !custodian.isActive) throw new Error("Select an active account / custodian.");
+  return custodian;
+}
+
 type LedgerView = "active" | "archived" | "all";
 
 function financeCategoryFamily(value: unknown) {
@@ -838,6 +845,12 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
     const ledgerAmount = Number(review.ledgerAmount || submission.amount);
     if (!Number.isFinite(ledgerAmount) || ledgerAmount <= 0) return void res.status(400).json({ error: "Enter a valid verified ledger amount." });
 
+    if (!review.custodianId && who.role !== "super_admin") {
+      return void res.status(400).json({ error: "Select where this money was received / held before approval. Only Super Admin may bypass this requirement." });
+    }
+    try { await validateActiveCustodian(review.custodianId); }
+    catch (error: any) { return void res.status(400).json({ error: error.message }); }
+
     const created = await prisma.$transaction(async (tx: any) => {
       const row = await createPostedTransaction(tx, {
         type: "revenue",
@@ -936,6 +949,11 @@ router.post("/transactions", requireFinanceAdmin, async (req: Request, res: Resp
     if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
     if (data.type === "expense" && !data.proofUrl) return void res.status(400).json({ error: "Expense proof / voucher image or PDF is required before posting the expense." });
     const who = await actor(req);
+    if (!data.custodianId && who.role !== "super_admin") {
+      return void res.status(400).json({ error: "Select the account / custodian from which this money was paid. Only Super Admin may bypass this requirement." });
+    }
+    try { await validateActiveCustodian(data.custodianId); }
+    catch (error: any) { return void res.status(400).json({ error: error.message }); }
     let handler;
     try { handler = await resolveFinanceHandler(data.handledByAssignmentId); }
     catch (error: any) { return void res.status(400).json({ error: error.message }); }
@@ -953,6 +971,7 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
   try {
     const id = String(req.params.id);
     const data = TransactionSchema.parse(req.body);
+    const correctionReason = z.string().trim().min(3).max(500).parse(req.body?.correctionReason || "");
     const existing = await prisma.financeTransaction.findUnique({ where: { id } });
     if (!existing) return void res.status(404).json({ error: "Transaction not found." });
     if (existing.status === "void") return void res.status(400).json({ error: "An archived transaction cannot be edited. Restore it first." });
@@ -960,8 +979,13 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
     if (data.type !== existing.type || nextDirection !== existing.direction) return void res.status(400).json({ error: "Transaction type/direction cannot be changed after posting. Archive the entry and create a corrected transaction instead." });
     await validateLinkedMember(data.memberId);
     if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
-    if (data.type === "expense" && !data.proofUrl) return void res.status(400).json({ error: "Expense proof is required." });
     const who = await actor(req);
+    // Super Admin correction may repair historical records even when old proof or
+    // custodian metadata was never collected. Every correction is still audited.
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "custodianId")) {
+      try { await validateActiveCustodian(data.custodianId); }
+      catch (error: any) { return void res.status(400).json({ error: error.message }); }
+    }
     let handler;
     try { handler = await resolveFinanceHandler(data.handledByAssignmentId); }
     catch (error: any) { return void res.status(400).json({ error: error.message }); }
@@ -977,10 +1001,12 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
           cashBookNo: data.cashBookNo || null,
           externalReference: data.externalReference || null,
           description: data.description || null,
-          handledByMemberId: handler?.memberId || null,
-          handledByName: handler?.name || null,
-          handledByRole: handler?.role || null,
-          custodianId: data.custodianId || existing.custodianId || null,
+          handledByMemberId: handler ? handler.memberId : existing.handledByMemberId,
+          handledByName: handler ? handler.name : existing.handledByName,
+          handledByRole: handler ? handler.role : existing.handledByRole,
+          custodianId: Object.prototype.hasOwnProperty.call(req.body || {}, "custodianId")
+            ? (data.custodianId || null)
+            : existing.custodianId,
           transactionDate: data.transactionDate || existing.transactionDate,
         },
       });
@@ -989,7 +1015,16 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
         SET "paymentSenderName" = ${data.paymentSenderName || null}, "proofUrl" = ${data.proofUrl || null}, "supportingDocuments" = ${serializeDocuments(data.supportingDocuments)}
         WHERE "id" = ${id}
       `;
-      await tx.financeAuditLog.create({ data: { transactionId: id, action: "edited_by_super_admin", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
+      await tx.financeAuditLog.create({
+        data: {
+          transactionId: id,
+          action: "edited_by_super_admin",
+          actorAdminId: who.id,
+          actorName: who.name,
+          beforeData: existing as any,
+          afterData: { ...(row as any), correctionReason } as any,
+        },
+      });
       return row;
     });
     res.json(updated);
