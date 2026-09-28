@@ -14,10 +14,6 @@ function pktDateParts(date = new Date()) {
   };
 }
 
-function dateOnlyUtc(date: Date) {
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-}
-
 function annualExpiry(approvedAt: Date) {
   const expiry = new Date(approvedAt);
   expiry.setUTCFullYear(expiry.getUTCFullYear() + 1);
@@ -41,7 +37,7 @@ function dobMonthDay(value?: string | null) {
 }
 
 function isAnnualMembership(value?: string | null) {
-  return ["ordinary", "annual"].includes(String(value || "").trim().toLowerCase());
+  return ["ordinary", "annual", "overseas"].includes(String(value || "").trim().toLowerCase());
 }
 
 async function alreadyLogged(memberId: string, action: string) {
@@ -133,7 +129,7 @@ export async function memberAutomation(req: any, res: any) {
       const expiryIso = new Date(expiry.getTime() + PKT_OFFSET_MS).toISOString().slice(0, 10);
 
       if (member.status === "approved" && days < 0) {
-        await prisma.member.update({ where: { id: member.id }, data: { status: "expired" } });
+        await prisma.member.update({ where: { id: member.id }, data: { status: "expired", paymentStatus: "pending" } });
         const action = `membership_expired_${expiryIso}`;
         const sent = await sendOnce(
           member.id,
