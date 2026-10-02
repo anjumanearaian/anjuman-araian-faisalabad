@@ -234,9 +234,13 @@ router.post("/register", registerLimiter, requireMember, validate(RegisterSchema
       create: { authUserId: authUser.id, formType: "membership", data: req.body, currentStep: 5, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date() },
     });
 
-    void sendEmail(MASTER_EMAIL, `New membership application: ${memberData.fullName}`, emailFrame("New membership application", `<p><strong>${memberData.fullName}</strong> has submitted a ${memberData.membershipType} membership form.</p><p>Email: ${memberData.email}<br>Phone: ${memberData.phone}<br>Member No: ${newMember.memberNo}${referrer ? `<br>Referrer: ${referrer.fullName} (${referrer.memberNo})` : ""}</p>`)).catch(console.error);
-    void sendEmail(memberData.email, "Membership application received", emailFrame("Application received", `<p>Dear ${memberData.fullName},</p><p>Your application is complete and has been sent to the administration. Your verified session can restore the saved form on this or another device.</p><p>Reference: <strong>${newMember.memberNo}</strong></p>`)).catch(console.error);
-    if (referrer?.email) void sendEmail(referrer.email, "You were named as a membership referrer", emailFrame("Membership referral notification", `<p>Dear ${referrer.fullName},</p><p><strong>${memberData.fullName}</strong> has named you as an optional referrer in an Anjuman-e-Araian Faisalabad membership application.</p><p>This does not automatically approve or reject the application. The administration may contact you if verification is required.</p>`)).catch(console.error);
+    const notificationJobs = [
+      sendEmail(MASTER_EMAIL, `New membership application: ${memberData.fullName}`, emailFrame("New membership application", `<p><strong>${memberData.fullName}</strong> has submitted a ${memberData.membershipType} membership form.</p><p>Email: ${memberData.email}<br>Phone: ${memberData.phone}<br>Member No: ${newMember.memberNo}${referrer ? `<br>Referrer: ${referrer.fullName} (${referrer.memberNo})` : ""}</p>`)),
+      sendEmail(memberData.email, "Membership application received", emailFrame("Application received", `<p>Dear ${memberData.fullName},</p><p>Your application is complete and has been sent to the administration. Your verified session can restore the saved form on this or another device.</p><p>Reference: <strong>${newMember.memberNo}</strong></p>`)),
+      ...(referrer?.email ? [sendEmail(referrer.email, "You were named as a membership referrer", emailFrame("Membership referral notification", `<p>Dear ${referrer.fullName},</p><p><strong>${memberData.fullName}</strong> has named you as an optional referrer in an Anjuman-e-Araian Faisalabad membership application.</p><p>This does not automatically approve or reject the application. The administration may contact you if verification is required.</p>`))] : []),
+    ];
+    const notificationResults = await Promise.allSettled(notificationJobs);
+    for (const result of notificationResults) if (result.status === "rejected") console.error("[MEMBERSHIP_REGISTRATION_EMAIL_FAILED]", result.reason);
 
     res.status(201).json(stripPassword(newMember));
   } catch (err: any) {
