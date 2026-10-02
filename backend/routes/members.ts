@@ -171,7 +171,7 @@ router.post("/login", loginLimiter, validate(LoginSchema), async (req: Request, 
     const isMatch = member.password ? await bcrypt.compare(password, member.password) : false;
     if (!isMatch) return void res.status(401).json({ error: "Invalid credentials" });
     if (member.status === "pending") return void res.status(403).json({ error: "Your account is pending admin approval. Please wait for an email or contact the administration." });
-    if (["rejected", "suspended", "deceased", "inactive"].includes(member.status)) return void res.status(403).json({ error: "Your membership is not currently active. Please contact the administration." });
+    if (["rejected", "suspended", "deceased", "inactive", "expired"].includes(member.status)) return void res.status(403).json({ error: "Your membership is not currently active. Please contact the administration." });
     const token = jwt.sign({ id: member.id, role: "member" }, getJwtSecret(), { expiresIn: "24h" });
     res.json({ token, expiresAt: new Date(Date.now() + 86400000).toISOString(), member: stripPassword(member) });
   } catch (err) { next(err); }
@@ -264,7 +264,7 @@ router.post("/import", requireWelfareAdmin, async (req: Request, res: Response, 
       const statusRaw = value(row, "status", "memberStatus").toLowerCase();
       const paymentRaw = value(row, "paymentStatus", "payment", "feeStatus").toLowerCase();
       const gender = genderRaw.startsWith("f") ? "female" : genderRaw.startsWith("o") ? "other" : "male";
-      const validStatus = ["pending", "approved", "rejected", "inactive", "suspended", "deceased"].includes(statusRaw) ? statusRaw : "approved";
+      const validStatus = ["pending", "approved", "expired", "rejected", "inactive", "suspended", "deceased"].includes(statusRaw) ? statusRaw : "approved";
       const validPayment = ["pending", "submitted", "received", "verified", "recorded", "rejected"].includes(paymentRaw) ? paymentRaw : "recorded";
       const photo = value(row, "photoUrl", "photo", "imageUrl", "profilePhoto");
       return {
@@ -343,10 +343,10 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     const id = String(req.params.id);
     if ((await archiveState(id))?.isArchived) return void res.status(409).json({ error: "Archived members are locked. Super Admin must restore the record before changing status." });
     const { status, adminNote, rejectionReason } = req.body;
-    const validStatuses = ["pending", "approved", "rejected", "inactive", "suspended", "deceased"];
+    const validStatuses = ["pending", "approved", "expired", "rejected", "inactive", "suspended", "deceased"];
     if (!validStatuses.includes(status)) return void res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
 
-    const current = await prisma.member.findUnique({ where: { id }, select: { id: true, memberNo: true, fullName: true, email: true, membershipType: true, paymentStatus: true } });
+    const current = await prisma.member.findUnique({ where: { id }, select: { id: true, memberNo: true, fullName: true, email: true, membershipType: true, paymentStatus: true, status: true, approvedAt: true } });
     if (!current) return void res.status(404).json({ error: "Member not found" });
     if (status === "approved" && !["received", "verified", "recorded"].includes(String(current.paymentStatus || ""))) return void res.status(400).json({ error: "Verify or record the membership fee before approving this member." });
 
@@ -354,8 +354,10 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     const tiers = ((settings?.membershipTiers as any[])?.length ? settings?.membershipTiers as any[] : defaultTiers);
     const tier = tiers.find((t: any) => String(t.type) === current.membershipType) || defaultTiers.find((t) => t.type === current.membershipType) || defaultTiers[0];
     const amount = parseAmount(tier?.fee || "0");
-    const reference = `membership:${current.id}`;
-    const receiptNo = `AAF-RCP-${current.memberNo}`;
+    const isRenewal = status === "approved" && current.status === "expired";
+    const renewalStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const reference = isRenewal ? `membership:${current.id}:renewal:${renewalStamp}` : `membership:${current.id}`;
+    const receiptNo = isRenewal ? `AAF-RCP-${current.memberNo}-R${renewalStamp}` : `AAF-RCP-${current.memberNo}`;
 
     const result = await prisma.$transaction(async (tx) => {
       const member = await tx.member.update({
@@ -374,13 +376,26 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     });
 
     if (["approved", "rejected", "suspended"].includes(status)) {
-      void sendEmail(
-        result.member.email,
-        status === "approved" ? "Your membership is approved" : "Membership application update",
-        emailFrame(status === "approved" ? "Membership approved" : "Application update", status === "approved"
-          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been approved.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong></p><p>Your official PDF receipt is available from your member record.</p>`
-          : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
-      ).catch(console.error);
+      try {
+        const delivery = await sendEmail(
+          result.member.email,
+          status === "approved" ? (isRenewal ? "Your membership has been renewed" : "Your membership is approved") : "Membership application update",
+          emailFrame(status === "approved" ? (isRenewal ? "Membership renewed" : "Membership approved") : "Application update", status === "approved"
+            ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual","overseas"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
+            : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
+        );
+        if (!delivery.sent) {
+          console.error("[MEMBERSHIP_STATUS_EMAIL_NOT_SENT]", { memberId: result.member.id, status, reason: delivery.reason });
+        }
+      } catch (error: any) {
+        console.error("[MEMBERSHIP_STATUS_EMAIL_FAILED]", {
+          memberId: result.member.id,
+          status,
+          code: error?.code || "MAIL_FAILED",
+          responseCode: error?.responseCode,
+          message: error?.message,
+        });
+      }
     }
     res.json({ ...result.member, receipt: result.receipt ? { receiptNo: result.receipt.receiptNo, reference: result.receipt.reference, amount: result.receipt.amount } : null });
   } catch (err: any) {
@@ -401,7 +416,7 @@ router.get("/:id/receipt", requireMember, async (req: Request, res: Response, ne
     const ownsLegacy = user.role === "member" && user.id === member.id;
     const ownsVerified = user.role === "applicant" && user.id === member.authUserId;
     if (!isAdmin && !ownsLegacy && !ownsVerified) return void res.status(403).json({ error: "You cannot access this receipt" });
-    const record = await prisma.revenueRecord.findUnique({ where: { reference: `membership:${id}` } });
+    const record = await prisma.revenueRecord.findFirst({ where: { reference: { startsWith: `membership:${id}` } }, orderBy: { date: "desc" } });
     if (!record || !record.receiptNo) return void res.status(404).json({ error: "No official receipt has been generated for this member yet" });
     const pdf = createReceiptPdf({ receiptNo: record.receiptNo, date: record.date, payerName: record.customerName, memberNo: member.memberNo, itemName: record.itemName, amount: record.amount, paymentStatus: "Verified", reference: record.reference });
     res.setHeader("Content-Type", "application/pdf");

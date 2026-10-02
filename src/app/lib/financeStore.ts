@@ -35,6 +35,7 @@ export interface FinanceSummary {
   count: number;
   legacyCount: number;
   pendingPayments?: number;
+  pendingTransfers?: number;
 }
 
 export interface FinanceLedgerRow {
@@ -63,6 +64,8 @@ export interface FinanceLedgerRow {
   handledByMemberId?: string | null;
   handledByName?: string | null;
   handledByRole?: string | null;
+  custodianId?: string | null;
+  custodian?: { id: string; name: string; kind: string; accountLabel?: string | null } | null;
   status: "posted" | "void";
   transactionDate: string;
 }
@@ -96,6 +99,45 @@ export interface FinanceTransactionInput {
   description?: string | null;
   transactionDate?: string | Date;
   handledByAssignmentId?: string | null;
+  custodianId?: string | null;
+  correctionReason?: string | null;
+}
+
+export interface FinanceCustodian {
+  id: string;
+  name: string;
+  kind: "person" | "organization_account" | "cash" | "wallet" | "other";
+  accountLabel?: string | null;
+  notes?: string | null;
+  isActive: boolean;
+}
+
+export interface FinanceCustodySummary {
+  rows: Array<FinanceCustodian & { balance: number }>;
+  unassigned: number;
+  total: number;
+}
+
+export interface FinanceInternalTransfer {
+  id: string;
+  transferNo: string;
+  fromCustodianId: string;
+  toCustodianId: string;
+  fromCustodian: FinanceCustodian;
+  toCustodian: FinanceCustodian;
+  amount: number;
+  paymentMethod?: string | null;
+  externalReference?: string | null;
+  proofUrl?: string | null;
+  remarks?: string | null;
+  status: "pending" | "confirmed" | "cancelled";
+  initiatedByName?: string | null;
+  initiatedByRole?: string | null;
+  confirmedByName?: string | null;
+  confirmedByRole?: string | null;
+  transferDate: string;
+  confirmedAt?: string | null;
+  createdAt: string;
 }
 
 export interface PaymentSubmission {
@@ -158,6 +200,13 @@ export const fetchFinanceHeads = (kind = "all") => apiClient<FinanceHead[]>(`/fi
 export const createFinanceHead = (data: Pick<FinanceHead, "name" | "kind"> & { defaultAmount?: number | null; notes?: string | null; displayOrder?: number }) => apiClient<FinanceHead>("/finance/heads", { method: "POST", body: JSON.stringify(data) });
 export const updateFinanceHead = (id: string, data: Partial<FinanceHead>) => apiClient<FinanceHead>(`/finance/heads/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const fetchFinanceSummary = () => apiClient<FinanceSummary>("/finance/summary");
+export const fetchFinanceCustodians = () => apiClient<FinanceCustodian[]>("/finance/custodians");
+export const createFinanceCustodian = (data: { name: string; kind?: FinanceCustodian["kind"]; accountLabel?: string | null; notes?: string | null; isActive?: boolean }) => apiClient<FinanceCustodian>("/finance/custodians", { method: "POST", body: JSON.stringify(data) });
+export const fetchFinanceCustodySummary = () => apiClient<FinanceCustodySummary>("/finance/custody-summary");
+export const fetchFinanceInternalTransfers = (status = "all") => apiClient<FinanceInternalTransfer[]>(`/finance/internal-transfers?status=${encodeURIComponent(status)}`);
+export const createFinanceInternalTransfer = (data: { fromCustodianId: string; toCustodianId: string; amount: number; paymentMethod?: string | null; externalReference?: string | null; proofUrl?: string | null; remarks?: string | null; transferDate?: string | Date }) => apiClient<FinanceInternalTransfer>("/finance/internal-transfers", { method: "POST", body: JSON.stringify(data) });
+export const confirmFinanceInternalTransfer = (id: string) => apiClient<FinanceInternalTransfer>(`/finance/internal-transfers/${id}/confirm`, { method: "PATCH", body: "{}" });
+export const cancelFinanceInternalTransfer = (id: string, reason: string) => apiClient<FinanceInternalTransfer>(`/finance/internal-transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) });
 export const fetchFinanceLedger = (q = "", type = "all", view: FinanceLedgerView = "active") => apiClient<FinanceLedgerRow[]>(`/finance/ledger?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&view=${encodeURIComponent(view)}`);
 export const createFinanceTransaction = (data: FinanceTransactionInput) => apiClient<FinanceLedgerRow>("/finance/transactions", { method: "POST", body: JSON.stringify(data) });
 export const updateFinanceTransaction = (id: string, data: FinanceTransactionInput) => apiClient<FinanceLedgerRow>(`/finance/transactions/${id}`, { method: "PATCH", body: JSON.stringify(data) });
@@ -167,7 +216,7 @@ export const fetchFinanceAudit = (id: string) => apiClient<FinanceAuditRow[]>(`/
 
 export const fetchPaymentSubmissions = (status: PaymentSubmissionStatus = "pending", q = "") => apiClient<PaymentSubmission[]>(`/finance/payment-submissions?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q)}`);
 export const createPaymentSubmission = (data: PaymentSubmissionInput) => apiClient<PaymentSubmission>("/finance/payment-submissions", { method: "POST", body: JSON.stringify(data) });
-export const reviewPaymentSubmission = (id: string, data: { action: "approve" | "reject"; cashBookNo?: string | null; reviewNote?: string | null; ledgerAmount?: number | null }) => apiClient<any>(`/finance/payment-submissions/${id}/review`, { method: "PATCH", body: JSON.stringify(data) });
+export const reviewPaymentSubmission = (id: string, data: { action: "approve" | "reject"; cashBookNo?: string | null; reviewNote?: string | null; ledgerAmount?: number | null; custodianId?: string | null }) => apiClient<any>(`/finance/payment-submissions/${id}/review`, { method: "PATCH", body: JSON.stringify(data) });
 export const fetchPaymentSubmissionAudit = (id: string) => apiClient<FinanceAuditRow[]>(`/finance/payment-submissions/${id}/audit`);
 
 export function financeReceiptUrl(id: string) {

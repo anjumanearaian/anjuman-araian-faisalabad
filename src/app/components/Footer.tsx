@@ -28,7 +28,7 @@ export default function Footer() {
   return (
     <footer className="site-footer" style={{ background: GREEN, color: "white", borderTop: `4px solid ${GOLD}` }}>
       <div className="site-footer__shell" style={{ maxWidth: 1200, margin: "0 auto", padding: "44px 24px 24px" }}>
-        <div className="site-footer__grid" style={{ display: "grid", gridTemplateColumns: "1.35fr .85fr .95fr 1.2fr", gap: 34 }}>
+        <div className="site-footer__grid" style={{ display: "grid", gridTemplateColumns: "1.3fr .75fr .85fr .9fr 1.15fr", gap: 34 }}>
           <section aria-label="About Anjuman-e-Araian Faisalabad">
             <Link to="/" className="site-footer__brand" style={{ display: "inline-flex", alignItems: "center", gap: 13, textDecoration: "none", color: "white" }}>
               <span style={{ width: 66, height: 66, borderRadius: 16, background: "white", display: "grid", placeItems: "center", padding: 5, boxSizing: "border-box", border: "1px solid rgba(200,160,74,.7)", boxShadow: "0 8px 26px rgba(0,0,0,.14)" }}>
@@ -68,6 +68,17 @@ export default function Footer() {
               <Link to="/overseas" style={linkStyle}>Overseas Members</Link>
               <Link to="/constitution" style={linkStyle}>Constitution & Memorandum</Link>
               <Link to="/leadership-messages" style={linkStyle}>Leadership Messages</Link>
+            </div>
+          </nav>
+
+          <nav aria-label="Policies">
+            <h2 className="site-footer__heading">Policies</h2>
+            <div className="site-footer__links">
+              <Link to="/privacy-policy" style={linkStyle}>Privacy Policy</Link>
+              <Link to="/terms" style={linkStyle}>Terms & Conditions</Link>
+              <Link to="/cookie-policy" style={linkStyle}>Cookie Policy</Link>
+              <Link to="/payment-refund-policy" style={linkStyle}>Payment & Refund</Link>
+              <Link to="/disclaimer" style={linkStyle}>Disclaimer</Link>
             </div>
           </nav>
 

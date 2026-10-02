@@ -4,6 +4,8 @@ import { z } from "zod";
 import prisma from "../lib/prisma";
 import { requireFinanceAdmin, requireSuperAdmin } from "../middleware/auth";
 import { createFinanceDocumentPdf } from "../lib/financeDocumentPdf";
+import { sendEmail } from "../lib/email";
+import { paymentApprovedEmail, paymentRejectedEmail } from "../lib/paymentNotificationEmail";
 
 const router = Router();
 
@@ -27,6 +29,7 @@ const TransactionSchema = z.object({
   description: z.string().max(4000).nullable().optional(),
   transactionDate: z.coerce.date().optional(),
   handledByAssignmentId: z.string().uuid().nullable().optional(),
+  custodianId: z.string().uuid().nullable().optional(),
   paymentSenderName: z.string().trim().max(180).nullable().optional(),
   proofUrl: StoredFileUrl.nullable().optional(),
   supportingDocuments: z.array(StoredFileUrl).max(20).optional().default([]),
@@ -54,6 +57,26 @@ const PaymentReviewSchema = z.object({
   cashBookNo: z.string().trim().max(100).nullable().optional(),
   reviewNote: z.string().trim().max(1000).nullable().optional(),
   ledgerAmount: z.coerce.number().positive().max(1000000000).nullable().optional(),
+  custodianId: z.string().uuid().nullable().optional(),
+});
+
+const CustodianSchema = z.object({
+  name: z.string().trim().min(2).max(180),
+  kind: z.enum(["person", "organization_account", "cash", "wallet", "other"]).optional().default("person"),
+  accountLabel: z.string().trim().max(180).nullable().optional(),
+  notes: z.string().trim().max(500).nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const InternalTransferSchema = z.object({
+  fromCustodianId: z.string().uuid(),
+  toCustodianId: z.string().uuid(),
+  amount: z.coerce.number().positive().max(1000000000),
+  paymentMethod: z.string().trim().max(80).nullable().optional(),
+  externalReference: z.string().trim().max(180).nullable().optional(),
+  proofUrl: StoredFileUrl.nullable().optional(),
+  remarks: z.string().trim().max(1000).nullable().optional(),
+  transferDate: z.coerce.date().optional(),
 });
 
 const HeadSchema = z.object({
@@ -112,6 +135,53 @@ function serializeDocuments(value?: string[] | null) {
 
 function paymentView(row: PaymentSubmissionRow) {
   return { ...row, supportingDocuments: parseDocuments(row.supportingDocuments) };
+}
+
+async function resolvePaymentRecipient(submission: PaymentSubmissionRow) {
+  if (submission.memberId) {
+    const member = await prisma.member.findUnique({
+      where: { id: submission.memberId },
+      select: { email: true, fullName: true, memberNo: true },
+    }).catch(() => null);
+    if (member?.email) return { email: member.email.trim(), name: member.fullName || submission.payerName, memberNo: member.memberNo || null };
+  }
+
+  if (submission.sourceType === "membership" && submission.sourceRecordId) {
+    const member = await prisma.member.findUnique({
+      where: { id: submission.sourceRecordId },
+      select: { email: true, fullName: true, memberNo: true },
+    }).catch(() => null);
+    if (member?.email) return { email: member.email.trim(), name: member.fullName || submission.payerName, memberNo: member.memberNo || null };
+  }
+
+  if (submission.sourceType === "business" && submission.sourceRecordId) {
+    const business = await prisma.business.findUnique({
+      where: { id: submission.sourceRecordId },
+      select: { email: true, ownerName: true, businessName: true },
+    }).catch(() => null);
+    if (business?.email) return { email: business.email.trim(), name: business.ownerName || business.businessName || submission.payerName, memberNo: null };
+  }
+
+  if (submission.sourceType === "matrimonial" && submission.sourceRecordId) {
+    const profile = await prisma.matrimonial.findUnique({
+      where: { id: submission.sourceRecordId },
+      select: { name: true, authUser: { select: { email: true } } },
+    }).catch(() => null);
+    if (profile?.authUser?.email) return { email: profile.authUser.email.trim(), name: profile.name || submission.payerName, memberNo: null };
+  }
+
+  return null;
+}
+
+async function recordPaymentEmailAudit(submissionId: string, action: string, details: Record<string, unknown>) {
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO "PaymentSubmissionAuditLog" ("submissionId", "action", "actorName", "actorRole", "afterData")
+      VALUES (${submissionId}, ${action}, 'System Email', 'system', ${JSON.stringify(details)}::jsonb)
+    `;
+  } catch (error) {
+    console.error("Payment email audit log failed", error);
+  }
 }
 
 async function actor(req: Request) {
@@ -190,15 +260,67 @@ async function validateLinkedMember(memberId?: string | null) {
   if (!member || member.status !== "approved") throw new Error("Linked member must be an approved member.");
 }
 
+async function validateActiveCustodian(custodianId?: string | null) {
+  if (!custodianId) return null;
+  const custodian = await prisma.financeCustodian.findUnique({ where: { id: custodianId } });
+  if (!custodian || !custodian.isActive) throw new Error("Select an active account / custodian.");
+  return custodian;
+}
+
 type LedgerView = "active" | "archived" | "all";
+
+function financeCategoryFamily(value: unknown) {
+  const n = normalize(value);
+  if (n.includes("membership")) return "membership";
+  if (n.includes("business")) return "business";
+  if (n.includes("matrimonial")) return "matrimonial";
+  if (n.includes("sponsor")) return "business";
+  return n;
+}
+
+function sameMoney(a: unknown, b: unknown) {
+  return Math.abs(Number(a || 0) - Number(b || 0)) < 0.005;
+}
+
+function dateDistanceDays(a: unknown, b: unknown) {
+  const da = new Date(String(a || "")).getTime();
+  const db = new Date(String(b || "")).getTime();
+  if (!Number.isFinite(da) || !Number.isFinite(db)) return Number.POSITIVE_INFINITY;
+  return Math.abs(da - db) / 86400000;
+}
+
+function legacyLooksMigrated(legacy: any, current: any[]) {
+  const legacyParty = normalize(legacy.partyName);
+  const legacyFamily = financeCategoryFamily(legacy.category);
+  const legacyRefs = [legacy.receiptNo, legacy.externalReference, legacy.transactionNo].map(normalize).filter(Boolean);
+
+  return current.some((row: any) => {
+    if (row.direction !== "credit" || row.status === "void") return false;
+    if (!sameMoney(row.amount, legacy.amount)) return false;
+
+    const currentRefs = [row.receiptNo, row.externalReference, row.transactionNo].map(normalize).filter(Boolean);
+    if (legacyRefs.some((ref) => currentRefs.includes(ref))) return true;
+
+    const partyMatch = normalize(row.partyName) === legacyParty || normalize(row.paymentSenderName) === legacyParty;
+    if (!partyMatch) return false;
+
+    const currentFamily = financeCategoryFamily(row.category);
+    if (legacyFamily && currentFamily && legacyFamily !== currentFamily) return false;
+
+    return dateDistanceDays(row.transactionDate, legacy.transactionDate) <= 7;
+  });
+}
 
 async function financeRows(view: LedgerView = "active") {
   const [transactions, legacy] = await Promise.all([
     prisma.financeTransaction.findMany({
-      include: { member: { select: { id: true, memberNo: true, fullName: true } } },
+      include: {
+        member: { select: { id: true, memberNo: true, fullName: true } },
+        custodian: { select: { id: true, name: true, kind: true, accountLabel: true } },
+      },
       orderBy: [{ transactionDate: "desc" }, { serialNo: "desc" }],
     }),
-    view === "archived" ? Promise.resolve([] as any[]) : prisma.revenueRecord.findMany({ orderBy: { date: "desc" } }),
+    view === "all" ? prisma.revenueRecord.findMany({ orderBy: { date: "desc" } }) : Promise.resolve([] as any[]),
   ]);
 
   const proofRows = transactions.length
@@ -256,7 +378,12 @@ async function financeRows(view: LedgerView = "active") {
     updatedAt: x.date,
   }));
 
-  return [...current, ...old].sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
+  // Historical RevenueRecord rows can overlap with migrated FinanceTransaction
+  // receipts. Keep the legacy data in storage, but suppress a legacy row from the
+  // live ledger when a strong same-payment match already exists in the new ledger.
+  const visibleLegacy = view === "all" ? old.filter((legacyRow) => !legacyLooksMigrated(legacyRow, current)) : [];
+
+  return [...current, ...visibleLegacy].sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
 }
 
 async function createPostedTransaction(tx: any, data: any, who: { id: string | null; name: string; role: string }, handler?: any) {
@@ -282,6 +409,7 @@ async function createPostedTransaction(tx: any, data: any, who: { id: string | n
       handledByMemberId: handler?.memberId || null,
       handledByName: handler?.name || who.name,
       handledByRole: handler?.role || who.role,
+      custodianId: data.custodianId || null,
       transactionDate: data.transactionDate || new Date(),
     },
   });
@@ -376,11 +504,23 @@ router.patch("/heads/:id", requireFinanceAdmin, async (req, res, next) => {
 
 router.get("/summary", requireFinanceAdmin, async (_req, res, next) => {
   try {
-    const rows = await financeRows("active");
-    const credits = rows.filter((x: any) => x.direction === "credit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
-    const debits = rows.filter((x: any) => x.direction === "debit").reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
-    const pendingResult = await prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "PaymentSubmission" WHERE "status" = 'pending'`;
-    res.json({ credits, debits, balance: credits - debits, count: rows.length, legacyCount: rows.filter((x: any) => x.source === "legacy").length, pendingPayments: Number(pendingResult[0]?.count || 0) });
+    const rows = await prisma.financeTransaction.findMany({ where: { status: "posted" }, select: { direction: true, amount: true } });
+    const credits = rows.filter((x) => x.direction === "credit").reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const debits = rows.filter((x) => x.direction === "debit").reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const [pendingResult, legacyResult, transferResult] = await Promise.all([
+      prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "PaymentSubmission" WHERE "status" = 'pending'`,
+      prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "RevenueRecord"`,
+      prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int AS count FROM "FinanceInternalTransfer" WHERE "status" = 'pending'`,
+    ]);
+    res.json({
+      credits,
+      debits,
+      balance: credits - debits,
+      count: rows.length,
+      legacyCount: Number(legacyResult[0]?.count || 0),
+      pendingPayments: Number(pendingResult[0]?.count || 0),
+      pendingTransfers: Number(transferResult[0]?.count || 0),
+    });
   } catch (error) { next(error); }
 });
 
@@ -399,6 +539,179 @@ router.get("/ledger", requireFinanceAdmin, async (req, res, next) => {
       ], q);
     });
     res.json(filtered);
+  } catch (error) { next(error); }
+});
+
+// ─── Funds custody / internal transfers ───────────────────────────────────────
+router.get("/custodians", requireFinanceAdmin, async (_req, res, next) => {
+  try {
+    const rows = await prisma.financeCustodian.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }] });
+    res.json(rows);
+  } catch (error) { next(error); }
+});
+
+router.post("/custodians", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const data = CustodianSchema.parse(req.body);
+    const who = await actor(req);
+    const row = await prisma.financeCustodian.upsert({
+      where: { name: data.name },
+      update: {
+        kind: data.kind,
+        accountLabel: data.accountLabel || null,
+        notes: data.notes || null,
+        isActive: data.isActive ?? true,
+      },
+      create: {
+        name: data.name,
+        kind: data.kind,
+        accountLabel: data.accountLabel || null,
+        notes: data.notes || null,
+        isActive: data.isActive ?? true,
+      },
+    });
+    await prisma.financeAuditLog.create({
+      data: { action: "custodian_saved", actorAdminId: who.id, actorName: who.name, afterData: row as any },
+    });
+    res.status(201).json(row);
+  } catch (error) { next(error); }
+});
+
+router.get("/custody-summary", requireFinanceAdmin, async (_req, res, next) => {
+  try {
+    const [custodians, transactions, transfers] = await Promise.all([
+      prisma.financeCustodian.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+      prisma.financeTransaction.findMany({
+        where: { status: "posted" },
+        select: { custodianId: true, direction: true, amount: true },
+      }),
+      prisma.financeInternalTransfer.findMany({
+        where: { status: "confirmed" },
+        select: { fromCustodianId: true, toCustodianId: true, amount: true },
+      }),
+    ]);
+
+    const balances = new Map<string, number>();
+    let unassigned = 0;
+    for (const row of transactions) {
+      const signed = row.direction === "debit" ? -Number(row.amount || 0) : Number(row.amount || 0);
+      if (row.custodianId) balances.set(row.custodianId, (balances.get(row.custodianId) || 0) + signed);
+      else unassigned += signed;
+    }
+    for (const transfer of transfers) {
+      const amount = Number(transfer.amount || 0);
+      balances.set(transfer.fromCustodianId, (balances.get(transfer.fromCustodianId) || 0) - amount);
+      balances.set(transfer.toCustodianId, (balances.get(transfer.toCustodianId) || 0) + amount);
+    }
+    const rows = custodians.map((x) => ({ ...x, balance: balances.get(x.id) || 0 }));
+    const assignedTotal = rows.reduce((sum, x) => sum + Number(x.balance || 0), 0);
+    res.json({ rows, unassigned, total: assignedTotal + unassigned });
+  } catch (error) { next(error); }
+});
+
+router.get("/internal-transfers", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const requested = String(req.query.status || "all");
+    const status = ["pending", "confirmed", "cancelled"].includes(requested) ? requested : null;
+    const rows = await prisma.financeInternalTransfer.findMany({
+      where: status ? { status } : undefined,
+      include: {
+        fromCustodian: { select: { id: true, name: true, kind: true, accountLabel: true } },
+        toCustodian: { select: { id: true, name: true, kind: true, accountLabel: true } },
+      },
+      orderBy: [{ transferDate: "desc" }, { createdAt: "desc" }],
+      take: 500,
+    });
+    res.json(rows);
+  } catch (error) { next(error); }
+});
+
+router.post("/internal-transfers", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const data = InternalTransferSchema.parse(req.body);
+    if (data.fromCustodianId === data.toCustodianId) return void res.status(400).json({ error: "Transfer source and destination must be different." });
+    const [from, to] = await Promise.all([
+      prisma.financeCustodian.findUnique({ where: { id: data.fromCustodianId } }),
+      prisma.financeCustodian.findUnique({ where: { id: data.toCustodianId } }),
+    ]);
+    if (!from?.isActive || !to?.isActive) return void res.status(400).json({ error: "Select active source and destination accounts/custodians." });
+
+    const summaryTransactions = await prisma.financeTransaction.findMany({
+      where: { status: "posted", custodianId: data.fromCustodianId },
+      select: { direction: true, amount: true },
+    });
+    const summaryTransfers = await prisma.financeInternalTransfer.findMany({
+      where: { status: "confirmed", OR: [{ fromCustodianId: data.fromCustodianId }, { toCustodianId: data.fromCustodianId }] },
+      select: { fromCustodianId: true, toCustodianId: true, amount: true },
+    });
+    let available = summaryTransactions.reduce((sum, row) => sum + (row.direction === "debit" ? -Number(row.amount || 0) : Number(row.amount || 0)), 0);
+    for (const row of summaryTransfers) available += row.toCustodianId === data.fromCustodianId ? Number(row.amount || 0) : -Number(row.amount || 0);
+    if (Number(data.amount) > available + 0.005) return void res.status(400).json({ error: `Transfer exceeds available balance of Rs. ${available.toLocaleString("en-PK")} with this custodian/account.` });
+
+    const who = await actor(req);
+    const row = await prisma.financeInternalTransfer.create({
+      data: {
+        transferNo: `TRF-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${randomUUID().slice(0, 8).toUpperCase()}`,
+        fromCustodianId: data.fromCustodianId,
+        toCustodianId: data.toCustodianId,
+        amount: data.amount,
+        paymentMethod: data.paymentMethod || null,
+        externalReference: data.externalReference || null,
+        proofUrl: data.proofUrl || null,
+        remarks: data.remarks || null,
+        status: "pending",
+        initiatedByAdminId: who.id,
+        initiatedByName: who.name,
+        initiatedByRole: who.role,
+        transferDate: data.transferDate || new Date(),
+      },
+      include: { fromCustodian: true, toCustodian: true },
+    });
+    await prisma.financeAuditLog.create({
+      data: { action: "internal_transfer_initiated", actorAdminId: who.id, actorName: who.name, afterData: row as any },
+    });
+    res.status(201).json(row);
+  } catch (error) { next(error); }
+});
+
+router.patch("/internal-transfers/:id/confirm", requireFinanceAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const who = await actor(req);
+    const existing = await prisma.financeInternalTransfer.findUnique({ where: { id }, include: { fromCustodian: true, toCustodian: true } });
+    if (!existing) return void res.status(404).json({ error: "Internal transfer not found." });
+    if (existing.status === "confirmed") return void res.json(existing);
+    if (existing.status !== "pending") return void res.status(409).json({ error: "Only pending transfers can be confirmed." });
+
+    const updated = await prisma.financeInternalTransfer.update({
+      where: { id },
+      data: {
+        status: "confirmed",
+        confirmedByAdminId: who.id,
+        confirmedByName: who.name,
+        confirmedByRole: who.role,
+        confirmedAt: new Date(),
+      },
+      include: { fromCustodian: true, toCustodian: true },
+    });
+    await prisma.financeAuditLog.create({
+      data: { action: "internal_transfer_confirmed", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: updated as any },
+    });
+    res.json(updated);
+  } catch (error) { next(error); }
+});
+
+router.patch("/internal-transfers/:id/cancel", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const who = await actor(req);
+    const existing = await prisma.financeInternalTransfer.findUnique({ where: { id } });
+    if (!existing) return void res.status(404).json({ error: "Internal transfer not found." });
+    if (existing.status !== "pending") return void res.status(409).json({ error: "Only pending transfers can be cancelled." });
+    const reason = z.string().trim().min(3).max(500).parse(req.body?.reason || "Cancelled by Super Admin");
+    const updated = await prisma.financeInternalTransfer.update({ where: { id }, data: { status: "cancelled", remarks: [existing.remarks, `Cancellation: ${reason}`].filter(Boolean).join("\n") } });
+    await prisma.financeAuditLog.create({ data: { action: "internal_transfer_cancelled", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: updated as any } });
+    res.json(updated);
   } catch (error) { next(error); }
 });
 
@@ -492,7 +805,37 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
       `;
       try { await updateSourcePaymentStatus(submission.sourceType, submission.sourceRecordId, "rejected"); } catch {}
       const rejected = await prisma.$queryRaw<PaymentSubmissionRow[]>`SELECT * FROM "PaymentSubmission" WHERE "id" = ${id} LIMIT 1`;
-      return void res.json(paymentView(rejected[0]));
+
+      let emailResult: any = { sent: false, reason: "No recipient email found" };
+      try {
+        const recipient = await resolvePaymentRecipient(rejected[0] || submission);
+        if (recipient?.email) {
+          const message = paymentRejectedEmail({
+            recipientName: recipient.name,
+            amount: Number(submission.amount || 0),
+            currency: submission.currency,
+            category: submission.category,
+            paymentMethod: submission.paymentMethod,
+            transactionReference: submission.transactionReference,
+            paymentDate: submission.submittedAt,
+            memberNo: recipient.memberNo,
+            reviewNote: review.reviewNote || "Payment proof did not match accounts.",
+          });
+          emailResult = await sendEmail(recipient.email, message.subject, message.html);
+          await recordPaymentEmailAudit(id, emailResult.sent ? "payment_rejection_email_sent" : "payment_rejection_email_skipped", {
+            email: recipient.email,
+            reason: emailResult.reason || null,
+          });
+        } else {
+          await recordPaymentEmailAudit(id, "payment_rejection_email_skipped", { reason: "No recipient email found" });
+        }
+      } catch (emailError: any) {
+        emailResult = { sent: false, reason: emailError?.message || "Email delivery failed" };
+        await recordPaymentEmailAudit(id, "payment_rejection_email_failed", { reason: emailResult.reason });
+        console.error("Payment rejection email failed", emailError);
+      }
+
+      return void res.json({ submission: paymentView(rejected[0]), notification: emailResult });
     }
 
     const currency = String(submission.currency || "PKR").toUpperCase();
@@ -501,6 +844,12 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
     }
     const ledgerAmount = Number(review.ledgerAmount || submission.amount);
     if (!Number.isFinite(ledgerAmount) || ledgerAmount <= 0) return void res.status(400).json({ error: "Enter a valid verified ledger amount." });
+
+    if (!review.custodianId && who.role !== "super_admin") {
+      return void res.status(400).json({ error: "Select where this money was received / held before approval. Only Super Admin may bypass this requirement." });
+    }
+    try { await validateActiveCustodian(review.custodianId); }
+    catch (error: any) { return void res.status(400).json({ error: error.message }); }
 
     const created = await prisma.$transaction(async (tx: any) => {
       const row = await createPostedTransaction(tx, {
@@ -518,6 +867,7 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
         paymentSenderName: submission.senderName,
         proofUrl: submission.proofUrl,
         supportingDocuments: parseDocuments(submission.supportingDocuments),
+        custodianId: review.custodianId || null,
       }, who, { memberId: null, name: who.name, role: who.role });
 
       await tx.$executeRaw`
@@ -536,7 +886,51 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
 
     try { await updateSourcePaymentStatus(submission.sourceType, submission.sourceRecordId, "verified"); } catch (sourceError) { console.error("Payment source status sync failed", sourceError); }
     const approved = await prisma.$queryRaw<PaymentSubmissionRow[]>`SELECT * FROM "PaymentSubmission" WHERE "id" = ${id} LIMIT 1`;
-    res.json({ submission: paymentView(approved[0]), transaction: created });
+
+    let emailResult: any = { sent: false, reason: "No recipient email found" };
+    try {
+      const recipient = await resolvePaymentRecipient(approved[0] || submission);
+      if (recipient?.email) {
+        const transaction = await prisma.financeTransaction.findUnique({
+          where: { id: created.id },
+          include: { member: { select: { memberNo: true, fullName: true } } },
+        });
+        if (!transaction) throw new Error("Verified transaction could not be reloaded for receipt email.");
+
+        const message = paymentApprovedEmail({
+          recipientName: recipient.name,
+          amount: Number(transaction.amount || ledgerAmount),
+          currency: "PKR",
+          category: transaction.category,
+          paymentMethod: transaction.paymentMethod,
+          transactionReference: transaction.externalReference,
+          receiptNo: transaction.receiptNo,
+          transactionNo: transaction.transactionNo,
+          paymentDate: transaction.transactionDate,
+          memberNo: recipient.memberNo || transaction.member?.memberNo || null,
+          reviewNote: review.reviewNote || null,
+        });
+        const receiptPdf = createFinanceDocumentPdf(transaction as any);
+        const receiptName = `${transaction.receiptNo || transaction.transactionNo || "payment-receipt"}.pdf`;
+        emailResult = await sendEmail(recipient.email, message.subject, message.html, [
+          { filename: receiptName, content: receiptPdf, contentType: "application/pdf" },
+        ]);
+        await recordPaymentEmailAudit(id, emailResult.sent ? "payment_receipt_email_sent" : "payment_receipt_email_skipped", {
+          email: recipient.email,
+          receiptNo: transaction.receiptNo || null,
+          transactionId: transaction.id,
+          reason: emailResult.reason || null,
+        });
+      } else {
+        await recordPaymentEmailAudit(id, "payment_receipt_email_skipped", { reason: "No recipient email found", transactionId: created.id });
+      }
+    } catch (emailError: any) {
+      emailResult = { sent: false, reason: emailError?.message || "Email delivery failed" };
+      await recordPaymentEmailAudit(id, "payment_receipt_email_failed", { reason: emailResult.reason, transactionId: created.id });
+      console.error("Payment receipt email failed", emailError);
+    }
+
+    res.json({ submission: paymentView(approved[0]), transaction: created, notification: emailResult });
   } catch (error: any) {
     if (error?.code === "P2002") return void res.status(409).json({ error: "Receipt, voucher or transaction number already exists." });
     next(error);
@@ -555,6 +949,11 @@ router.post("/transactions", requireFinanceAdmin, async (req: Request, res: Resp
     if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
     if (data.type === "expense" && !data.proofUrl) return void res.status(400).json({ error: "Expense proof / voucher image or PDF is required before posting the expense." });
     const who = await actor(req);
+    if (!data.custodianId && who.role !== "super_admin") {
+      return void res.status(400).json({ error: "Select the account / custodian from which this money was paid. Only Super Admin may bypass this requirement." });
+    }
+    try { await validateActiveCustodian(data.custodianId); }
+    catch (error: any) { return void res.status(400).json({ error: error.message }); }
     let handler;
     try { handler = await resolveFinanceHandler(data.handledByAssignmentId); }
     catch (error: any) { return void res.status(400).json({ error: error.message }); }
@@ -572,15 +971,28 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
   try {
     const id = String(req.params.id);
     const data = TransactionSchema.parse(req.body);
+    const correctionReason = z.string().trim().min(3).max(500).parse(req.body?.correctionReason || "");
     const existing = await prisma.financeTransaction.findUnique({ where: { id } });
     if (!existing) return void res.status(404).json({ error: "Transaction not found." });
     if (existing.status === "void") return void res.status(400).json({ error: "An archived transaction cannot be edited. Restore it first." });
     const nextDirection = lineDirection(data.type, data.direction);
     if (data.type !== existing.type || nextDirection !== existing.direction) return void res.status(400).json({ error: "Transaction type/direction cannot be changed after posting. Archive the entry and create a corrected transaction instead." });
-    await validateLinkedMember(data.memberId);
+    // Super Admin correction must be able to repair historical ledger rows even
+    // when the linked member is still pending. Preserve the existing link without
+    // re-validating approval status; if Super Admin explicitly changes the member
+    // link, only require that the target member actually exists.
+    if (data.memberId && data.memberId !== existing.memberId) {
+      const targetMember = await prisma.member.findUnique({ where: { id: data.memberId }, select: { id: true } });
+      if (!targetMember) return void res.status(400).json({ error: "Selected member record was not found." });
+    }
     if (requiresPurpose(data.category) && !String(data.description || "").trim()) return void res.status(400).json({ error: "Please enter the purpose / remarks for this contribution." });
-    if (data.type === "expense" && !data.proofUrl) return void res.status(400).json({ error: "Expense proof is required." });
     const who = await actor(req);
+    // Super Admin correction may repair historical records even when old proof or
+    // custodian metadata was never collected. Every correction is still audited.
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "custodianId")) {
+      try { await validateActiveCustodian(data.custodianId); }
+      catch (error: any) { return void res.status(400).json({ error: error.message }); }
+    }
     let handler;
     try { handler = await resolveFinanceHandler(data.handledByAssignmentId); }
     catch (error: any) { return void res.status(400).json({ error: error.message }); }
@@ -596,9 +1008,12 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
           cashBookNo: data.cashBookNo || null,
           externalReference: data.externalReference || null,
           description: data.description || null,
-          handledByMemberId: handler?.memberId || null,
-          handledByName: handler?.name || null,
-          handledByRole: handler?.role || null,
+          handledByMemberId: handler ? handler.memberId : existing.handledByMemberId,
+          handledByName: handler ? handler.name : existing.handledByName,
+          handledByRole: handler ? handler.role : existing.handledByRole,
+          custodianId: Object.prototype.hasOwnProperty.call(req.body || {}, "custodianId")
+            ? (data.custodianId || null)
+            : existing.custodianId,
           transactionDate: data.transactionDate || existing.transactionDate,
         },
       });
@@ -607,7 +1022,16 @@ router.patch("/transactions/:id", requireSuperAdmin, async (req: Request, res: R
         SET "paymentSenderName" = ${data.paymentSenderName || null}, "proofUrl" = ${data.proofUrl || null}, "supportingDocuments" = ${serializeDocuments(data.supportingDocuments)}
         WHERE "id" = ${id}
       `;
-      await tx.financeAuditLog.create({ data: { transactionId: id, action: "edited_by_super_admin", actorAdminId: who.id, actorName: who.name, beforeData: existing as any, afterData: row as any } });
+      await tx.financeAuditLog.create({
+        data: {
+          transactionId: id,
+          action: "edited_by_super_admin",
+          actorAdminId: who.id,
+          actorName: who.name,
+          beforeData: existing as any,
+          afterData: { ...(row as any), correctionReason } as any,
+        },
+      });
       return row;
     });
     res.json(updated);

@@ -593,6 +593,8 @@ model FinanceTransaction {
   handledByMemberId String?
   handledByName     String?
   handledByRole     String?
+  custodianId       String?
+  custodian         FinanceCustodian? @relation(fields: [custodianId], references: [id], onDelete: SetNull)
   status            String   @default("posted")
   transactionDate   DateTime @default(now())
   createdAt         DateTime @default(now())
@@ -604,7 +606,54 @@ model FinanceTransaction {
   @@index([memberId])
   @@index([transactionDate])
   @@index([cashBookNo])
+  @@index([custodianId])
   @@index([status])
+}
+
+model FinanceCustodian {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  kind         String   @default("person")
+  accountLabel String?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  transactions  FinanceTransaction[]
+  transfersFrom FinanceInternalTransfer[] @relation("TransferFromCustodian")
+  transfersTo   FinanceInternalTransfer[] @relation("TransferToCustodian")
+
+  @@index([isActive, name])
+}
+
+model FinanceInternalTransfer {
+  id                  String   @id @default(uuid())
+  transferNo          String   @unique
+  fromCustodianId     String
+  fromCustodian       FinanceCustodian @relation("TransferFromCustodian", fields: [fromCustodianId], references: [id], onDelete: Restrict)
+  toCustodianId       String
+  toCustodian         FinanceCustodian @relation("TransferToCustodian", fields: [toCustodianId], references: [id], onDelete: Restrict)
+  amount              Float
+  paymentMethod       String?
+  externalReference   String?
+  proofUrl            String?
+  remarks             String?
+  status              String   @default("pending")
+  initiatedByAdminId  String?
+  initiatedByName     String?
+  initiatedByRole     String?
+  confirmedByAdminId  String?
+  confirmedByName     String?
+  confirmedByRole     String?
+  transferDate        DateTime @default(now())
+  confirmedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([status, transferDate])
+  @@index([fromCustodianId])
+  @@index([toCustodianId])
 }
 
 model FinanceHead {

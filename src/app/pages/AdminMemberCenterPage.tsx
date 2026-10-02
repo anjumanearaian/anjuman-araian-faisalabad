@@ -50,6 +50,28 @@ function membershipTypeLabel(value?: string | null) {
   return MEMBERSHIP_LABELS[key] || (value ? String(value) : "Not specified");
 }
 
+function annualExpiryDate(member: Member) {
+  const type = String(member.membershipType || "").toLowerCase();
+  if (!["ordinary", "annual", "overseas"].includes(type) || !member.approvedAt) return null;
+  const approved = new Date(member.approvedAt);
+  if (Number.isNaN(approved.getTime())) return null;
+  const expiry = new Date(approved);
+  expiry.setFullYear(expiry.getFullYear() + 1);
+  return expiry;
+}
+
+function annualExpiryState(member: Member): "not_annual" | "active" | "expiring" | "expired" {
+  const expiry = annualExpiryDate(member);
+  if (!expiry) return "not_annual";
+  if (member.status === "expired") return "expired";
+  const today = new Date(); today.setHours(0,0,0,0);
+  const end = new Date(expiry); end.setHours(0,0,0,0);
+  const days = Math.ceil((end.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return "expired";
+  if (days <= 30) return "expiring";
+  return "active";
+}
+
 const blankMember = () => ({
   formNo: "", memberNo: "", fullName: "", fatherName: "", cnic: "", dob: "", gender: "male", bloodGroup: "",
   email: "", phone: "", whatsapp: "", address: "", localArea: "", city: "Faisalabad", district: "Faisalabad", province: "Punjab",
@@ -69,6 +91,8 @@ export function AdminMemberCenterPage() {
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | MemberStatus>("all");
+  const [membershipFilter, setMembershipFilter] = useState("all");
+  const [expiryFilter, setExpiryFilter] = useState<"all" | "active" | "expiring" | "expired">("all");
   const [view, setView] = useState<"members" | "archived" | "matches">("members");
   const [selected, setSelected] = useState<Member | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -110,9 +134,37 @@ export function AdminMemberCenterPage() {
   }, [view, isAdmin, isSuperAdmin]);
 
   const filtered = useMemo(() => {
-    const base = members.filter((m) => statusFilter === "all" || m.status === statusFilter);
-    return smartSearchSort(base, search, (m) => [m.formNo, m.memberNo, m.fullName, m.fatherName, m.cnic, m.phone, m.whatsapp, m.email, m.city, m.district, m.localArea, m.occupation, m.designation, m.institutionName], (m) => m.fullName);
-  }, [members, search, statusFilter]);
+    const base = members.filter((m) => {
+      if (statusFilter !== "all" && m.status !== statusFilter) return false;
+      if (membershipFilter !== "all" && String(m.membershipType || "") !== membershipFilter) return false;
+      if (expiryFilter !== "all" && annualExpiryState(m) !== expiryFilter) return false;
+      return true;
+    });
+    if (search.trim()) return smartSearchSort(base, search, (m) => [m.formNo, m.memberNo, m.fullName, m.fatherName, m.cnic, m.phone, m.whatsapp, m.email, m.city, m.district, m.localArea, m.occupation, m.designation, m.institutionName, membershipTypeLabel(m.membershipType)], (m) => m.fullName);
+    return [...base].sort((a, b) => {
+      const byCreated = new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      return byCreated || String(b.memberNo || "").localeCompare(String(a.memberNo || ""));
+    });
+  }, [members, search, statusFilter, membershipFilter, expiryFilter]);
+
+  const birthdaysToday = useMemo(() => {
+    const now = new Date();
+    const md = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const monthDay = (value?: string | null) => {
+      const raw = String(value || "").trim();
+      const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return `${iso[2]}-${iso[3]}`;
+      const dmy = raw.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+      return dmy ? `${dmy[2]}-${dmy[1]}` : "";
+    };
+    return members.flatMap((m) => {
+      if (m.status !== "approved") return [];
+      const rows: Array<{ label: string; memberNo: string }> = [];
+      if (monthDay(m.dob) === md) rows.push({ label: m.fullName, memberNo: m.memberNo });
+      for (const child of m.children || []) if (monthDay(child.dob) === md) rows.push({ label: `${child.fullName} (child of ${m.fullName})`, memberNo: m.memberNo });
+      return rows;
+    });
+  }, [members]);
 
   const filteredArchived = useMemo(() => smartSearchSort(
     archivedMembers,
@@ -245,15 +297,17 @@ export function AdminMemberCenterPage() {
 
       {view === "members" && <>
         <div style={{ padding: "10px 13px", border: "1px solid #d7e2da", background: "#f2f8f4", borderRadius: 8, marginBottom: 14, color: "#526059", fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}><Lock size={15} color={GREEN}/><span><b>Record protection:</b> member records are never physically deleted. Only Super Admin can archive them, and every create/update/archive/restore is retained in the permanent audit trail.</span></div>
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 20 }} className="stats-grid"><Stat label="Total Active" value={members.length} /><Stat label="Pending" value={members.filter((m) => m.status === "pending").length} /><Stat label="Approved" value={members.filter((m) => m.status === "approved").length} /><Stat label="Suspended" value={members.filter((m) => m.status === "suspended").length} /><Stat label="Payment Pending" value={members.filter((m) => !["received", "verified", "recorded"].includes(String(m.paymentStatus || ""))).length} /></section>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(8,minmax(0,1fr))", gap: 12, marginBottom: 12 }} className="stats-grid"><Stat label="Total Members" value={members.length} /><Stat label="Pending" value={members.filter((m) => m.status === "pending").length} /><Stat label="Approved" value={members.filter((m) => m.status === "approved").length} /><Stat label="Expiring ≤30 Days" value={members.filter((m) => annualExpiryState(m) === "expiring").length} /><Stat label="Expired / Renewal Due" value={members.filter((m) => annualExpiryState(m) === "expired").length} /><Stat label="Birthdays Today" value={birthdaysToday.length} /><Stat label="Suspended" value={members.filter((m) => m.status === "suspended").length} /><Stat label="Payment Pending" value={members.filter((m) => !["received", "verified", "recorded"].includes(String(m.paymentStatus || ""))).length} /></section>{birthdaysToday.length > 0 && <div style={{ padding: "9px 12px", background: "#fff8e7", border: "1px solid #ead8a4", borderRadius: 8, marginBottom: 20, color: "#6f5a23", fontSize: 11 }}><strong>Today's birthdays:</strong> {birthdaysToday.slice(0, 8).map((x) => `${x.label} · ${x.memberNo}`).join(" | ")}{birthdaysToday.length > 8 ? ` +${birthdaysToday.length - 8} more` : ""}</div>}
         <section style={panelStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0, fontSize: 20 }}>Member Registry</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Smart partial/fuzzy search. Approve, edit, upload documents, print and publish from one protected registry.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button onClick={() => void loadMembers()} style={secondaryButton}><RefreshCw size={14} /> Refresh</button><MemberDataExportPanel members={members} /><button onClick={startAdd} style={primaryButton}><Plus size={14} /> Add Member</button></div></div>
-          <div style={{ display: "grid", gridTemplateColumns: "1.5fr .7fr", gap: 10, marginBottom: 16 }} className="filter-grid"><div style={{ position: "relative" }}><Search size={16} color="#999" style={{ position: "absolute", left: 12, top: 11 }} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Type Atif, Mun, Khalid, Shouq Khalid, CNIC, phone, member no..." style={{ ...fieldStyle, paddingLeft: 36 }} /></div><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={fieldStyle}><option value="all">All Statuses</option>{["pending","approved","rejected","inactive","suspended","deceased"].map((x) => <option key={x} value={x}>{x}</option>)}</select></div>
-          <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1120 }}><thead><tr style={{ background: "#f8f5ef" }}>{["Form / Registration", "Member", "Location", "Status", "Payment", "Publishing", "Actions"].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{filtered.map((m) => <tr key={m.id} style={{ borderBottom: "1px solid #eee" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}><div><h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", margin: 0, fontSize: 20 }}>Member Registry</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Newest registrations appear first. Sr. No. shows the current list order; Registration / Member No. remains the permanent member reference. Search, approve, edit, upload documents, print and publish from one protected registry.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button onClick={() => void loadMembers()} style={secondaryButton}><RefreshCw size={14} /> Refresh</button><MemberDataExportPanel members={members} /><button onClick={startAdd} style={primaryButton}><Plus size={14} /> Add Member</button></div></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1.5fr .7fr .8fr .8fr auto", gap: 10, marginBottom: 16 }} className="filter-grid"><div style={{ position: "relative" }}><Search size={16} color="#999" style={{ position: "absolute", left: 12, top: 11 }} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, CNIC, phone, Registration / Member No..." style={{ ...fieldStyle, paddingLeft: 36 }} /></div><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={fieldStyle}><option value="all">All Statuses</option>{["pending","approved","expired","rejected","inactive","suspended","deceased"].map((x) => <option key={x} value={x}>{x}</option>)}</select><select value={membershipFilter} onChange={(e) => setMembershipFilter(e.target.value)} style={fieldStyle}><option value="all">All Memberships</option><option value="ordinary">Annual Membership</option><option value="life">Lifetime Membership</option><option value="patron">Patron Membership</option><option value="overseas">Overseas Membership</option></select><select value={expiryFilter} onChange={(e) => setExpiryFilter(e.target.value as any)} style={fieldStyle}><option value="all">All Expiry States</option><option value="active">Annual: Active</option><option value="expiring">Expiring ≤30 Days</option><option value="expired">Expired / Renewal Due</option></select><button onClick={() => { setSearch(""); setStatusFilter("all"); setMembershipFilter("all"); setExpiryFilter("all"); }} style={secondaryButton}>Reset</button></div>
+          <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1340 }}><thead><tr style={{ background: "#f8f5ef" }}>{["Sr. No.", "Form / Registration", "Member", "Location", "Status", "Membership / Expiry", "Payment", "Publishing", "Actions"].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{filtered.map((m, index) => <tr key={m.id} style={{ borderBottom: "1px solid #eee" }}>
+            <td style={{ ...tdStyle, width: 62, textAlign: "center" }}><strong style={{ color: GREEN }}>{index + 1}</strong></td>
             <td style={tdStyle}><strong style={{ color: GREEN }}>{m.formNo || "Auto pending"}</strong><br /><span style={{ fontSize: 11, color: "#777" }}>{m.memberNo}</span></td>
             <td style={tdStyle}><div style={{ display: "flex", gap: 9, alignItems: "center" }}>{m.photoUrl ? <img src={m.photoUrl} alt="" style={{ width: 38, height: 38, borderRadius: 50, objectFit: "cover" }} /> : <div style={{ width: 38, height: 38, borderRadius: 50, background: "#f0f7f3", display: "grid", placeItems: "center", color: GREEN, fontWeight: 800 }}>{m.fullName?.[0]}</div>}<div><strong>{m.fullName}</strong><div style={{ fontSize: 11, color: "#888" }}>{m.cnic}</div></div></div></td>
             <td style={tdStyle}>{m.city || "—"}<br /><span style={{ fontSize: 11, color: "#777" }}>{[m.localArea,m.province].filter(Boolean).join(" · ")}</span></td>
             <td style={tdStyle}><StatusBadge status={m.status} /></td>
+            <td style={tdStyle}><strong style={{ color: GREEN, fontSize: 11 }}>{membershipTypeLabel(m.membershipType)}</strong>{annualExpiryDate(m) && <><br /><span style={{ fontSize: 10, color: annualExpiryState(m) === "expired" ? "#b91c1c" : annualExpiryState(m) === "expiring" ? "#9a6700" : "#777" }}>Expiry: {annualExpiryDate(m)!.toLocaleDateString("en-GB")} · {annualExpiryState(m) === "expired" ? "Renewal due" : annualExpiryState(m) === "expiring" ? "Expiring soon" : "Active"}</span></>}</td>
             <td style={tdStyle}><select value={m.paymentStatus || "pending"} onChange={(e) => void quickUpdate(m, { paymentStatus: e.target.value })} style={{ ...miniSelect, minWidth: 100 }}>{["pending","submitted","received","verified","recorded","rejected"].map((x) => <option key={x} value={x}>{x}</option>)}</select></td>
             <td style={tdStyle}><label style={checkLabel}><input type="checkbox" checked={Boolean(m.showOnPortal)} onChange={(e) => void quickUpdate(m, { showOnPortal: e.target.checked })} /> Portal</label><label style={checkLabel}><input type="checkbox" checked={Boolean(m.showOnWeb)} onChange={(e) => void quickUpdate(m, { showOnWeb: e.target.checked })} /> Web</label></td>
             <td style={tdStyle}><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button onClick={() => startEdit(m)} style={tinyButton}>Edit / Documents</button>{m.status !== "approved" && <button onClick={() => void approve(m)} style={{ ...tinyButton, color: "#166534", borderColor: "#86efac" }}>Approve</button>}{m.status !== "rejected" && <button onClick={() => void reject(m)} style={{ ...tinyButton, color: "#b91c1c", borderColor: "#fecaca" }}>Reject</button>}<button onClick={() => void toggleSuspend(m)} style={tinyButton}>{m.status === "suspended" ? "Reactivate" : "Suspend"}</button><button onClick={() => void printMemberFormV2(m)} style={tinyButton}><Printer size={12} /> A4 Form</button><button onClick={() => shareWhatsApp(m)} style={tinyButton}><MessageCircle size={12} /> WhatsApp</button>{isSuperAdmin&&<button onClick={() => void openAudit(m)} style={tinyButton}><History size={12}/> Audit</button>}{isSuperAdmin?<button onClick={() => void archiveMember(m)} style={{ ...tinyButton, color: "#9b2c2c", borderColor: "#e7b8b8" }}><Archive size={12} /> Archive</button>:<span style={{...tinyButton,cursor:"default",color:"#777",background:"#f6f6f6"}}><Lock size={11}/> Locked</span>}</div></td>
@@ -291,7 +345,7 @@ function MemberFormModal({ form, setForm, selected, allMembers, saving, onClose,
   return <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.55)", display: "grid", placeItems: "center", padding: 16 }}><div style={{ background: "white", borderRadius: 14, width: "min(980px,96vw)", maxHeight: "92vh", overflow: "auto", boxShadow: "0 20px 70px rgba(0,0,0,.25)" }}>
     <div style={{ padding: "20px 24px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><h2 style={{ color: GREEN, margin: 0, fontFamily: "'Playfair Display', serif", fontSize: 21 }}>{selected ? "Edit Member Record" : "Add New Member"}</h2><p style={{ color: "#777", fontSize: 12, margin: "4px 0 0" }}>Staff can complete the same member information and document uploads used by the online registration form.</p></div><button onClick={onClose} style={{ border: 0, background: "none", cursor: "pointer", color: "#777" }}>✕</button></div>
     <div style={{ padding: 24 }}>
-      <FormSection title="Form & Membership Numbers"><Grid><Field label="Form No. (optional/manual)" value={form.formNo} onChange={(v) => set("formNo", v)} placeholder="Auto if blank" /><Field label="Registration / Member No. (optional/manual)" value={form.memberNo} onChange={(v) => set("memberNo", v)} placeholder="Auto if blank" /><SelectField label="Application Status" value={form.status} onChange={(v) => set("status", v)} options={["pending","approved","rejected","inactive","suspended","deceased"]} /><SelectField label="Payment Status" value={form.paymentStatus} onChange={(v) => set("paymentStatus", v)} options={["pending","submitted","received","verified","recorded","rejected"]} /></Grid></FormSection>
+      <FormSection title="Form & Membership Numbers"><Grid><Field label="Form No. (optional/manual)" value={form.formNo} onChange={(v) => set("formNo", v)} placeholder="Auto if blank" /><Field label="Registration / Member No. (optional/manual)" value={form.memberNo} onChange={(v) => set("memberNo", v)} placeholder="Auto if blank" /><SelectField label="Application Status" value={form.status} onChange={(v) => set("status", v)} options={["pending","approved","expired","rejected","inactive","suspended","deceased"]} /><SelectField label="Payment Status" value={form.paymentStatus} onChange={(v) => set("paymentStatus", v)} options={["pending","submitted","received","verified","recorded","rejected"]} /></Grid></FormSection>
       <FormSection title="Personal Information"><Grid><Field label="Full Name *" value={form.fullName} onChange={(v) => set("fullName", v)} /><Field label="Father's Name *" value={form.fatherName} onChange={(v) => set("fatherName", v)} /><Field label="CNIC *" value={form.cnic} onChange={(v) => set("cnic", v)} /><Field label="Date of Birth" type="date" value={form.dob} onChange={(v) => set("dob", v)} /><SelectField label="Gender" value={form.gender} onChange={(v) => set("gender", v)} options={["male","female","other"]} /><SelectField label="Blood Group" value={form.bloodGroup} onChange={(v) => set("bloodGroup", v)} options={["", ...bloodGroups]} /></Grid></FormSection>
       <FormSection title="Contact & Location"><Grid><Field label="Email" type="email" value={form.email} onChange={(v) => set("email", v)} /><Field label="Phone *" value={form.phone} onChange={(v) => set("phone", v)} /><Field label="WhatsApp" value={form.whatsapp} onChange={(v) => set("whatsapp", v)} /><SelectField label="Province / Region" value={form.province} onChange={onProvince} options={provinces} /><label style={labelWrap}>City / Town<input list="admin-province-cities" value={form.city || ""} onChange={(e) => onCity(e.target.value)} style={fieldStyle} /><datalist id="admin-province-cities">{provinceCities.map((x) => <option key={x} value={x} />)}</datalist></label><Field label="Local Area / Tehsil / Village" value={form.localArea} onChange={(v) => set("localArea", v)} /><div style={{ gridColumn: "span 2" }}><Field label="Full Address" value={form.address} onChange={(v) => set("address", v)} /></div></Grid></FormSection>
       <FormSection title="Education & Work"><Grid><SelectField label="Education Level" value={form.education} onChange={(v) => set("education", v)} options={educationLevels} /><Field label="Specialization / Degree" value={form.educationDetail} onChange={(v) => set("educationDetail", v)} /><SelectField label="Occupation" value={form.occupation} onChange={(v) => set("occupation", v)} options={occupations} /><Field label="Occupation Field / Specialty" value={form.occupationDetail} onChange={(v) => set("occupationDetail", v)} /><Field label="Designation / Role" value={form.designation} onChange={(v) => set("designation", v)} /><Field label="Institute / Organization" value={form.institutionName} onChange={(v) => set("institutionName", v)} /><div style={{ gridColumn: "span 2" }}><Field label="Business Name" value={form.businessName} onChange={(v) => set("businessName", v)} /></div></Grid></FormSection>
@@ -324,7 +378,7 @@ function shareWhatsApp(m: Member) {
 }
 
 function Stat({ label, value }: { label: string; value: number }) { return <div style={{ ...panelStyle, padding: 16 }}><div style={{ color: "#777", fontSize: 11, textTransform: "uppercase", fontWeight: 700 }}>{label}</div><div style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: 26, marginTop: 4 }}>{value}</div></div>; }
-function StatusBadge({ status }: { status: string }) { const bad = ["rejected","declined","suspended"].includes(status); const ok = ["approved","accepted","verified","confirmed"].includes(status); return <span style={{ display: "inline-block", background: ok ? "#dcfce7" : bad ? "#fee2e2" : "#fef9c3", color: ok ? "#166534" : bad ? "#b91c1c" : "#854d0e", borderRadius: 20, padding: "4px 8px", fontSize: 10, fontWeight: 800, textTransform: "capitalize" }}>{String(status).replace(/_/g," ")}</span>; }
+function StatusBadge({ status }: { status: string }) { const bad = ["rejected","declined","suspended","expired"].includes(status); const ok = ["approved","accepted","verified","confirmed"].includes(status); return <span style={{ display: "inline-block", background: ok ? "#dcfce7" : bad ? "#fee2e2" : "#fef9c3", color: ok ? "#166534" : bad ? "#b91c1c" : "#854d0e", borderRadius: 20, padding: "4px 8px", fontSize: 10, fontWeight: 800, textTransform: "capitalize" }}>{String(status).replace(/_/g," ")}</span>; }
 function Notice({ text, success = false }: { text: string; success?: boolean }) { return <div style={{ background: success ? "#dcfce7" : "#fee2e2", border: `1px solid ${success ? "#86efac" : "#fecaca"}`, color: success ? "#166534" : "#b91c1c", borderRadius: 8, padding: "11px 14px", marginBottom: 16, fontSize: 13 }}>{text}</div>; }
 function FormSection({ title, children }: { title: string; children: React.ReactNode }) { return <div style={{ marginBottom: 24 }}><h3 style={{ color: GREEN, fontSize: 14, textTransform: "uppercase", letterSpacing: ".04em", borderBottom: "1px solid #eee", paddingBottom: 7, margin: "0 0 12px" }}>{title}</h3>{children}</div>; }
 function Grid({ children }: { children: React.ReactNode }) { return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="modal-grid">{children}</div>; }

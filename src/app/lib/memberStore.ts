@@ -1,7 +1,7 @@
 import { apiClient } from "./apiClient";
 import { formatPersonName, formatPlaceName, formatProfessionalLabel, normalizeMemberDisplay, normalizeMemberPayload } from "./displayFormat";
 
-export type MemberStatus = "pending" | "approved" | "rejected" | "inactive" | "suspended" | "deceased";
+export type MemberStatus = "pending" | "approved" | "expired" | "rejected" | "inactive" | "suspended" | "deceased";
 export type MemberVisibility = "public" | "private";
 export type MembershipType = "ordinary" | "life" | "patron" | "overseas";
 
@@ -57,7 +57,7 @@ export function structuredOptionForEdit(value: string | null | undefined, option
 export function joinStructuredOption(base?: string | null, detail?: string | null) { const cleanBase = String(base || "").trim(); const cleanDetail = String(detail || "").trim(); if (!cleanBase) return cleanDetail; return cleanDetail ? `${cleanBase}${OPTION_DETAIL_SEPARATOR}${cleanDetail}` : cleanBase; }
 
 export const statusColors: Record<MemberStatus, { bg: string; text: string; label: string }> = {
-  pending: { bg: "#fef9c3", text: "#854d0e", label: "Pending Approval" }, approved: { bg: "#dcfce7", text: "#15803d", label: "Approved" }, rejected: { bg: "#fee2e2", text: "#b91c1c", label: "Rejected" }, inactive: { bg: "#f3f4f6", text: "#6b7280", label: "Inactive" }, suspended: { bg: "#ffedd5", text: "#9a3412", label: "Suspended" }, deceased: { bg: "#e5e7eb", text: "#374151", label: "Deceased" },
+  pending: { bg: "#fef9c3", text: "#854d0e", label: "Pending Approval" }, approved: { bg: "#dcfce7", text: "#15803d", label: "Approved" }, expired: { bg: "#fee2e2", text: "#b91c1c", label: "Expired / Renewal Due" }, rejected: { bg: "#fee2e2", text: "#b91c1c", label: "Rejected" }, inactive: { bg: "#f3f4f6", text: "#6b7280", label: "Inactive" }, suspended: { bg: "#ffedd5", text: "#9a3412", label: "Suspended" }, deceased: { bg: "#e5e7eb", text: "#374151", label: "Deceased" },
 };
 
 function showActionError(error: any, fallback: string) {

@@ -9,4 +9,4 @@ Disallow: /matrimonial/new
 Disallow: /matrimonial/matches
 Disallow: /matrimonial/requests
 
-Sitemap: https://anjuman-araian-faisalabad.vercel.app/sitemap.xml
+Sitemap: https://anjumanearaian.org/sitemap.xml

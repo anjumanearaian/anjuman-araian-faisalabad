@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 
 export const MASTER_EMAIL = process.env.MASTER_EMAIL || "anjumanearaianfaisalabad@gmail.com";
-export const INFO_EMAIL = process.env.INFO_EMAIL || "info@anjumanearaian.org";
+export const INFO_EMAIL = process.env.INFO_EMAIL || MASTER_EMAIL;
 
 export type EmailAttachment = {
   filename: string;
