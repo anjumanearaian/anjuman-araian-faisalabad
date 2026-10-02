@@ -117,6 +117,9 @@ function Dashboard() {
   const [tab, setTab] = useState<"dashboard" | "news" | "events" | "members" | "forms" | "businesses" | "matrimonial" | "leadership" | "media" | "overseas" | "settings" | "messages" | "analytics" | "admins">(getInitialTab as any);
   const [formDrafts, setFormDrafts] = useState<any[]>([]);
   const [formStatusFilter, setFormStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
+  const [formPage, setFormPage] = useState(1);
+  const [formPageSize, setFormPageSize] = useState<number | "all">(10);
+  const [formSortMode, setFormSortMode] = useState<"priority" | "latest">("priority");
   const [importMessage, setImportMessage] = useState("");
 
   useEffect(() => { if (tab === "forms") apiClient<any[]>("/forms/admin/all").then(setFormDrafts).catch(() => setFormDrafts([])); }, [tab]);
@@ -158,13 +161,58 @@ function Dashboard() {
     return { name, phone, city, email, type, interestShown };
   };
 
+  const formExpiryDate = (draft: any) => {
+    const data = draft?.data && typeof draft.data === "object" ? draft.data : {};
+    const nestedForm = data?.form && typeof data.form === "object" ? data.form : {};
+    const raw = nestedForm.expiryDate || nestedForm.expiresAt || nestedForm.validUntil || data.expiryDate || data.expiresAt || data.validUntil;
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const formSerialById = useMemo(() => {
+    const ordered = [...formDrafts].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return new Map(ordered.map((draft, index) => [draft.id, index + 1]));
+  }, [formDrafts]);
+
   const visibleFormDrafts = useMemo(() => {
-    return formDrafts.filter((draft) => {
-      if (formStatusFilter === "submitted") return draft.status === "submitted";
-      if (formStatusFilter === "not_submitted") return draft.status !== "submitted";
-      return true;
-    });
-  }, [formDrafts, formStatusFilter]);
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+    return formDrafts
+      .filter((draft) => {
+        if (formStatusFilter === "submitted") return draft.status === "submitted";
+        if (formStatusFilter === "not_submitted") return draft.status !== "submitted";
+        return true;
+      })
+      .sort((a, b) => {
+        if (formSortMode === "latest") return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        const score = (draft: any) => {
+          const expiry = formExpiryDate(draft)?.getTime();
+          const expiringSoon = expiry && expiry >= now && expiry - now <= thirtyDays ? 3 : 0;
+          const isNew = now - new Date(draft.createdAt).getTime() <= sevenDays ? 2 : 0;
+          const submitted = draft.status === "submitted" ? 1 : 0;
+          return expiringSoon + isNew + submitted;
+        };
+        return score(b) - score(a) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+  }, [formDrafts, formStatusFilter, formSortMode]);
+
+  const formTotalPages = formPageSize === "all" ? 1 : Math.max(1, Math.ceil(visibleFormDrafts.length / formPageSize));
+  const paginatedFormDrafts = useMemo(() => {
+    if (formPageSize === "all") return visibleFormDrafts;
+    const start = (formPage - 1) * formPageSize;
+    return visibleFormDrafts.slice(start, start + formPageSize);
+  }, [visibleFormDrafts, formPage, formPageSize]);
+
+  useEffect(() => { setFormPage(1); }, [formStatusFilter, formPageSize, formSortMode]);
+  useEffect(() => { if (formPage > formTotalPages) setFormPage(formTotalPages); }, [formPage, formTotalPages]);
+
+  const shownFormDate = (value?: string | Date | null) => {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleString();
+  };
 
   const importMembers = async (file?: File) => {
     if (!file) return;
@@ -1065,62 +1113,119 @@ return (
       )}
 
       {tab === "forms" && <div>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
             <div>
               <h2 style={{ color: GREEN, fontFamily: "'Playfair Display', serif", fontSize: 22, margin: 0 }}>Saved and Submitted Forms</h2>
-              <p style={{ color: "#666", fontSize: 14, marginBottom: 0 }}>Applicant details appear as soon as they have entered them. Incomplete forms remain visible while applicants continue across multiple sessions.</p>
+              <p style={{ color: "#666", fontSize: 13, margin: "4px 0 0" }}>Newest, recently updated and expiring records can be surfaced without scrolling through one long list.</p>
             </div>
-            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
               {([
                 ["all", "All", formDrafts.length],
                 ["submitted", "Submitted", formDrafts.filter((d) => d.status === "submitted").length],
                 ["not_submitted", "Non-Submitted", formDrafts.filter((d) => d.status !== "submitted").length],
               ] as const).map(([key, label, count]) => (
-                <button key={key} onClick={() => setFormStatusFilter(key)} style={{ padding: "7px 13px", borderRadius: 20, border: `1px solid ${formStatusFilter === key ? GREEN : "#d8ddd9"}`, background: formStatusFilter === key ? GREEN : "white", color: formStatusFilter === key ? "white" : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                <button key={key} onClick={() => setFormStatusFilter(key)} style={{ padding: "6px 11px", borderRadius: 20, border: `1px solid ${formStatusFilter === key ? GREEN : "#d8ddd9"}`, background: formStatusFilter === key ? GREEN : "white", color: formStatusFilter === key ? "white" : "#555", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   {label} ({count})
                 </button>
               ))}
+              <select value={formSortMode} onChange={(e) => setFormSortMode(e.target.value as "priority" | "latest")} style={{ padding: "6px 9px", border: "1px solid #d8ddd9", borderRadius: 7, fontSize: 11, background: "white" }}>
+                <option value="priority">Priority: New + Expiring</option>
+                <option value="latest">Latest Activity</option>
+              </select>
+              <select value={String(formPageSize)} onChange={(e) => setFormPageSize(e.target.value === "all" ? "all" : Number(e.target.value))} style={{ padding: "6px 9px", border: "1px solid #d8ddd9", borderRadius: 7, fontSize: 11, background: "white" }}>
+                <option value="10">10 / page</option>
+                <option value="50">50 / page</option>
+                <option value="100">100 / page</option>
+                <option value="all">All</option>
+              </select>
             </div>
           </div>
         </div>
-        <div className="admin-table-scroll" style={{ background: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1040 }}>
-            <thead>
+
+        <div className="admin-table-scroll forms-desktop-table" style={{ background: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.06)", maxHeight: "calc(100vh - 250px)" }}>
+          <table className="forms-table" style={{ width: "100%", borderCollapse: "collapse", minWidth: 930 }}>
+            <thead style={{ position: "sticky", top: 0, zIndex: 2 }}>
               <tr style={{ background: "#f8f5ef" }}>
-                {["Applicant", "Mobile", "City", "Form", "Progress", "Status", "Last Activity"].map(h => <th key={h} style={{ textAlign: "left", padding: 14, color: "#777", fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>)}
+                {["Sr.", "Applicant", "Mobile / City", "Form", "Progress", "Status", "Lifecycle Dates"].map(h => <th key={h} style={{ textAlign: "left", padding: "10px 9px", color: "#777", fontSize: 11, whiteSpace: "nowrap" }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {visibleFormDrafts.map(d => {
+              {paginatedFormDrafts.map(d => {
                 const details = formApplicantDetails(d);
                 const submitted = d.status === "submitted";
-                return <tr key={d.id} style={{ borderTop: "1px solid #eee", background: submitted ? "#fbfffc" : "white" }}>
-                  <td style={{ padding: 14, minWidth: 210 }}>
-                    <strong style={{ color: GREEN }}>{details.name || "Applicant"}</strong>
-                    <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>{details.email || "Email not entered yet"}</div>
+                const expiry = formExpiryDate(d);
+                const expirySoon = expiry && expiry.getTime() >= Date.now() && expiry.getTime() - Date.now() <= 30 * 24 * 60 * 60 * 1000;
+                return <tr key={d.id} style={{ borderTop: "1px solid #eee", background: expirySoon ? "#fffdf2" : submitted ? "#fbfffc" : "white" }}>
+                  <td style={{ padding: "10px 9px", fontWeight: 800, color: GREEN, whiteSpace: "nowrap" }}>{formSerialById.get(d.id) || "—"}</td>
+                  <td style={{ padding: "10px 9px", minWidth: 180 }}>
+                    <strong style={{ color: GREEN, fontSize: 12 }}>{details.name || "Applicant"}</strong>
+                    <div style={{ fontSize: 10.5, color: "#777", marginTop: 2 }}>{details.email || "Email not entered yet"}</div>
                   </td>
-                  <td style={{ padding: 14, color: details.phone ? "#444" : "#aaa", whiteSpace: "nowrap" }}>{details.phone || "Not entered"}</td>
-                  <td style={{ padding: 14, color: details.city ? "#444" : "#aaa", whiteSpace: "nowrap" }}>{details.city || "Not entered"}</td>
-                  <td style={{ padding: 14, textTransform: "capitalize", whiteSpace: "nowrap" }}>{String(d.formType || "").replace(/:/g, " · ")}</td>
-                  <td style={{ padding: 14 }}>
-                    <div style={{ width: 140, background: "#e5e7eb", height: 8, borderRadius: 8 }}>
-                      <div style={{ width: `${Math.max(0, Math.min(100, Number(d.completion || 0)))}%`, height: 8, borderRadius: 8, background: submitted ? "#15803d" : GOLD }} />
+                  <td style={{ padding: "10px 9px", fontSize: 11, minWidth: 120 }}>
+                    <div style={{ color: details.phone ? "#444" : "#aaa", whiteSpace: "nowrap" }}>{details.phone || "Not entered"}</div>
+                    <div style={{ color: "#888", marginTop: 3 }}>{details.city || "City not entered"}</div>
+                  </td>
+                  <td style={{ padding: "10px 9px", textTransform: "capitalize", whiteSpace: "nowrap", fontSize: 11 }}>{String(d.formType || "").replace(/:/g, " · ")}</td>
+                  <td style={{ padding: "10px 9px" }}>
+                    <div style={{ width: 92, background: "#e5e7eb", height: 7, borderRadius: 8 }}>
+                      <div style={{ width: `${Math.max(0, Math.min(100, Number(d.completion || 0)))}%`, height: 7, borderRadius: 8, background: submitted ? "#15803d" : GOLD }} />
                     </div>
-                    <small>{d.completion}%</small>
+                    <small style={{ fontSize: 10 }}>{d.completion}%</small>
                   </td>
-                  <td style={{ padding: 14 }}>
-                    <span style={{ background: submitted ? "#dcfce7" : details.interestShown ? "#fef3c7" : "#f3f4f6", color: submitted ? "#166534" : details.interestShown ? "#92400e" : "#6b7280", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
-                      {submitted ? "Submitted" : details.interestShown ? "Interest Shown · Incomplete" : "Not Started"}
+                  <td style={{ padding: "10px 9px" }}>
+                    <span style={{ background: submitted ? "#dcfce7" : details.interestShown ? "#fef3c7" : "#f3f4f6", color: submitted ? "#166534" : details.interestShown ? "#92400e" : "#6b7280", borderRadius: 20, padding: "4px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {submitted ? "Submitted" : details.interestShown ? "Interest Shown" : "Not Started"}
                     </span>
+                    {expirySoon && <div style={{ marginTop: 5, color: "#9a6700", fontSize: 10, fontWeight: 800 }}>Expiring soon</div>}
                   </td>
-                  <td style={{ padding: 14, color: "#666", fontSize: 13, whiteSpace: "nowrap" }}>{new Date(d.updatedAt).toLocaleString()}</td>
+                  <td style={{ padding: "8px 9px", color: "#555", fontSize: 10.5, minWidth: 200, lineHeight: 1.55 }}>
+                    <div><strong>Generated:</strong> {shownFormDate(d.generatedAt || d.createdAt)}</div>
+                    <div><strong>Submitted:</strong> {shownFormDate(d.submittedAt)}</div>
+                    <div><strong>Payment:</strong> {shownFormDate(d.paymentApprovedAt || d.paymentSubmittedAt)}</div>
+                    <div><strong>Approved:</strong> {shownFormDate(d.approvedAt)}</div>
+                    {expiry && <div><strong>Expiry:</strong> {shownFormDate(expiry)}</div>}
+                    <div><strong>Updated:</strong> {shownFormDate(d.updatedAt)}</div>
+                  </td>
                 </tr>;
               })}
             </tbody>
           </table>
-          {!visibleFormDrafts.length && <div style={{ padding: 40, textAlign: "center", color: "#999" }}>No forms match this filter.</div>}
+          {!visibleFormDrafts.length && <div style={{ padding: 34, textAlign: "center", color: "#999" }}>No forms match this filter.</div>}
         </div>
+
+        <div className="forms-mobile-cards">
+          {paginatedFormDrafts.map((d) => {
+            const details = formApplicantDetails(d);
+            const expiry = formExpiryDate(d);
+            return <div key={d.id} className="forms-mobile-card">
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                <div><strong style={{ color: GREEN }}>{formSerialById.get(d.id) || "—"}. {details.name || "Applicant"}</strong><div style={{ fontSize: 11, color: "#777" }}>{details.email || "Email not entered"}</div></div>
+                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "capitalize", color: d.status === "submitted" ? "#166534" : "#92400e" }}>{d.status === "submitted" ? "Submitted" : "In progress"}</span>
+              </div>
+              <div className="forms-mobile-grid">
+                <span><b>Mobile</b>{details.phone || "—"}</span>
+                <span><b>City</b>{details.city || "—"}</span>
+                <span><b>Form</b>{String(d.formType || "").replace(/:/g, " · ")}</span>
+                <span><b>Progress</b>{d.completion}%</span>
+                <span><b>Submitted</b>{shownFormDate(d.submittedAt)}</span>
+                <span><b>Approved</b>{shownFormDate(d.approvedAt)}</span>
+                <span><b>Payment</b>{shownFormDate(d.paymentApprovedAt || d.paymentSubmittedAt)}</span>
+                <span><b>Expiry</b>{shownFormDate(expiry)}</span>
+              </div>
+            </div>;
+          })}
+        </div>
+
+        {visibleFormDrafts.length > 0 && formPageSize !== "all" && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 4px 0" }}>
+            <span style={{ fontSize: 12, color: "#666" }}>Page {formPage} of {formTotalPages} · {visibleFormDrafts.length} records</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button disabled={formPage === 1} onClick={() => setFormPage((p) => Math.max(1, p - 1))} style={actionBtn(GREEN, formPage === 1)}><ChevronLeft size={14}/> Prev</button>
+              <button disabled={formPage >= formTotalPages} onClick={() => setFormPage((p) => Math.min(formTotalPages, p + 1))} style={actionBtn(GREEN, formPage >= formTotalPages)}>Next <ChevronRight size={14}/></button>
+            </div>
+          </div>
+        )}
       </div>}
 
       {/* ── BUSINESSES TAB ── */}
@@ -2063,7 +2168,26 @@ return (
       </div>
     </main>
 
-    <style>{`@media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(2,1fr) !important; } } @media (max-width: 500px) { .stats-grid { grid-template-columns: 1fr !important; } }`}</style>
+    <style>{`
+      .forms-mobile-cards { display: none; }
+      .admin-table-scroll { scrollbar-gutter: stable both-edges; }
+      @media (max-width: 1180px) {
+        .forms-table th, .forms-table td { padding-left: 7px !important; padding-right: 7px !important; }
+      }
+      @media (max-width: 900px) {
+        .stats-grid { grid-template-columns: repeat(2,1fr) !important; }
+        .forms-desktop-table { display: none !important; }
+        .forms-mobile-cards { display: grid; gap: 10px; }
+        .forms-mobile-card { background: #fff; border: 1px solid #e8ece9; border-radius: 10px; padding: 12px; box-shadow: 0 1px 7px rgba(0,0,0,.04); }
+        .forms-mobile-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; margin-top: 10px; }
+        .forms-mobile-grid span { font-size: 11px; color: #555; min-width: 0; overflow-wrap: anywhere; }
+        .forms-mobile-grid b { display: block; color: #888; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+      }
+      @media (max-width: 500px) {
+        .stats-grid { grid-template-columns: 1fr !important; }
+        .forms-mobile-grid { grid-template-columns: 1fr 1fr; }
+      }
+    `}</style>
     <ImageModal imageUrl={zoomImage} onClose={() => setZoomImage(null)} />
   </div>
 );
