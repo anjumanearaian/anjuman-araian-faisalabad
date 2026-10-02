@@ -390,6 +390,15 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
           create: { customerName: current.fullName, itemType: "membership", itemName: tier?.name || "Membership", amount, paymentFrequency: frequency(tier?.fee || ""), reference, receiptNo },
         });
       }
+      if (status === "approved") {
+        const linked = await tx.member.findUnique({ where: { id }, select: { authUserId: true } });
+        if (linked?.authUserId) {
+          await tx.formDraft.updateMany({
+            where: { authUserId: linked.authUserId, formType: "membership" },
+            data: { approvedAt: new Date() },
+          });
+        }
+      }
       return { member, receipt };
     });
 
