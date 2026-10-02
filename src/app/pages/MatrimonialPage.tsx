@@ -8,7 +8,6 @@ import { BehaviorQuestionnaire, ReadinessPanel, TimelineField } from "../compone
 import { apiClient } from "../lib/apiClient";
 import { uploadFile } from "../lib/upload";
 import { createMatrimonial, fetchMyMatrimonialProfiles, MatrimonialProfile } from "../lib/matrimonialStore";
-import { fetchSiteSettings } from "../lib/settingsStore";
 import { useSiteSettings } from "../lib/useSiteSettings";
 import { PaymentInstructions } from "../components/PaymentInstructions";
 import { citiesForProvince, pakistanCitiesByProvince } from "../lib/pakistanLocations";
@@ -103,11 +102,10 @@ export function MatrimonialPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [site, profiles] = await Promise.all([fetchSiteSettings(), fetchMyMatrimonialProfiles()]);
+        const profiles = await fetchMyMatrimonialProfiles();
         if (cancelled) return;
         const existing = requestedId ? profiles.find((p) => p.id === requestedId) : undefined;
         const next = existing ? fromProfile(existing) : blank();
-        if (!next.paymentMethod && site.paymentMethods?.[0]?.bankName) next.paymentMethod = site.paymentMethods[0].bankName;
         const draftType = `matrimonial:${requestedId || "new"}`;
         const draft = await apiClient<any>(`/forms/${encodeURIComponent(draftType)}`).catch(() => null);
         const draftData = draft?.data && draft.status !== "submitted" ? draft.data : null;
@@ -194,7 +192,7 @@ export function MatrimonialPage() {
         familyBackground, requirements, profileData, preferenceData,
         privacyData: { profileVisibility: "matches_only", photoVisibility: form.photoVisibility, contactVisibility: form.contactVisibility, broadLocation: form.broadLocation, showHeight: form.showHeight },
         candidateConsent: form.candidateConsent, applicationSource: form.relationToCandidate === "Self" ? "self_service" : "guardian_service",
-        photoUrl: form.photoUrl, additionalPhotos: form.additionalPhotos, paymentProofUrl: form.paymentProofUrl || undefined, paymentMethod: form.paymentMethod || undefined,
+        photoUrl: form.photoUrl, additionalPhotos: form.additionalPhotos, paymentProofUrl: form.paymentProofUrl || undefined,
       });
       setSubmitted(saved);
       setSaveState("Submitted for review");
@@ -274,13 +272,11 @@ export function MatrimonialPage() {
           <Toggle label="Allow broad city/region on anonymized match card" checked={form.broadLocation} onChange={(v) => set("broadLocation", v)}/>
           <Toggle label="Allow height on anonymized match card" checked={form.showHeight} onChange={(v) => set("showHeight", v)}/>
           <UploadBox title="Candidate Photo *" value={form.photoUrl} loading={Boolean(uploading.photoUrl)} accept="image/*" onChange={upload("photoUrl")} error={errors.photoUrl} image/>
-        </div>
-        <div style={{ marginTop: 12 }}><MultiImageUpload label="Additional Candidate Documents / Photos (private)" images={form.additionalPhotos} onChange={(images) => set("additionalPhotos", images)}/></div>
-        <Section n="6" title="Payment Details & Receipt" subtitle="Use an official account below. Your receipt can be added before final approval."/>
-        <PaymentInstructions settings={settings} status={settingsStatus} onRetry={refreshSettings} selectedMethod={form.paymentMethod} onSelectMethod={(method) => set("paymentMethod", method)} />
-        <div style={{ maxWidth: 430 }}>
+          <PaymentInstructions settings={settings} status={settingsStatus} onRetry={refreshSettings} selectedMethod={form.paymentMethod} onSelectMethod={(method) => set("paymentMethod", method)} />
           <UploadBox title="Payment Slip / Receipt (can be added before approval)" value={form.paymentProofUrl} loading={Boolean(uploading.paymentProofUrl)} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")}/>
         </div>
+        <div style={{ marginTop: 12 }}><MultiImageUpload label="Additional Candidate Documents / Photos (private)" images={form.additionalPhotos} onChange={(images) => set("additionalPhotos", images)}/></div>
+
 
         <div style={{ background: "#eef6ff", border: "1px solid #cfe4fb", color: "#315f7d", borderRadius: 9, padding: 12, fontSize: 11, lineHeight: 1.7, marginTop: 18 }}><ShieldCheck size={14} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Compatibility scores are decision support, not a guarantee of suitability. Timeline and behavior answers are soft matching signals. Unknown information lowers confidence rather than automatically counting as a mismatch.</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, flexWrap: "wrap" }}><Link to="/matrimonial" style={secondaryLink}>Cancel</Link><button type="submit" disabled={saving || Object.values(uploading).some(Boolean)} style={{ ...primaryButton, opacity: saving ? .6 : 1 }}>{saving ? <><Loader2 size={14} className="spin"/> Saving...</> : <><Heart size={14}/> Save & Submit for Review</>}</button></div>
@@ -298,7 +294,7 @@ function RangePreference({ title, min, max, importance, onMin, onMax, onImportan
 function PreferenceLayer({ title: text, value, onChange, hint }: { title: string; value: Layer; onChange: (k:keyof Layer,v:string)=>void; hint?: string }) { return <div style={{ border: "1px solid #ece7de", borderRadius: 10, padding: 13, marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}><strong style={{ color: GREEN, fontSize: 12 }}>{text}</strong><select style={{ ...input, width: 160 }} value={value.importance} onChange={(e) => onChange("importance", e.target.value)}>{IMPORTANCE_OPTIONS.map((x) => <option key={x}>{x}</option>)}</select></div>{hint && <div style={{ color: "#999", fontSize: 10, margin: "5px 0" }}>{hint}</div>}<div className="pref-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 8 }}><input style={input} placeholder="Primary · پہلی ترجیح" value={value.primary} onChange={(e) => onChange("primary", e.target.value)}/><input style={input} placeholder="Secondary · دوسری ترجیح" value={value.secondary} onChange={(e) => onChange("secondary", e.target.value)}/><input style={input} placeholder="Acceptable · قابلِ قبول" value={value.acceptable} onChange={(e) => onChange("acceptable", e.target.value)}/></div></div>; }
 function Toggle({ label, checked, onChange }: { label:string; checked:boolean; onChange:(v:boolean)=>void }) { return <label style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #e4e9e5", borderRadius: 8, padding: 11, color: "#556059", fontSize: 11, cursor: "pointer" }}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}/>{label}</label>; }
 function UploadBox({ title: text, value, loading, accept, onChange, error, image = false }: any) { return <div data-error={error ? "true" : undefined}><label style={labelStyle}>{text}</label><label style={{ minHeight: 112, border: `2px dashed ${error ? "#ef4444" : value ? GOLD : "#ccd8cf"}`, borderRadius: 9, display: "grid", placeItems: "center", cursor: "pointer", background: value ? "#fff9ef" : "#fafbf9", padding: 9, textAlign: "center" }}>{loading ? <Loader2 className="spin"/> : value ? (image ? <img src={value} alt="Private candidate preview" style={{ maxHeight: 95, maxWidth: "100%", objectFit: "contain" }}/> : <div style={{ color: GREEN, fontWeight: 800 }}><FileCheck2 size={20}/><div style={{ fontSize: 11 }}>File uploaded · click to replace</div></div>) : <div style={{ color: "#888", fontSize: 11 }}><Upload size={20}/><div>Click to upload</div></div>}<input type="file" accept={accept} style={{ display: "none" }} onChange={onChange}/></label>{error && <div style={{ color: "#b91c1c", fontSize: 10, marginTop: 4 }}>{error}</div>}</div>; }
-function Responsive() { return <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .9s linear infinite}@media(max-width:760px){.grid2,.pref-grid,.timeline-grid,.readiness-grid{grid-template-columns:1fr!important}.grid2>[style*="span 2"]{grid-column:span 1!important}input,select,textarea{font-size:16px!important}}`}</style>; }
+function Responsive() { return <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .9s linear infinite}@media(max-width:760px){.grid2,.pref-grid,.timeline-grid,.readiness-grid,.payment-account-grid{grid-template-columns:1fr!important}.grid2>[style*="span 2"]{grid-column:span 1!important}input,select,textarea{font-size:16px!important}}`}</style>; }
 const input: React.CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid rgba(26,77,46,.2)", borderRadius: 8, padding: "10px 11px", background: "white", color: "#26352d", fontSize: 12 };
 const inputError = (error?: string): React.CSSProperties => error ? { ...input, borderColor: "#ef4444", boxShadow: "0 0 0 2px rgba(239,68,68,.08)" } : input;
 const labelStyle: React.CSSProperties = { display: "block", color: GREEN, fontSize: 11, fontWeight: 800, marginBottom: 5 };
