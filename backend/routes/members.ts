@@ -10,6 +10,7 @@ import { loginLimiter, registerLimiter } from "../middleware/rateLimiter";
 import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
 import { cleanupRemovedFiles } from "../lib/fileCleanup";
 import { createReceiptPdf } from "../lib/receiptPdf";
+import { createApplicationPacketPdf, rowsFromRecord } from "../lib/applicationPacketPdf";
 
 const router = Router();
 
@@ -230,13 +231,26 @@ router.post("/register", registerLimiter, requireMember, validate(RegisterSchema
 
     await prisma.formDraft.upsert({
       where: { authUserId_formType: { authUserId: authUser.id, formType: "membership" } },
-      update: { data: req.body, currentStep: 5, status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date() },
-      create: { authUserId: authUser.id, formType: "membership", data: req.body, currentStep: 5, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date() },
+      update: { data: req.body, currentStep: 5, status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date(), paymentSubmittedAt: new Date() },
+      create: { authUserId: authUser.id, formType: "membership", data: req.body, currentStep: 5, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date(), paymentSubmittedAt: new Date() },
     });
 
+    const membershipSubmissionPdf = createApplicationPacketPdf({
+      title: "MEMBERSHIP APPLICATION",
+      reference: newMember.memberNo,
+      status: "Submitted",
+      generatedAt: newMember.createdAt,
+      rows: rowsFromRecord({
+        ...req.body,
+        familyInfo: req.body.familyInfo ? JSON.stringify(req.body.familyInfo) : "",
+        children: Array.isArray(req.body.children) ? req.body.children.map((x: any) => x.fullName).join(", ") : "",
+      }, ["photoUrl", "cnicFrontUrl", "cnicBackUrl", "paymentProofUrl", "additionalPhotos"]),
+    });
+    const membershipSubmissionAttachment = [{ filename: `Membership-${newMember.memberNo}.pdf`, content: membershipSubmissionPdf, contentType: "application/pdf" }];
+
     const notificationJobs = [
-      sendEmail(MASTER_EMAIL, `ACTION REQUIRED · New membership + payment: ${memberData.fullName}`, emailFrame("New membership & payment submission", `<p><strong>${memberData.fullName}</strong> has submitted a ${memberData.membershipType} membership form and payment proof for review.</p><p>Email: ${memberData.email}<br>Phone: ${memberData.phone}<br>Member No: <strong>${newMember.memberNo}</strong><br>Payment proof: <strong>${memberData.paymentProofUrl ? "Submitted" : "Not submitted"}</strong>${referrer ? `<br>Referrer: ${referrer.fullName} (${referrer.memberNo})` : ""}</p><p>Please review the member application and Finance Verification queue.</p>`)),
-      sendEmail(memberData.email, "Membership application received", emailFrame("Application received", `<p>Dear ${memberData.fullName},</p><p>Your application is complete and has been sent to the administration. Your verified session can restore the saved form on this or another device.</p><p>Reference: <strong>${newMember.memberNo}</strong></p>`)),
+      sendEmail(MASTER_EMAIL, `ACTION REQUIRED · New membership + payment: ${memberData.fullName}`, emailFrame("New membership & payment submission", `<p><strong>${memberData.fullName}</strong> has submitted a ${memberData.membershipType} membership form and payment proof for review.</p><p>Email: ${memberData.email}<br>Phone: ${memberData.phone}<br>Member No: <strong>${newMember.memberNo}</strong><br>Payment proof: <strong>${memberData.paymentProofUrl ? "Submitted" : "Not submitted"}</strong>${referrer ? `<br>Referrer: ${referrer.fullName} (${referrer.memberNo})` : ""}</p><p>The complete application packet is attached for the official record. Please review the member application and Finance Verification queue.</p>`), membershipSubmissionAttachment),
+      sendEmail(memberData.email, "Membership application received", emailFrame("Application received", `<p>Dear ${memberData.fullName},</p><p>Your application is complete and has been sent to the administration. Your verified session can restore the saved form on this or another device.</p><p>Reference: <strong>${newMember.memberNo}</strong></p><p>A copy of your submitted application is attached.</p>`), membershipSubmissionAttachment),
       ...(referrer?.email ? [sendEmail(referrer.email, "You were named as a membership referrer", emailFrame("Membership referral notification", `<p>Dear ${referrer.fullName},</p><p><strong>${memberData.fullName}</strong> has named you as an optional referrer in an Anjuman-e-Araian Faisalabad membership application.</p><p>This does not automatically approve or reject the application. The administration may contact you if verification is required.</p>`))] : []),
     ];
     const notificationResults = await Promise.allSettled(notificationJobs);
@@ -376,18 +390,70 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
           create: { customerName: current.fullName, itemType: "membership", itemName: tier?.name || "Membership", amount, paymentFrequency: frequency(tier?.fee || ""), reference, receiptNo },
         });
       }
+      if (status === "approved") {
+        const linked = await tx.member.findUnique({ where: { id }, select: { authUserId: true } });
+        if (linked?.authUserId) {
+          await tx.formDraft.updateMany({
+            where: { authUserId: linked.authUserId, formType: "membership" },
+            data: { approvedAt: new Date() },
+          });
+        }
+      }
       return { member, receipt };
     });
 
     if (["approved", "rejected", "suspended"].includes(status)) {
       try {
+        const approvedRecord = status === "approved"
+          ? await prisma.member.findUnique({ where: { id }, include: { familyInfo: true, children: true } })
+          : null;
+        const approvalAttachments = status === "approved" && approvedRecord ? [
+          {
+            filename: `Membership-${result.member.memberNo}-Approved.pdf`,
+            content: createApplicationPacketPdf({
+              title: "APPROVED MEMBERSHIP FORM",
+              reference: result.member.memberNo,
+              status: "Approved",
+              generatedAt: result.member.approvedAt || new Date(),
+              rows: rowsFromRecord({
+                ...approvedRecord,
+                familyInfo: approvedRecord.familyInfo ? JSON.stringify(approvedRecord.familyInfo) : "",
+                children: approvedRecord.children?.map((x: any) => x.fullName).join(", ") || "",
+              }, ["id", "password", "authUserId", "photoUrl", "cnicFrontUrl", "cnicBackUrl", "paymentProofUrl", "additionalPhotos"]),
+            }),
+            contentType: "application/pdf",
+          },
+          ...(result.receipt ? [{
+            filename: `Receipt-${receiptNo}.pdf`,
+            content: createReceiptPdf({
+              receiptNo,
+              date: result.receipt.date,
+              payerName: result.member.fullName,
+              itemName: tier?.name || "Membership",
+              amount: Number(result.receipt.amount || amount),
+              paymentStatus: "Verified",
+              reference,
+            }),
+            contentType: "application/pdf",
+          }] : []),
+        ] : [];
+
         const delivery = await sendEmail(
           result.member.email,
           status === "approved" ? (isRenewal ? "Your membership has been renewed" : "Your membership is approved") : "Membership application update",
           emailFrame(status === "approved" ? (isRenewal ? "Membership renewed" : "Membership approved") : "Application update", status === "approved"
-            ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual","overseas"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
-            : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
+            ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual","overseas"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your approved membership form and official receipt are attached to this email.</p>`
+            : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`),
+          approvalAttachments,
         );
+        if (status === "approved") {
+          await sendEmail(
+            MASTER_EMAIL,
+            `Membership approved · ${result.member.memberNo} · ${result.member.fullName}`,
+            emailFrame("Membership approval recorded", `<p><strong>${result.member.fullName}</strong> has been approved.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Payment status: <strong>${result.member.paymentStatus}</strong><br>Approval date: <strong>${new Date(result.member.approvedAt || new Date()).toLocaleString("en-GB")}</strong></p><p>The approved form and receipt are attached for the official record.</p>`),
+            approvalAttachments,
+          );
+        }
         if (!delivery.sent) {
           console.error("[MEMBERSHIP_STATUS_EMAIL_NOT_SENT]", { memberId: result.member.id, status, reason: delivery.reason });
         }
