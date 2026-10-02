@@ -376,13 +376,26 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     });
 
     if (["approved", "rejected", "suspended"].includes(status)) {
-      void sendEmail(
-        result.member.email,
-        status === "approved" ? (isRenewal ? "Your membership has been renewed" : "Your membership is approved") : "Membership application update",
-        emailFrame(status === "approved" ? (isRenewal ? "Membership renewed" : "Membership approved") : "Application update", status === "approved"
-          ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual","overseas"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
-          : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
-      ).catch(console.error);
+      try {
+        const delivery = await sendEmail(
+          result.member.email,
+          status === "approved" ? (isRenewal ? "Your membership has been renewed" : "Your membership is approved") : "Membership application update",
+          emailFrame(status === "approved" ? (isRenewal ? "Membership renewed" : "Membership approved") : "Application update", status === "approved"
+            ? `<p>Dear ${result.member.fullName},</p><p>Your Anjuman-e-Araian Faisalabad membership has been ${isRenewal ? "renewed and reactivated" : "approved"}.</p><p>Member No: <strong>${result.member.memberNo}</strong><br>Receipt No: <strong>${receiptNo}</strong><br>Recorded Fee: <strong>${tier?.fee || amount}</strong>${["ordinary","annual","overseas"].includes(String(result.member.membershipType || "").toLowerCase()) && result.member.approvedAt ? `<br>Annual membership valid until: <strong>${new Date(new Date(result.member.approvedAt).setFullYear(new Date(result.member.approvedAt).getFullYear() + 1)).toLocaleDateString("en-GB")}</strong>` : ""}</p><p>Your official PDF receipt is available from your member record.</p>`
+            : `<p>Dear ${result.member.fullName},</p><p>Your membership/application status is now <strong>${status}</strong>. ${rejectionReason || "Please contact the office for details."}</p>`)
+        );
+        if (!delivery.sent) {
+          console.error("[MEMBERSHIP_STATUS_EMAIL_NOT_SENT]", { memberId: result.member.id, status, reason: delivery.reason });
+        }
+      } catch (error: any) {
+        console.error("[MEMBERSHIP_STATUS_EMAIL_FAILED]", {
+          memberId: result.member.id,
+          status,
+          code: error?.code || "MAIL_FAILED",
+          responseCode: error?.responseCode,
+          message: error?.message,
+        });
+      }
     }
     res.json({ ...result.member, receipt: result.receipt ? { receiptNo: result.receipt.receiptNo, reference: result.receipt.reference, amount: result.receipt.amount } : null });
   } catch (err: any) {
