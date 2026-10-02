@@ -262,6 +262,7 @@ model FormDraft {
   generatedAt        DateTime  @default(now())
   paymentSubmittedAt DateTime?
   paymentApprovedAt  DateTime?
+  approvedAt         DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
