@@ -4,7 +4,7 @@ import { z } from "zod";
 import prisma from "../lib/prisma";
 import { requireFinanceAdmin, requireSuperAdmin } from "../middleware/auth";
 import { createFinanceDocumentPdf } from "../lib/financeDocumentPdf";
-import { sendEmail } from "../lib/email";
+import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
 import { paymentApprovedEmail, paymentRejectedEmail } from "../lib/paymentNotificationEmail";
 
 const router = Router();
@@ -437,12 +437,18 @@ async function updateSourcePaymentStatus(sourceType: string, sourceRecordId: str
   if (!sourceRecordId) return;
   if (sourceType === "membership") {
     const member = await prisma.member.update({ where: { id: sourceRecordId }, data: { paymentStatus: status }, select: { authUserId: true } });
-    if (member.authUserId) await prisma.formDraft.updateMany({ where: { authUserId: member.authUserId, formType: "membership" }, data: { paymentStatus: status } });
+    if (member.authUserId) await prisma.formDraft.updateMany({
+      where: { authUserId: member.authUserId, formType: "membership" },
+      data: { paymentStatus: status, ...(status === "verified" ? { paymentApprovedAt: new Date() } : {}) },
+    });
   } else if (sourceType === "business") {
     await prisma.business.update({ where: { id: sourceRecordId }, data: { paymentStatus: status } });
   } else if (sourceType === "matrimonial") {
     const profile = await prisma.matrimonial.update({ where: { id: sourceRecordId }, data: { paymentStatus: status }, select: { authUserId: true } });
-    if (profile.authUserId) await prisma.formDraft.updateMany({ where: { authUserId: profile.authUserId, formType: "matrimonial" }, data: { paymentStatus: status } });
+    if (profile.authUserId) await prisma.formDraft.updateMany({
+      where: { authUserId: profile.authUserId, formType: { startsWith: "matrimonial" } },
+      data: { paymentStatus: status, ...(status === "verified" ? { paymentApprovedAt: new Date() } : {}) },
+    });
   }
 }
 
@@ -912,9 +918,20 @@ router.patch("/payment-submissions/:id/review", requireFinanceAdmin, async (req:
         });
         const receiptPdf = createFinanceDocumentPdf(transaction as any);
         const receiptName = `${transaction.receiptNo || transaction.transactionNo || "payment-receipt"}.pdf`;
-        emailResult = await sendEmail(recipient.email, message.subject, message.html, [
-          { filename: receiptName, content: receiptPdf, contentType: "application/pdf" },
-        ]);
+        const receiptAttachment = [{ filename: receiptName, content: receiptPdf, contentType: "application/pdf" }];
+        emailResult = await sendEmail(recipient.email, message.subject, message.html, receiptAttachment);
+        const adminPaymentEmail = await sendEmail(
+          MASTER_EMAIL,
+          `Payment verified · ${submission.payerName} · ${transaction.receiptNo || transaction.transactionNo}`,
+          emailFrame("Payment verification recorded", `<p><strong>${submission.payerName}</strong>'s payment has been verified and posted.</p><p>Source: <strong>${submission.sourceType}</strong><br>Category: <strong>${transaction.category}</strong><br>Amount: <strong>PKR ${Number(transaction.amount || ledgerAmount).toLocaleString("en-PK")}</strong><br>Receipt: <strong>${transaction.receiptNo || transaction.transactionNo}</strong><br>Verified by: <strong>${who.name}</strong></p><p>The official receipt is attached for the Anjuman record.</p>`),
+          receiptAttachment,
+        );
+        await recordPaymentEmailAudit(id, adminPaymentEmail.sent ? "payment_admin_copy_sent" : "payment_admin_copy_skipped", {
+          email: MASTER_EMAIL,
+          receiptNo: transaction.receiptNo || null,
+          transactionId: transaction.id,
+          reason: adminPaymentEmail.reason || null,
+        });
         await recordPaymentEmailAudit(id, emailResult.sent ? "payment_receipt_email_sent" : "payment_receipt_email_skipped", {
           email: recipient.email,
           receiptNo: transaction.receiptNo || null,
