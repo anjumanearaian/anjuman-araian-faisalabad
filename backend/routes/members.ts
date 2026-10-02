@@ -428,7 +428,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
             content: createReceiptPdf({
               receiptNo,
               date: result.receipt.date,
-              customerName: result.member.fullName,
+              payerName: result.member.fullName,
               itemName: tier?.name || "Membership",
               amount: Number(result.receipt.amount || amount),
               paymentStatus: "Verified",
