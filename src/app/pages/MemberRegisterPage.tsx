@@ -17,7 +17,8 @@ import {
 } from "../lib/memberStore";
 import type { MembershipType, FamilyInfo, MemberChild, ReferralCandidate } from "../lib/memberStore";
 import { citiesForProvince, districtForCity } from "../lib/pakistanLocations";
-import { fetchSiteSettings, getSiteSettings, SiteSettings } from "../lib/settingsStore";
+import { useSiteSettings } from "../lib/useSiteSettings";
+import { PaymentInstructions } from "../components/PaymentInstructions";
 import { MultiImageUpload } from "../components/ui/MultiImageUpload";
 import { ApiError, apiClient } from "../lib/apiClient";
 import { uploadFile } from "../lib/upload";
@@ -88,7 +89,7 @@ export function MemberRegisterPage() {
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [done, setDone] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [settings, setSettings] = useState<SiteSettings>(() => getSiteSettings());
+  const { settings, status: settingsStatus, refresh: refreshSettings } = useSiteSettings();
   const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem("araian_member_token")));
   const [saveState, setSaveState] = useState<"loading" | "saved" | "saving" | "error">("loading");
   const hydrated = useRef(false);
@@ -109,19 +110,6 @@ export function MemberRegisterPage() {
   const [referralResults, setReferralResults] = useState<ReferralCandidate[]>([]);
   const [selectedReferrer, setSelectedReferrer] = useState<ReferralCandidate | null>(null);
   const [referralLoading, setReferralLoading] = useState(false);
-
-  useEffect(() => {
-    if (!authenticated) return;
-    let active = true;
-    const refreshPaymentSettings = () => {
-      fetchSiteSettings().then((value) => {
-        if (active) setSettings(value);
-      }).catch(() => {});
-    };
-    refreshPaymentSettings();
-    const timer = window.setInterval(refreshPaymentSettings, 30000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [authenticated]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -358,6 +346,7 @@ export function MemberRegisterPage() {
           {step === 3 && <div><SectionHead icon={FileText} title="Membership and Referral" subtitle="Referral is optional. It helps verification but never automatically approves or rejects an application." />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14, marginBottom: 24 }} className="mem-grid">{(settings.membershipTiers || []).map((tier) => <div key={tier.id} onClick={() => set("membershipType", tier.type)} style={{ border: `2px solid ${form.membershipType === tier.type ? GOLD : "#e5e7eb"}`, borderRadius: 10, padding: 14, cursor: "pointer", backgroundColor: form.membershipType === tier.type ? "#fff9ef" : "white" }}><strong style={{ color: GREEN, fontSize: 13 }}>{tier.name}</strong><div style={{ color: GOLD, fontWeight: 800, marginTop: 5 }}>{tier.fee}</div><p style={{ color: "#666", fontSize: 11, lineHeight: 1.5 }}>{tier.description}</p></div>)}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 22 }} className="form-grid"><Field label="Member Category"><select style={inputStyle} value={form.membershipType} onChange={(e) => set("membershipType", e.target.value)}><option value="ordinary">Regular / Annual Member</option><option value="life">Life Member</option><option value="patron">Patron Member</option><option value="overseas">Overseas Member</option></select></Field><Field label="Community Cell"><select style={inputStyle} value={form.memberCell} onChange={(e) => set("memberCell", e.target.value)}><option value="male">Men's Cell</option><option value="women">Women's Cell</option></select></Field></div>
+            <PaymentInstructions settings={settings} status={settingsStatus} onRetry={refreshSettings} />
             <div style={{ borderTop: "1px solid #eee", paddingTop: 20 }}><div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}><UserCheck size={17} color={GREEN} /><strong style={{ color: GREEN, fontSize: 14 }}>Referred by an Existing Member (Optional)</strong></div>{selectedReferrer ? <div style={{ background: "#f0f7f3", border: "1px solid #cfe2d6", borderRadius: 9, padding: 13, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}><div><strong>{selectedReferrer.fullName}</strong><div style={{ color: "#777", fontSize: 12 }}>{selectedReferrer.memberNo} · {selectedReferrer.city}</div></div><button onClick={() => { setSelectedReferrer(null); setReferralQuery(""); }} style={{ border: 0, background: "transparent", color: "#b91c1c", cursor: "pointer", fontWeight: 700 }}>Remove</button></div> : <div style={{ position: "relative" }}><input style={inputStyle} value={referralQuery} onChange={(e) => setReferralQuery(e.target.value)} placeholder="Type member name or Registration No." />{(referralLoading || referralResults.length > 0) && <div style={{ position: "absolute", zIndex: 30, top: "100%", left: 0, right: 0, background: "white", border: "1px solid #ddd", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.12)", overflow: "hidden" }}>{referralLoading ? <div style={{ padding: 12, color: "#777", fontSize: 12 }}>Searching members…</div> : referralResults.map((m) => <button key={m.id} onClick={() => { setSelectedReferrer(m); setReferralResults([]); }} style={{ width: "100%", textAlign: "left", padding: "10px 12px", background: "white", border: 0, borderBottom: "1px solid #f3f3f3", cursor: "pointer" }}><strong>{m.fullName}</strong><span style={{ color: "#777", fontSize: 12 }}> · {m.memberNo} · {m.city}</span></button>)}</div>}</div>}<p style={{ color: "#888", fontSize: 11, lineHeight: 1.6, marginTop: 7 }}>If selected, the member may receive a notification and the office can verify the relationship. Referral is not compulsory.</p></div>
           </div>}
 
@@ -370,20 +359,7 @@ export function MemberRegisterPage() {
           </div>}
 
           {step === 5 && <div><SectionHead icon={Upload} title="Documents and Payment Proof" subtitle="Deposit the applicable fee into any official account shown below and upload the payment receipt. Pending payment is not added to the ledger until Finance verifies it." />
-            <div style={{ marginBottom: 18 }}>
-              <div style={{ color: GREEN, fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Where to deposit your payment</div>
-              <div style={{ color: "#6b7280", fontSize: 11, lineHeight: 1.55, marginBottom: 9 }}>Use any official bank or wallet account below, then upload the receipt. These details are controlled from Admin → Site Settings and refresh automatically.</div>
-              {settings.paymentMethods?.length ? <div className="payment-account-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
-                {settings.paymentMethods.map((pm) => <div key={pm.id} style={{ border: "1px solid #d8e5dc", background: "#f8fbf9", borderRadius: 10, padding: 12 }}>
-                  <strong style={{ color: GREEN, display: "block", fontSize: 13 }}>{pm.bankName}</strong>
-                  <span style={{ color: "#66736b", display: "block", fontSize: 11, marginTop: 4 }}>{pm.accountTitle}</span>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
-                    <span style={{ color: "#26352d", fontWeight: 800, fontSize: 12, overflowWrap: "anywhere" }}>{pm.accountNo}</span>
-                    <button type="button" onClick={() => navigator.clipboard?.writeText(pm.accountNo)} style={{ border: "1px solid #cfdcd3", background: "white", color: GREEN, borderRadius: 7, padding: "5px 9px", fontSize: 10, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Copy</button>
-                  </div>
-                </div>)}
-              </div> : <div style={{ background: "#f8f5ef", border: "1px solid #e7ded0", borderRadius: 8, padding: 10, color: "#777", fontSize: 11 }}>No official payment account is configured. Please contact the Anjuman office before sending payment.</div>}
-            </div>
+            <PaymentInstructions settings={settings} status={settingsStatus} onRetry={refreshSettings} selectedMethod={form.paymentMethod} onSelectMethod={(method) => set("paymentMethod", method)} />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }} className="doc-grid">{[
               { key: "photoUrl", label: "Passport Photo *" }, { key: "cnicFrontUrl", label: "CNIC Front *" }, { key: "cnicBackUrl", label: "CNIC Back *" }, { key: "paymentProofUrl", label: "Payment Proof *" }
             ].map(({ key, label }) => <div key={key}><label style={labelStyle}>{label}</label><label style={{ display: "block", border: `2px dashed ${form[key as keyof typeof form] ? GOLD : "#d9d9d9"}`, borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", background: "#fafaf8" }}>{form[key as keyof typeof form] ? <div style={{ color: GREEN, fontSize: 12, fontWeight: 800, padding: 24 }}>✓ Uploaded</div> : <div style={{ padding: 16 }}><Upload size={22} color="#aaa" /><div style={{ color: "#999", fontSize: 11, marginTop: 5 }}>Click to upload</div></div>}<input type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={handleFile(key as keyof typeof form)} /></label>{errors[key] && <p style={{ color: "#dc2626", fontSize: 11 }}>{errors[key]}</p>}</div>)}</div><div style={{ marginTop: 22 }}><MultiImageUpload label="Additional Photos / Certificates / Relevant Documents (Optional)" images={form.additionalPhotos} onChange={(imgs) => set("additionalPhotos", imgs)} /></div><div style={{ background: "#f0f7f3", borderRadius: 10, padding: "13px 16px", marginTop: 20, color: "#555", fontSize: 12, lineHeight: 1.7 }}>By submitting, I confirm that the information is accurate. Payment proof will first enter the Finance Verification Queue. It will not count as paid and will not affect the accounting ledger until an authorized finance reviewer approves it.</div></div>}

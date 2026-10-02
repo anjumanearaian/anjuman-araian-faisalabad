@@ -8,7 +8,8 @@ import { BehaviorQuestionnaire, ReadinessPanel, TimelineField } from "../compone
 import { apiClient } from "../lib/apiClient";
 import { uploadFile } from "../lib/upload";
 import { createMatrimonial, fetchMyMatrimonialProfiles, MatrimonialProfile } from "../lib/matrimonialStore";
-import { fetchSiteSettings, getSiteSettings, SiteSettings } from "../lib/settingsStore";
+import { useSiteSettings } from "../lib/useSiteSettings";
+import { PaymentInstructions } from "../components/PaymentInstructions";
 import { citiesForProvince, pakistanCitiesByProvince } from "../lib/pakistanLocations";
 import {
   CONTACT_PRIVACY_OPTIONS, EDUCATION_OPTIONS, EMPLOYMENT_TYPE_OPTIONS, FAMILY_SETUP_OPTIONS, IMPORTANCE_OPTIONS, INCOME_BANDS,
@@ -82,7 +83,7 @@ export function MatrimonialPage() {
   const [params] = useSearchParams();
   const requestedId = params.get("profileId") || "";
   const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem("araian_member_token")));
-  const [settings, setSettings] = useState<SiteSettings>(() => getSiteSettings());
+  const { settings, status: settingsStatus, refresh: refreshSettings } = useSiteSettings();
   const [form, setForm] = useState<FormState>(() => blank());
   const [initializing, setInitializing] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -101,9 +102,8 @@ export function MatrimonialPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [site, profiles] = await Promise.all([fetchSiteSettings(), fetchMyMatrimonialProfiles()]);
+        const profiles = await fetchMyMatrimonialProfiles();
         if (cancelled) return;
-        setSettings(site);
         const existing = requestedId ? profiles.find((p) => p.id === requestedId) : undefined;
         const next = existing ? fromProfile(existing) : blank();
         const draftType = `matrimonial:${requestedId || "new"}`;
@@ -119,18 +119,6 @@ export function MatrimonialPage() {
     })();
     return () => { cancelled = true; };
   }, [authenticated, requestedId]);
-
-  useEffect(() => {
-    if (!authenticated) return;
-    let active = true;
-    const timer = window.setInterval(() => {
-      fetchSiteSettings().then((site) => {
-        if (!active) return;
-        setSettings(site);
-      }).catch(() => {});
-    }, 30000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [authenticated]);
 
   useEffect(() => {
     if (!authenticated || !hydrated.current || initializing || submitted) return;
@@ -284,25 +272,11 @@ export function MatrimonialPage() {
           <Toggle label="Allow broad city/region on anonymized match card" checked={form.broadLocation} onChange={(v) => set("broadLocation", v)}/>
           <Toggle label="Allow height on anonymized match card" checked={form.showHeight} onChange={(v) => set("showHeight", v)}/>
           <UploadBox title="Candidate Photo *" value={form.photoUrl} loading={Boolean(uploading.photoUrl)} accept="image/*" onChange={upload("photoUrl")} error={errors.photoUrl} image/>
+          <PaymentInstructions settings={settings} status={settingsStatus} onRetry={refreshSettings} selectedMethod={form.paymentMethod} onSelectMethod={(method) => set("paymentMethod", method)} />
           <UploadBox title="Payment Slip / Receipt (can be added before approval)" value={form.paymentProofUrl} loading={Boolean(uploading.paymentProofUrl)} accept="image/*,.pdf,application/pdf" onChange={upload("paymentProofUrl")}/>
         </div>
         <div style={{ marginTop: 12 }}><MultiImageUpload label="Additional Candidate Documents / Photos (private)" images={form.additionalPhotos} onChange={(images) => set("additionalPhotos", images)}/></div>
-        {settings.paymentMethods?.length ? <div style={{ background: "#fff9ef", border: "1px solid #ead9a8", padding: 12, borderRadius: 9, marginTop: 14 }}>
-          <strong style={{ color: GREEN, fontSize: 12 }}>Where to deposit your payment</strong>
-          <div style={{ color: "#74684d", fontSize: 10, lineHeight: 1.5, marginTop: 3 }}>Deposit the applicable matrimonial fee into any official account below, then upload the receipt. Admin changes refresh automatically.</div>
-          <div className="payment-account-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginTop: 9 }}>
-            {settings.paymentMethods.map((pm) => (
-              <div key={pm.id} style={{ border: "1px solid #e4dcc8", background: "white", borderRadius: 9, padding: 10 }}>
-                <strong style={{ display: "block", color: GREEN, fontSize: 11, fontWeight: 800 }}>{pm.bankName}</strong>
-                <div style={{ color: "#666", fontSize: 10, marginTop: 4 }}>{pm.accountTitle}</div>
-                <div style={{ display: "flex", gap: 7, justifyContent: "space-between", alignItems: "center", marginTop: 5 }}>
-                  <strong style={{ color: "#2b332d", fontSize: 11, overflowWrap: "anywhere" }}>{pm.accountNo}</strong>
-                  <button type="button" onClick={() => navigator.clipboard?.writeText(pm.accountNo)} style={{ border: "1px solid #d8cfb9", background: "white", color: GREEN, borderRadius: 6, padding: "4px 8px", fontSize: 9, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Copy</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div> : <div style={{ background: "#f8f5ef", padding: 11, borderRadius: 8, marginTop: 14, color: "#777", fontSize: 11 }}>No official payment account is configured. Please contact the Anjuman office before sending payment. The profile may still be saved for review.</div>}
+
 
         <div style={{ background: "#eef6ff", border: "1px solid #cfe4fb", color: "#315f7d", borderRadius: 9, padding: 12, fontSize: 11, lineHeight: 1.7, marginTop: 18 }}><ShieldCheck size={14} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Compatibility scores are decision support, not a guarantee of suitability. Timeline and behavior answers are soft matching signals. Unknown information lowers confidence rather than automatically counting as a mismatch.</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, flexWrap: "wrap" }}><Link to="/matrimonial" style={secondaryLink}>Cancel</Link><button type="submit" disabled={saving || Object.values(uploading).some(Boolean)} style={{ ...primaryButton, opacity: saving ? .6 : 1 }}>{saving ? <><Loader2 size={14} className="spin"/> Saving...</> : <><Heart size={14}/> Save & Submit for Review</>}</button></div>
