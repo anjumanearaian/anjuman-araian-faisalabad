@@ -5,6 +5,7 @@ import prisma from "../lib/prisma";
 import { requireWelfareAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { cleanupRemovedFiles } from "../lib/fileCleanup";
+import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
 
 const router = Router();
 
@@ -224,6 +225,13 @@ router.post("/submit", validate(BusinessSchema), async (req: Request, res: Respo
       return newBusiness;
     });
 
+    const businessNotifications = [
+      sendEmail(MASTER_EMAIL, `New business directory submission: ${created.businessName}`, emailFrame("Business directory submission", `<p><strong>${created.businessName}</strong> has submitted a business profile for admin review.</p><p>Owner: ${created.ownerName}<br>City: ${created.city}<br>Package: ${created.sponsorshipPackage}<br>Payment proof: uploaded</p>`)),
+      ...(created.email ? [sendEmail(created.email, "Business directory submission received", emailFrame("Business submission received", `<p>Dear ${created.ownerName},</p><p>Your business profile for <strong>${created.businessName}</strong> has been received and sent to the administration. Your payment proof will be verified separately by Accounts/Finance before final payment posting.</p>`))] : []),
+    ];
+    const businessNotificationResults = await Promise.allSettled(businessNotifications);
+    for (const result of businessNotificationResults) if (result.status === "rejected") console.error("[BUSINESS_SUBMISSION_EMAIL_FAILED]", result.reason);
+
     res.status(201).json({ ...created, additionalPhotos: parsePhotos(created.additionalPhotos) });
   } catch (err) { next(err); }
 });
@@ -299,6 +307,22 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
       await auditBusiness(tx, req, id, "status_changed", current, row);
       return row;
     });
+    if (updated.email && status && ["approved", "rejected"].includes(status)) {
+      try {
+        await sendEmail(
+          updated.email,
+          status === "approved" ? "Your business directory listing is approved" : "Business directory application update",
+          emailFrame(
+            status === "approved" ? "Business listing approved" : "Business listing update",
+            status === "approved"
+              ? `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been approved for the directory.</p><p>Payment status: <strong>${updated.paymentStatus}</strong>. Final payment verification and official receipt remain controlled by Accounts/Finance.</p>`
+              : `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been updated to <strong>rejected</strong>.</p><p>${adminNote || "Please contact the Anjuman office for details."}</p>`,
+          ),
+        );
+      } catch (emailError) {
+        console.error("[BUSINESS_STATUS_EMAIL_FAILED]", emailError);
+      }
+    }
     res.json({ ...updated, additionalPhotos: parsePhotos(updated.additionalPhotos) });
   } catch (err: any) {
     if (err.code === "P2025") return void res.status(404).json({ error: "Business not found" });

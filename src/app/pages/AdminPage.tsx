@@ -677,9 +677,9 @@ const stats = [
 ];
 
 return (
-  <div style={{ display: "flex", backgroundColor: "#f8f5ef", minHeight: "100vh" }}>
+  <div className="admin-shell" style={{ display: "flex", backgroundColor: "#f8f5ef", minHeight: "100vh" }}>
     {/* Sidebar */}
-    <aside style={{ width: 260, backgroundColor: "white", borderRight: "1px solid #eee", display: "flex", flexDirection: "column", position: "fixed", height: "100vh", overflowY: "auto", zIndex: 10 }}>
+    <aside className="admin-sidebar" style={{ width: 260, backgroundColor: "white", borderRight: "1px solid #eee", display: "flex", flexDirection: "column", position: "fixed", height: "100vh", overflowY: "auto", zIndex: 10 }}>
       {/* Sidebar Header */}
       <div style={{ padding: "24px", backgroundColor: GREEN, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -764,10 +764,10 @@ return (
     </aside>
 
     {/* Main Content Area */}
-    <main style={{ flex: 1, marginLeft: 260, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+    <main className="admin-main" style={{ flex: 1, marginLeft: 260, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       
       {/* Top Header */}
-      <header style={{ backgroundColor: "white", padding: "18px 32px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 5 }}>
+      <header className="admin-main-header" style={{ backgroundColor: "white", padding: "18px 32px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 5 }}>
         <h1 style={{ color: "#333", fontSize: 18, fontWeight: 700, margin: 0, textTransform: "capitalize" }}>
           {tab === "dashboard" ? "Dashboard Overview" : tab.replace("-", " ")}
         </h1>
@@ -776,7 +776,7 @@ return (
         </div>
       </header>
 
-      <div style={{ padding: "32px", flex: 1, maxWidth: 1400, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+      <div className="admin-main-content" style={{ padding: "32px", flex: 1, maxWidth: 1400, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
         
         {/* ── DASHBOARD TAB ── */}
         {tab === "dashboard" && (
@@ -1084,7 +1084,7 @@ return (
             </div>
           </div>
         </div>
-        <div style={{ background: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}>
+        <div className="admin-table-scroll" style={{ background: "white", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1040 }}>
             <thead>
               <tr style={{ background: "#f8f5ef" }}>
