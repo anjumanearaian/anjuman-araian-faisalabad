@@ -439,7 +439,7 @@ async function updateSourcePaymentStatus(sourceType: string, sourceRecordId: str
     const member = await prisma.member.update({ where: { id: sourceRecordId }, data: { paymentStatus: status }, select: { authUserId: true } });
     if (member.authUserId) await prisma.formDraft.updateMany({
       where: { authUserId: member.authUserId, formType: "membership" },
-      data: { paymentStatus: status, ...(status === "verified" ? { paymentApprovedAt: new Date() } : {}) },
+      data: { paymentStatus: status },
     });
   } else if (sourceType === "business") {
     await prisma.business.update({ where: { id: sourceRecordId }, data: { paymentStatus: status } });
@@ -447,7 +447,7 @@ async function updateSourcePaymentStatus(sourceType: string, sourceRecordId: str
     const profile = await prisma.matrimonial.update({ where: { id: sourceRecordId }, data: { paymentStatus: status }, select: { authUserId: true } });
     if (profile.authUserId) await prisma.formDraft.updateMany({
       where: { authUserId: profile.authUserId, formType: { startsWith: "matrimonial" } },
-      data: { paymentStatus: status, ...(status === "verified" ? { paymentApprovedAt: new Date() } : {}) },
+      data: { paymentStatus: status },
     });
   }
 }
