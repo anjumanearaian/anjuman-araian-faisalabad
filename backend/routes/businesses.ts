@@ -322,7 +322,6 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
           status,
           paymentStatus: nextPaymentStatus,
           adminNote,
-          approvedAt: status === "approved" ? (current.approvedAt || new Date()) : current.approvedAt,
         },
       });
       await auditBusiness(tx, req, id, "status_changed", current, row);
@@ -336,7 +335,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
             title: "APPROVED BUSINESS DIRECTORY FORM",
             reference: updated.id,
             status: "Approved",
-            generatedAt: updated.approvedAt || new Date(),
+            generatedAt: new Date(),
             rows: rowsFromRecord(updated as any, ["id", "logoUrl", "paymentProofUrl", "additionalPhotos"]),
           }),
           contentType: "application/pdf",
@@ -347,7 +346,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
           emailFrame(
             status === "approved" ? "Business listing approved" : "Business listing update",
             status === "approved"
-              ? `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been approved for the directory.</p><p>Payment status: <strong>${updated.paymentStatus}</strong>.<br>Approval date: <strong>${new Date(updated.approvedAt || new Date()).toLocaleString("en-GB")}</strong></p><p>Your approved business form is attached. Final payment verification and official receipt remain controlled by Accounts/Finance.</p>`
+              ? `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been approved for the directory.</p><p>Payment status: <strong>${updated.paymentStatus}</strong>.<br>Approval date: <strong>${new Date().toLocaleString("en-GB")}</strong></p><p>Your approved business form is attached. Final payment verification and official receipt remain controlled by Accounts/Finance.</p>`
               : `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been updated to <strong>rejected</strong>.</p><p>${adminNote || "Please contact the Anjuman office for details."}</p>`,
           ),
           approvalAttachments,
@@ -356,7 +355,7 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
           await sendEmail(
             MASTER_EMAIL,
             `Business approved · ${updated.businessName}`,
-            emailFrame("Business approval recorded", `<p><strong>${updated.businessName}</strong> has been approved.</p><p>Owner: ${updated.ownerName}<br>Payment status: <strong>${updated.paymentStatus}</strong><br>Approval date: <strong>${new Date(updated.approvedAt || new Date()).toLocaleString("en-GB")}</strong></p><p>The approved business form is attached for the official record.</p>`),
+            emailFrame("Business approval recorded", `<p><strong>${updated.businessName}</strong> has been approved.</p><p>Owner: ${updated.ownerName}<br>Payment status: <strong>${updated.paymentStatus}</strong><br>Approval date: <strong>${new Date().toLocaleString("en-GB")}</strong></p><p>The approved business form is attached for the official record.</p>`),
             approvalAttachments,
           );
         }

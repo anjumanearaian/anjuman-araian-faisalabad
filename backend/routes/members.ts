@@ -231,8 +231,8 @@ router.post("/register", registerLimiter, requireMember, validate(RegisterSchema
 
     await prisma.formDraft.upsert({
       where: { authUserId_formType: { authUserId: authUser.id, formType: "membership" } },
-      update: { data: req.body, currentStep: 5, status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date(), paymentSubmittedAt: new Date() },
-      create: { authUserId: authUser.id, formType: "membership", data: req.body, currentStep: 5, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date(), paymentSubmittedAt: new Date() },
+      update: { data: req.body, currentStep: 5, status: "submitted", completion: 100, paymentStatus: "submitted", submittedAt: new Date() },
+      create: { authUserId: authUser.id, formType: "membership", data: req.body, currentStep: 5, completion: 100, status: "submitted", paymentStatus: "submitted", submittedAt: new Date() },
     });
 
     const membershipSubmissionPdf = createApplicationPacketPdf({
@@ -389,15 +389,6 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
           update: { customerName: current.fullName, itemName: tier?.name || "Membership", amount, paymentFrequency: frequency(tier?.fee || ""), receiptNo },
           create: { customerName: current.fullName, itemType: "membership", itemName: tier?.name || "Membership", amount, paymentFrequency: frequency(tier?.fee || ""), reference, receiptNo },
         });
-      }
-      if (status === "approved") {
-        const linked = await tx.member.findUnique({ where: { id }, select: { authUserId: true } });
-        if (linked?.authUserId) {
-          await tx.formDraft.updateMany({
-            where: { authUserId: linked.authUserId, formType: "membership" },
-            data: { approvedAt: new Date() },
-          });
-        }
       }
       return { member, receipt };
     });
