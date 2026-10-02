@@ -15,8 +15,8 @@ export function MemberLoginPage() {
         <div style={{ textAlign: "center", marginBottom: 26 }}><div style={{ width: 64, height: 64, borderRadius: "50%", background: GREEN, color: "#c8a04a", display: "grid", placeItems: "center", margin: "0 auto 14px", fontSize: 28, fontWeight: 700 }}>ع</div><h2 style={{ color: GREEN, margin: "0 0 6px", fontSize: 22 }}>Member Portal</h2><p style={{ color: "#777", margin: 0, fontSize: 14 }}>One verified email. No password to remember.</p></div>
         <PasswordlessSignIn onAuthenticated={(session) => { acceptSession(session); navigate(session.member ? "/member/portal" : "/member/register"); }} />
         <div style={{ marginTop: 22, background: "#f8f5ef", borderRadius: 9, padding: 14, fontSize: 13, color: "#666", lineHeight: 1.65 }}>
-          <strong style={{ color: GREEN }}>Already a Lifetime Member?</strong><br />
-          Use the same email that is recorded with the Anjuman office. If your old member record has no email, please ask the office to add and verify your email first. Do not submit a second membership record.
+          <strong style={{ color: GREEN }}>Already an Existing / Lifetime Member?</strong><br />
+          OTP verification is required for every member login. Use the same email recorded with the Anjuman office. If your old profile has no email or an outdated email, ask the office to update that existing member record first, then request OTP again. Do not create a second membership record.
         </div>
         <div style={{ marginTop: 10, background: "#f8f5ef", borderRadius: 9, padding: 14, fontSize: 13, color: "#666" }}>New applicant? <Link to="/member/register" style={{ color: GREEN, fontWeight: 700 }}>Start membership registration</Link>.</div>
       </div>
