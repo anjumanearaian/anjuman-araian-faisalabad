@@ -13,6 +13,7 @@ import { AdminMatrimonialUrduHints } from "./components/admin/AdminMatrimonialUr
 import { AdminMatrimonialIdentityReferences } from "./components/admin/AdminMatrimonialIdentityReferences";
 import { AdminMatrimonialSuccessCenter } from "./components/admin/AdminMatrimonialSuccessCenter";
 import { AdminSessionHandoff } from "./components/admin/AdminSessionHandoff";
+import { AdminSavedFormViewer } from "./components/admin/AdminSavedFormViewer";
 import { MatrimonialSelfReferences } from "./components/matrimonial/MatrimonialSelfReferences";
 import { MatrimonialStructuredInputEnhancer } from "./components/matrimonial/MatrimonialStructuredInputEnhancer";
 import { MatrimonialPrivateImageHydrator } from "./components/MatrimonialPrivateImageHydrator";
@@ -37,7 +38,7 @@ const SEO: Record<string, { title: string; description: string }> = {
   "/contact": { title: `Contact Us | ${SITE_NAME}`, description: "Contact Anjuman-e-Araian Faisalabad for membership, welfare, business and community services." },
   "/privacy-policy": { title: `Privacy Policy | ${SITE_NAME}`, description: "Read how Anjuman-e-Araian Faisalabad collects, uses and protects personal information across its digital services." },
   "/terms": { title: `Terms & Conditions | ${SITE_NAME}`, description: "Terms and conditions for using the official Anjuman-e-Araian Faisalabad digital platform." },
-  "/cookie-policy": { title: `Cookie Policy | ${SITE_NAME}`, description: "Learn how essential browser storage and cookies are used on the Anjuman-e-Araian Faisalabad website." },
+  "/cookie-policy": { title: `Cookie Policy | ${SITE_NAME}`, description: "Learn how essential browser storage and cookies are used on the official Anjuman-e-Araian Faisalabad digital platform." },
   "/payment-refund-policy": { title: `Payment & Refund Policy | ${SITE_NAME}`, description: "Payment verification, receipt and refund policy for Anjuman-e-Araian Faisalabad digital services." },
   "/disclaimer": { title: `Website Disclaimer | ${SITE_NAME}`, description: "Important disclaimer covering community information, business listings, matrimonial services and external links." },
 };
@@ -149,6 +150,7 @@ export default function App() {
       <AdminMatrimonialIdentityReferences />
       <AdminMatrimonialSuccessCenter />
       <AdminSessionHandoff />
+      <AdminSavedFormViewer />
       <AdminBusinessShortcut />
       <AdminMemberCenterShortcut />
       <MatrimonialMatchingShortcut />
