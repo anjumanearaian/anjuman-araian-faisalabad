@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { useNavigate, Link, Navigate } from "react-router";
+import { useNavigate, useLocation, Link, Navigate } from "react-router";
 import { useAdmin } from "../context/AdminContext";
 import { Shield, Eye, EyeOff, LogOut, Newspaper, FileText, CalendarDays, CheckCircle, XCircle, Clock, Edit2, Trash2, Plus, X, ArrowRight, Users, UserCheck, UserX, AlertCircle, Briefcase, DollarSign, MessageCircle, Heart, Globe, Settings, Image as ImageIcon, Crown, Star, Upload, ChevronLeft, ChevronRight, Phone, Mail, PieChart, BarChart3, Settings2, LayoutDashboard, ShieldAlert } from "lucide-react";
 import { fetchAllContent, createContent, updateContent, deleteContent, NewsItem, EventItem, statusColors, ContentStatus, paginateData } from "../lib/contentStore";
@@ -110,11 +110,22 @@ function Dashboard() {
   const [zoomImage, setZoomImage] = useState<string | null>(null);
   const { logout, role } = useAdmin();
   const navigate = useNavigate();
-  const getInitialTab = () => {
-    if (role === "welfare_manager") return "dashboard";
+  const location = useLocation();
+  const routeToTab = (pathname: string) => {
+    const clean = pathname.replace(/\/$/, "");
+    if (clean === "/admin/content") return "news";
+    if (clean === "/admin/forms") return "forms";
+    if (clean === "/admin/media") return "media";
+    if (clean === "/admin/settings") return "settings";
+    if (clean === "/admin/messages") return "messages";
+    if (clean === "/admin/users") return "admins";
     return "dashboard";
   };
-  const [tab, setTab] = useState<"dashboard" | "news" | "events" | "members" | "forms" | "businesses" | "matrimonial" | "leadership" | "media" | "overseas" | "settings" | "messages" | "analytics" | "admins">(getInitialTab as any);
+  const [tab, setTab] = useState<"dashboard" | "news" | "events" | "members" | "forms" | "businesses" | "matrimonial" | "leadership" | "media" | "overseas" | "settings" | "messages" | "analytics" | "admins">(() => routeToTab(location.pathname) as any);
+  useEffect(() => {
+    const next = routeToTab(location.pathname) as any;
+    if (tab !== next && ["/admin", "/admin/content", "/admin/forms", "/admin/media", "/admin/settings", "/admin/messages", "/admin/users"].includes(location.pathname.replace(/\/$/, ""))) setTab(next);
+  }, [location.pathname]);
   const [formDrafts, setFormDrafts] = useState<any[]>([]);
   const [formStatusFilter, setFormStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
   const [formPage, setFormPage] = useState(1);
@@ -774,7 +785,23 @@ return (
           return allowed.map(([t, label, icon]) => (
             <button 
               key={t} 
-              onClick={() => setTab(t as any)} 
+              onClick={() => {
+                const routeMap: Record<string, string> = {
+                  dashboard: "/admin",
+                  news: "/admin/content",
+                  members: "/admin/members",
+                  forms: "/admin/forms",
+                  businesses: "/admin/businesses",
+                  matrimonial: "/admin/matrimonial",
+                  media: "/admin/media",
+                  settings: "/admin/settings",
+                  messages: "/admin/messages",
+                  admins: "/admin/users",
+                };
+                const target = routeMap[String(t)];
+                if (target) navigate(target);
+                else setTab(t as any);
+              }} 
               style={{ 
                 display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 8, border: "none", cursor: "pointer", 
                 backgroundColor: tab === t ? "#f0f7f3" : "transparent", 
@@ -2090,7 +2117,7 @@ return (
                         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap", alignItems: "center" }}>
                           <button onClick={() => setViewingMessage(msg)} style={actionBtn(GREEN)}><Eye size={14} /> View</button>
                           {msg.type === "forgot_password" && (
-                            <button onClick={() => { setTab("members"); }} style={actionBtn(GOLD)}>Reset Password</button>
+                            <button onClick={() => navigate("/admin/members")} style={actionBtn(GOLD)}>Reset Password</button>
                           )}
                           {msg.status === "unread" ? (
                             <button onClick={() => handleUpdateMessageStatus(msg.id, "resolved")} style={actionBtn("#10b981")}><CheckCircle size={14} /> Resolve</button>
