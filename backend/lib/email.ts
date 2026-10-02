@@ -1,7 +1,8 @@
 import nodemailer from "nodemailer";
 
-export const MASTER_EMAIL = process.env.MASTER_EMAIL || "anjumanearaianfaisalabad@gmail.com";
-export const INFO_EMAIL = process.env.INFO_EMAIL || MASTER_EMAIL;
+export const OFFICIAL_EMAIL = process.env.OFFICIAL_EMAIL || "anjumanearaianfaisalabad@gmail.com";
+export const MASTER_EMAIL = OFFICIAL_EMAIL;
+export const INFO_EMAIL = process.env.INFO_EMAIL || "info@anjumanearaian.org";
 
 export type EmailAttachment = {
   filename: string;
@@ -52,9 +53,9 @@ export async function sendEmail(
   }
 
   await mailer.sendMail({
-    from: `Anjuman-e-Araian Faisalabad <${process.env.EMAIL_FROM || smtpConfig().user || MASTER_EMAIL}>`,
+    from: `Anjuman-e-Araian Faisalabad <${OFFICIAL_EMAIL}>`,
     to,
-    replyTo: INFO_EMAIL,
+    replyTo: OFFICIAL_EMAIL,
     subject,
     html,
     attachments: attachments.map((item) => ({
@@ -73,7 +74,7 @@ export function emailFrame(title: string, body: string) {
     <div style="background:#1a4d2e;color:#fff;padding:22px"><h2 style="margin:0">${title}</h2></div>
     <div style="padding:24px;color:#374151;line-height:1.7">
       ${body}
-      <p style="margin-top:24px;color:#6b7280">Anjuman-e-Araian Faisalabad<br>${INFO_EMAIL}</p>
+      <p style="margin-top:24px;color:#6b7280">Anjuman-e-Araian Faisalabad<br>${OFFICIAL_EMAIL}</p>
     </div>
   </div>`;
 }
