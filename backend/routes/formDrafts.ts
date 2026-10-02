@@ -38,11 +38,9 @@ router.put("/:formType", requireMember, async (req: Request, res: Response, next
     const userId = (req as any).user.id;
     const existing = await prisma.formDraft.findUnique({
       where: { authUserId_formType: { authUserId: userId, formType } },
-      select: { submittedAt: true, paymentSubmittedAt: true, paymentApprovedAt: true },
+      select: { submittedAt: true },
     });
     const now = new Date();
-    const paymentSubmitted = ["submitted", "received", "verified", "recorded"].includes(String(paymentStatus));
-    const paymentApproved = ["received", "verified", "recorded"].includes(String(paymentStatus));
     const draft = await prisma.formDraft.upsert({
       where: { authUserId_formType: { authUserId: userId, formType } },
       update: {
@@ -52,8 +50,6 @@ router.put("/:formType", requireMember, async (req: Request, res: Response, next
         status,
         paymentStatus,
         submittedAt: status === "submitted" && !existing?.submittedAt ? now : undefined,
-        paymentSubmittedAt: paymentSubmitted && !existing?.paymentSubmittedAt ? now : undefined,
-        paymentApprovedAt: paymentApproved && !existing?.paymentApprovedAt ? now : undefined,
       },
       create: {
         authUserId: userId,
@@ -64,8 +60,6 @@ router.put("/:formType", requireMember, async (req: Request, res: Response, next
         status,
         paymentStatus,
         submittedAt: status === "submitted" ? now : undefined,
-        paymentSubmittedAt: paymentSubmitted ? now : undefined,
-        paymentApprovedAt: paymentApproved ? now : undefined,
       },
     });
     res.json(draft);
