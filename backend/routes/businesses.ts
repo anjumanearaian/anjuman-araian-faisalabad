@@ -6,6 +6,7 @@ import { requireWelfareAdmin } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { cleanupRemovedFiles } from "../lib/fileCleanup";
 import { MASTER_EMAIL, emailFrame, sendEmail } from "../lib/email";
+import { createApplicationPacketPdf, rowsFromRecord } from "../lib/applicationPacketPdf";
 
 const router = Router();
 
@@ -225,9 +226,21 @@ router.post("/submit", validate(BusinessSchema), async (req: Request, res: Respo
       return newBusiness;
     });
 
+    const businessSubmissionAttachment = [{
+      filename: `Business-${created.id}-Submission.pdf`,
+      content: createApplicationPacketPdf({
+        title: "BUSINESS DIRECTORY APPLICATION",
+        reference: created.id,
+        status: "Submitted",
+        generatedAt: created.createdAt,
+        rows: rowsFromRecord(created as any, ["id", "logoUrl", "paymentProofUrl", "additionalPhotos"]),
+      }),
+      contentType: "application/pdf",
+    }];
+
     const businessNotifications = [
-      sendEmail(MASTER_EMAIL, `New business directory submission: ${created.businessName}`, emailFrame("Business directory submission", `<p><strong>${created.businessName}</strong> has submitted a business profile for admin review.</p><p>Owner: ${created.ownerName}<br>City: ${created.city}<br>Package: ${created.sponsorshipPackage}<br>Payment proof: uploaded</p>`)),
-      ...(created.email ? [sendEmail(created.email, "Business directory submission received", emailFrame("Business submission received", `<p>Dear ${created.ownerName},</p><p>Your business profile for <strong>${created.businessName}</strong> has been received and sent to the administration. Your payment proof will be verified separately by Accounts/Finance before final payment posting.</p>`))] : []),
+      sendEmail(MASTER_EMAIL, `New business directory submission: ${created.businessName}`, emailFrame("Business directory submission", `<p><strong>${created.businessName}</strong> has submitted a business profile for admin review.</p><p>Owner: ${created.ownerName}<br>City: ${created.city}<br>Package: ${created.sponsorshipPackage}<br>Payment proof: uploaded</p><p>The submitted business form is attached for the official record.</p>`), businessSubmissionAttachment),
+      ...(created.email ? [sendEmail(created.email, "Business directory submission received", emailFrame("Business submission received", `<p>Dear ${created.ownerName},</p><p>Your business profile for <strong>${created.businessName}</strong> has been received and sent to the administration. Your payment proof will be verified separately by Accounts/Finance before final payment posting.</p><p>A copy of the submitted business form is attached.</p>`), businessSubmissionAttachment)] : []),
     ];
     const businessNotificationResults = await Promise.allSettled(businessNotifications);
     for (const result of businessNotificationResults) if (result.status === "rejected") console.error("[BUSINESS_SUBMISSION_EMAIL_FAILED]", result.reason);
@@ -303,22 +316,50 @@ router.patch("/:id/status", requireWelfareAdmin, async (req: Request, res: Respo
     }
 
     const updated = await prisma.$transaction(async (tx: any) => {
-      const row = await tx.business.update({ where: { id }, data: { status, paymentStatus: nextPaymentStatus, adminNote } });
+      const row = await tx.business.update({
+        where: { id },
+        data: {
+          status,
+          paymentStatus: nextPaymentStatus,
+          adminNote,
+          approvedAt: status === "approved" ? (current.approvedAt || new Date()) : current.approvedAt,
+        },
+      });
       await auditBusiness(tx, req, id, "status_changed", current, row);
       return row;
     });
     if (updated.email && status && ["approved", "rejected"].includes(status)) {
       try {
+        const approvalAttachments = status === "approved" ? [{
+          filename: `Business-${updated.id}-Approved.pdf`,
+          content: createApplicationPacketPdf({
+            title: "APPROVED BUSINESS DIRECTORY FORM",
+            reference: updated.id,
+            status: "Approved",
+            generatedAt: updated.approvedAt || new Date(),
+            rows: rowsFromRecord(updated as any, ["id", "logoUrl", "paymentProofUrl", "additionalPhotos"]),
+          }),
+          contentType: "application/pdf",
+        }] : [];
         await sendEmail(
           updated.email,
           status === "approved" ? "Your business directory listing is approved" : "Business directory application update",
           emailFrame(
             status === "approved" ? "Business listing approved" : "Business listing update",
             status === "approved"
-              ? `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been approved for the directory.</p><p>Payment status: <strong>${updated.paymentStatus}</strong>. Final payment verification and official receipt remain controlled by Accounts/Finance.</p>`
+              ? `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been approved for the directory.</p><p>Payment status: <strong>${updated.paymentStatus}</strong>.<br>Approval date: <strong>${new Date(updated.approvedAt || new Date()).toLocaleString("en-GB")}</strong></p><p>Your approved business form is attached. Final payment verification and official receipt remain controlled by Accounts/Finance.</p>`
               : `<p>Dear ${updated.ownerName},</p><p>Your business profile <strong>${updated.businessName}</strong> has been updated to <strong>rejected</strong>.</p><p>${adminNote || "Please contact the Anjuman office for details."}</p>`,
           ),
+          approvalAttachments,
         );
+        if (status === "approved") {
+          await sendEmail(
+            MASTER_EMAIL,
+            `Business approved · ${updated.businessName}`,
+            emailFrame("Business approval recorded", `<p><strong>${updated.businessName}</strong> has been approved.</p><p>Owner: ${updated.ownerName}<br>Payment status: <strong>${updated.paymentStatus}</strong><br>Approval date: <strong>${new Date(updated.approvedAt || new Date()).toLocaleString("en-GB")}</strong></p><p>The approved business form is attached for the official record.</p>`),
+            approvalAttachments,
+          );
+        }
       } catch (emailError) {
         console.error("[BUSINESS_STATUS_EMAIL_FAILED]", emailError);
       }
