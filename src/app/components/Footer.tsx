@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { Facebook, Instagram, Linkedin, Mail, MapPin, Phone, Twitter } from "lucide-react";
 import { getSiteSettings } from "../lib/settingsStore";
+import { OFFICIAL_EMAIL } from "../lib/config";
 import logoImg from "../../imports/logo.png";
 
 const GREEN = "#123f29";
@@ -87,7 +88,7 @@ export default function Footer() {
             <div style={{ display: "grid", gap: 12 }}>
               {settings.address && <div style={{ display: "flex", gap: 10, alignItems: "flex-start", color: "rgba(255,255,255,.78)", fontSize: 13, lineHeight: 1.6 }}><MapPin size={17} style={{ marginTop: 2, flex: "0 0 auto", color: GOLD }} /><span>{settings.address}</span></div>}
               {settings.contactPhone && <a href={`tel:${phoneHref}`} style={{ ...linkStyle, display: "flex", gap: 10, alignItems: "center" }}><Phone size={16} style={{ flex: "0 0 auto", color: GOLD }} /><span>{settings.contactPhone}</span></a>}
-              {settings.contactEmail && <a href={`mailto:${settings.contactEmail}`} style={{ ...linkStyle, display: "flex", gap: 10, alignItems: "flex-start", wordBreak: "break-word" }}><Mail size={16} style={{ marginTop: 2, flex: "0 0 auto", color: GOLD }} /><span>{settings.contactEmail}</span></a>}
+              {settings.contactEmail && <a href={`mailto:${OFFICIAL_EMAIL}`} style={{ ...linkStyle, display: "flex", gap: 10, alignItems: "flex-start", wordBreak: "break-word" }}><Mail size={16} style={{ marginTop: 2, flex: "0 0 auto", color: GOLD }} /><span>{settings.contactEmail}</span></a>}
             </div>
           </section>
         </div>
