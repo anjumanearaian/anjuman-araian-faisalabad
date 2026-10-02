@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Phone, Mail, MapPin, Clock, Send } from "lucide-react";
 import { getSiteSettings } from "../lib/settingsStore";
+import { OFFICIAL_EMAIL } from "../lib/config";
 
 export function ContactSection() {
   const settings = getSiteSettings();
@@ -68,7 +69,11 @@ export function ContactSection() {
                   <p style={{ color: "#1a4d2e", fontFamily: "'Playfair Display', serif", fontSize: 15, fontWeight: 600 }} className="mb-1">
                     {title}
                   </p>
-                  {lines.map((line) => (
+                  {lines.map((line) => title === "Email" ? (
+                    <a key={line} href={`mailto:${OFFICIAL_EMAIL}`} style={{ display: "block", color: "#666", fontFamily: "'Poppins', sans-serif", fontSize: 13, lineHeight: 1.7, textDecoration: "none", wordBreak: "break-word" }}>
+                      {line}
+                    </a>
+                  ) : (
                     <p key={line} style={{ color: "#666", fontFamily: "'Poppins', sans-serif", fontSize: 13, lineHeight: 1.7 }}>
                       {line}
                     </p>
