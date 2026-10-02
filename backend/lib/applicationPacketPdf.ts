@@ -18,7 +18,7 @@ function safe(value: unknown) {
     .trim();
 }
 
-function shown(value: unknown) {
+function shown(value: unknown): string {
   if (value === null || value === undefined || value === "") return "-";
   if (value instanceof Date) return value.toLocaleString("en-GB");
   if (Array.isArray(value)) return value.map(shown).join(", ");
