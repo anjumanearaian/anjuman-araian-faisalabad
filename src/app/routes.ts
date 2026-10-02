@@ -68,6 +68,12 @@ const lazyPage = <T extends Record<string, any>>(loader: () => Promise<T>, expor
 
 export const router = createBrowserRouter([
   { path: "admin", lazy: lazyPage(() => import("./pages/AdminPage"), "AdminPage") },
+  { path: "admin/content", lazy: lazyPage(() => import("./pages/AdminPage"), "AdminPage") },
+  { path: "admin/forms", lazy: lazyPage(() => import("./pages/AdminPage"), "AdminPage") },
+  { path: "admin/media", lazy: lazyPage(() => import("./pages/AdminPage"), "AdminPage") },
+  { path: "admin/settings", lazy: lazyPage(() => import("./pages/AdminPage"), "AdminPage") },
+  { path: "admin/messages", lazy: lazyPage(() => import("./pages/AdminPage"), "AdminPage") },
+  { path: "admin/users", lazy: lazyPage(() => import("./pages/AdminPage"), "AdminPage") },
   { path: "admin/members", lazy: lazyPage(() => import("./pages/AdminMemberCenterPage"), "AdminMemberCenterPage") },
   { path: "admin/matrimonial", lazy: lazyPage(() => import("./pages/AdminMatrimonialPage"), "AdminMatrimonialPage") },
   { path: "admin/matrimonial/new", lazy: lazyPage(() => import("./pages/AdminMatrimonialProfilePage"), "AdminMatrimonialProfilePage") },
