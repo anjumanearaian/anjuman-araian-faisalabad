@@ -16,7 +16,70 @@ router.get("/admin/all", requireWelfareAdmin, async (req: Request, res: Response
       include: { authUser: { select: { email: true, name: true } } },
       orderBy: { updatedAt: "desc" }, take: 500,
     });
-    res.json(drafts);
+
+    // Saved Forms is a read-only administrative view. Enrich membership drafts
+    // from the authoritative Member record so completed approvals/payments remain
+    // visible without adding or changing production database columns.
+    const membershipUserIds = drafts
+      .filter((draft) => draft.formType === "membership" && draft.authUserId)
+      .map((draft) => draft.authUserId);
+
+    const linkedMembers = membershipUserIds.length
+      ? await prisma.member.findMany({
+          where: { authUserId: { in: membershipUserIds } },
+          select: {
+            authUserId: true,
+            memberNo: true,
+            membershipType: true,
+            status: true,
+            paymentStatus: true,
+            approvedAt: true,
+          },
+        })
+      : [];
+
+    const memberByUserId = new Map(linkedMembers.map((member) => [member.authUserId, member]));
+    const clearedPaymentStates = new Set(["submitted", "received", "verified", "recorded"]);
+    const annualMembershipTypes = new Set(["ordinary", "annual", "overseas"]);
+
+    const response = drafts.map((draft) => {
+      if (draft.formType !== "membership") return draft;
+      const member = memberByUserId.get(draft.authUserId);
+      if (!member) return draft;
+
+      const approvedAt = member.approvedAt || null;
+      const paymentKnown = clearedPaymentStates.has(String(member.paymentStatus || "").toLowerCase());
+      let expiryDate: Date | null = null;
+      if (approvedAt && annualMembershipTypes.has(String(member.membershipType || "").toLowerCase())) {
+        expiryDate = new Date(approvedAt);
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+      }
+
+      const rawData = draft.data && typeof draft.data === "object" && !Array.isArray(draft.data)
+        ? draft.data as Record<string, unknown>
+        : {};
+
+      return {
+        ...draft,
+        paymentStatus: member.paymentStatus || draft.paymentStatus,
+        // The historical schema has no separate payment-verification timestamp.
+        // For completed membership records, show the known payment submission time
+        // rather than inventing an approval/payment date.
+        paymentSubmittedAt: paymentKnown ? draft.submittedAt : null,
+        approvedAt,
+        data: expiryDate ? { ...rawData, expiryDate } : rawData,
+        finalRecord: {
+          memberNo: member.memberNo,
+          membershipType: member.membershipType,
+          status: member.status,
+          paymentStatus: member.paymentStatus,
+          approvedAt,
+          expiryDate,
+        },
+      };
+    });
+
+    res.json(response);
   } catch (error) { next(error); }
 });
 
