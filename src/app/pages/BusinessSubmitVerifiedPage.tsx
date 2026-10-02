@@ -160,7 +160,7 @@ export function BusinessSubmitVerifiedPage() {
   const clearDraft = () => {
     if (!window.confirm("Clear the saved business draft on this browser?")) return;
     localStorage.removeItem(DRAFT_KEY);
-    setForm({ ...blankForm(), paymentMethod: settings.paymentMethods?.[0]?.bankName || "" });
+    setForm(blankForm());
     setErrors({});
     setDraftStatus("New form");
   };
