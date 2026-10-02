@@ -235,7 +235,7 @@ router.post("/register", registerLimiter, requireMember, validate(RegisterSchema
     });
 
     const notificationJobs = [
-      sendEmail(MASTER_EMAIL, `New membership application: ${memberData.fullName}`, emailFrame("New membership application", `<p><strong>${memberData.fullName}</strong> has submitted a ${memberData.membershipType} membership form.</p><p>Email: ${memberData.email}<br>Phone: ${memberData.phone}<br>Member No: ${newMember.memberNo}${referrer ? `<br>Referrer: ${referrer.fullName} (${referrer.memberNo})` : ""}</p>`)),
+      sendEmail(MASTER_EMAIL, `ACTION REQUIRED · New membership + payment: ${memberData.fullName}`, emailFrame("New membership & payment submission", `<p><strong>${memberData.fullName}</strong> has submitted a ${memberData.membershipType} membership form and payment proof for review.</p><p>Email: ${memberData.email}<br>Phone: ${memberData.phone}<br>Member No: <strong>${newMember.memberNo}</strong><br>Payment proof: <strong>${memberData.paymentProofUrl ? "Submitted" : "Not submitted"}</strong>${referrer ? `<br>Referrer: ${referrer.fullName} (${referrer.memberNo})` : ""}</p><p>Please review the member application and Finance Verification queue.</p>`)),
       sendEmail(memberData.email, "Membership application received", emailFrame("Application received", `<p>Dear ${memberData.fullName},</p><p>Your application is complete and has been sent to the administration. Your verified session can restore the saved form on this or another device.</p><p>Reference: <strong>${newMember.memberNo}</strong></p>`)),
       ...(referrer?.email ? [sendEmail(referrer.email, "You were named as a membership referrer", emailFrame("Membership referral notification", `<p>Dear ${referrer.fullName},</p><p><strong>${memberData.fullName}</strong> has named you as an optional referrer in an Anjuman-e-Araian Faisalabad membership application.</p><p>This does not automatically approve or reject the application. The administration may contact you if verification is required.</p>`))] : []),
     ];
@@ -487,6 +487,10 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
     if (typeof updates.designation === "string") updates.designation = canonicalDesignation(updates.designation);
     if (Array.isArray(updates.additionalPhotos)) updates.additionalPhotos = JSON.stringify(updates.additionalPhotos);
 
+    const paymentProofChangedByApplicant = !adminLike
+      && Object.prototype.hasOwnProperty.call(updates, "paymentProofUrl")
+      && Boolean(updates.paymentProofUrl)
+      && updates.paymentProofUrl !== current.paymentProofUrl;
     const before = [current.photoUrl, current.cnicFrontUrl, current.cnicBackUrl, current.paymentProofUrl, ...parsePhotos(current.additionalPhotos)];
     const updated = await prisma.member.update({
       where: { id }, data: updates,
@@ -494,6 +498,17 @@ router.patch("/:id", requireMember, async (req: Request, res: Response, next: Ne
     });
     const after = [updated.photoUrl, updated.cnicFrontUrl, updated.cnicBackUrl, updated.paymentProofUrl, ...parsePhotos(updated.additionalPhotos)];
     await cleanupRemovedFiles(before, after);
+    if (paymentProofChangedByApplicant) {
+      try {
+        await sendEmail(
+          MASTER_EMAIL,
+          `ACTION REQUIRED · Membership payment proof submitted: ${updated.memberNo || updated.fullName}`,
+          emailFrame("Membership payment proof submitted", `<p><strong>${updated.fullName}</strong> has uploaded or replaced a membership payment proof.</p><p>Member No: <strong>${updated.memberNo || "Pending"}</strong><br>Email: ${updated.email}<br>Status: ${updated.status}</p><p>Please review the payment in Finance Verification before approving or renewing membership.</p>`),
+        );
+      } catch (emailError) {
+        console.error("[MEMBERSHIP_PAYMENT_ADMIN_EMAIL_FAILED]", emailError);
+      }
+    }
     res.json({ ...updated, additionalPhotos: parsePhotos(updated.additionalPhotos) });
   } catch (err: any) {
     if (err.code === "P2025") return void res.status(404).json({ error: "Member not found" });
