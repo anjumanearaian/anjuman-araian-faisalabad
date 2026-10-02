@@ -152,7 +152,6 @@ model Business {
   adminNote          String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
-  approvedAt         DateTime?
 
   @@index([status])
   @@index([paymentStatus])
@@ -185,7 +184,6 @@ model Matrimonial {
   relationToCandidate String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
-  approvedAt          DateTime?
 
   requestedMatches MatrimonialMatchRequest[] @relation("RequesterProfile")
   receivedMatches  MatrimonialMatchRequest[] @relation("TargetProfile")
@@ -258,13 +256,9 @@ model FormDraft {
   completion    Int       @default(0)
   status        String    @default("incomplete")
   paymentStatus String    @default("pending")
-  submittedAt        DateTime?
-  generatedAt        DateTime  @default(now())
-  paymentSubmittedAt DateTime?
-  paymentApprovedAt  DateTime?
-  approvedAt         DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  submittedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([authUserId, formType])
   @@index([formType, status])
