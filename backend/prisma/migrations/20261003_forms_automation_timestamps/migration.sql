@@ -4,6 +4,7 @@ ALTER TABLE "Matrimonial" ADD COLUMN IF NOT EXISTS "approvedAt" TIMESTAMP(3);
 ALTER TABLE "FormDraft" ADD COLUMN IF NOT EXISTS "generatedAt" TIMESTAMP(3);
 ALTER TABLE "FormDraft" ADD COLUMN IF NOT EXISTS "paymentSubmittedAt" TIMESTAMP(3);
 ALTER TABLE "FormDraft" ADD COLUMN IF NOT EXISTS "paymentApprovedAt" TIMESTAMP(3);
+ALTER TABLE "FormDraft" ADD COLUMN IF NOT EXISTS "approvedAt" TIMESTAMP(3);
 
 UPDATE "Business"
 SET "approvedAt" = COALESCE("approvedAt", "updatedAt")
